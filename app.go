@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"sync"
 	"time"
 
@@ -22,9 +24,10 @@ type App struct {
 	ctx        context.Context
 	allowClose bool
 
-	repository storage.Repository
-	tasks      *lifecycle.Service
-	terminals  *terminal.Manager
+	repository      storage.Repository
+	tasks           *lifecycle.Service
+	terminals       *terminal.Manager
+	directoryOpener func(string) error
 }
 
 func NewApp() *App {
@@ -34,7 +37,7 @@ func NewApp() *App {
 func newApp(dataDirectory string) *App {
 	defaults := settings.Default(dataDirectory)
 	repository := storage.New(filepath.Join(dataDirectory, "tasks.json"), defaults)
-	app := &App{repository: repository}
+	app := &App{repository: repository, directoryOpener: openDirectory}
 	app.terminals = terminal.NewManager(terminal.NewBackend(), app.publishTerminalEvent)
 	app.tasks = lifecycle.New(repository, app.terminals, time.Now)
 	return app
@@ -69,8 +72,8 @@ func (app *App) beforeClose(ctx context.Context) bool {
 	return true
 }
 
-func (app *App) CreateTask(title, description string) (task.Task, error) {
-	return app.tasks.CreateTask(title, description)
+func (app *App) CreateTask(title, description, color string) (task.Task, error) {
+	return app.tasks.CreateTask(title, description, color)
 }
 
 func (app *App) ListTasks() ([]task.Task, error) {
@@ -111,6 +114,14 @@ func (app *App) CreateTerminal(taskID string, columns, rows uint16) (terminal.In
 		return terminal.Info{}, err
 	}
 	return app.terminals.Create(taskID, running.WorkspacePath, shellPath, columns, rows)
+}
+
+func (app *App) OpenTaskFolder(taskID string) error {
+	running, _, err := app.runningTask(taskID)
+	if err != nil {
+		return err
+	}
+	return app.directoryOpener(running.WorkspacePath)
 }
 
 func (app *App) WriteTerminal(taskID, terminalID, data string) error {
@@ -176,4 +187,28 @@ func (app *App) publishTerminalEvent(event terminal.Event) {
 	if ctx != nil {
 		runtime.EventsEmit(ctx, "task-terminal:event", event)
 	}
+}
+
+func openDirectory(directory string) error {
+	info, err := os.Stat(directory)
+	if err != nil {
+		return fmt.Errorf("检查任务工作目录: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("任务工作目录不是目录")
+	}
+
+	var command *exec.Cmd
+	switch goruntime.GOOS {
+	case "darwin":
+		command = exec.Command("open", directory)
+	case "windows":
+		command = exec.Command("explorer.exe", directory)
+	default:
+		command = exec.Command("xdg-open", directory)
+	}
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("打开任务工作目录: %w", err)
+	}
+	return nil
 }

@@ -27,13 +27,13 @@ func New(repository storage.Repository, closer TerminalCloser, now func() time.T
 	return &Service{repository: repository, closer: closer, now: now}
 }
 
-func (service *Service) CreateTask(title, description string) (task.Task, error) {
+func (service *Service) CreateTask(title, description, color string) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
 	}
 
-	created, err := task.NewTask(title, description, service.now())
+	created, err := task.NewTask(title, description, color, service.now())
 	if err != nil {
 		return task.Task{}, err
 	}

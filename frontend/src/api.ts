@@ -6,7 +6,8 @@ import {
   FinishTask,
   GetSettings,
   HasRunningTasks,
-  ListTasks,
+	ListTasks,
+	OpenTaskFolder,
   PrepareQuit,
   ResizeTerminal,
   SaveSettings,
@@ -18,7 +19,7 @@ import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 import type {SettingsRecord, TaskRecord, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
-  createTask: (title: string, description: string) => CreateTask(title, description) as Promise<TaskRecord>,
+  createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
   listTasks: () => ListTasks() as Promise<TaskRecord[]>,
   startTask: (taskID: string) => StartTask(taskID) as Promise<TaskRecord>,
   finishTask: (taskID: string) => FinishTask(taskID) as Promise<TaskRecord>,
@@ -26,6 +27,7 @@ export const api = {
 	saveSettings: (settings: SettingsRecord) => SaveSettings(settings) as Promise<SettingsRecord>,
 	detectShells: () => DetectShells() as Promise<string[]>,
   createTerminal: (taskID: string, columns: number, rows: number) => CreateTerminal(taskID, columns, rows) as Promise<TerminalRecord>,
+  openTaskFolder: (taskID: string) => OpenTaskFolder(taskID),
   writeTerminal: (taskID: string, terminalID: string, data: string) => WriteTerminal(taskID, terminalID, data),
   resizeTerminal: (taskID: string, terminalID: string, columns: number, rows: number) => ResizeTerminal(taskID, terminalID, columns, rows),
   closeTerminal: (taskID: string, terminalID: string) => CloseTerminal(taskID, terminalID),

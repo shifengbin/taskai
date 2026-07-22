@@ -27,6 +27,7 @@ export namespace task {
 	    id: string;
 	    title: string;
 	    description: string;
+	    color: string;
 	    status: string;
 	    // Go type: time
 	    createdAt: any;
@@ -44,6 +45,7 @@ export namespace task {
 	        this.id = source["id"];
 	        this.title = source["title"];
 	        this.description = source["description"];
+	        this.color = source["color"];
 	        this.status = source["status"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.completedAt = this.convertValues(source["completedAt"], null);

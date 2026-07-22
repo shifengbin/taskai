@@ -9,6 +9,8 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Tab,
+  Tabs,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -16,25 +18,33 @@ import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
 
-import {taskStatusLabel, terminalStatusLabel, type TaskRecord, type TerminalRecord} from '../types'
+import {defaultTaskColor, terminalStatusLabel, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
 
-interface ContextMenuPosition {
-  taskId: string
-  mouseX: number
-  mouseY: number
+interface TaskMenuState {
+  taskID: string
+  anchorEl?: HTMLElement
+  position?: {
+    top: number
+    left: number
+  }
 }
 
 interface TaskTreeProps {
   tasks: TaskRecord[]
   terminals: TerminalRecord[]
+  activeStatus: TaskStatus
   selectedTerminalId?: string
+  onChangeStatus(status: TaskStatus): void
   onSelectTask(task: TaskRecord): void
   onSelectTerminal(terminal: TerminalRecord): void
   onCreateTerminal(taskID: string): void
+  onOpenTaskFolder(taskID: string): void
   onStartTask(taskID: string): void
   onFinishTask(taskID: string): void
   onCloseTerminal?(terminal: TerminalRecord): void
@@ -43,22 +53,33 @@ interface TaskTreeProps {
 export function TaskTree({
   tasks,
   terminals,
+  activeStatus,
   selectedTerminalId,
+  onChangeStatus,
   onSelectTask,
   onSelectTerminal,
   onCreateTerminal,
+  onOpenTaskFolder,
   onStartTask,
   onFinishTask,
   onCloseTerminal,
 }: TaskTreeProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null)
+  const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null)
   const terminalsByTask = useMemo(() => {
     return terminals.reduce<Record<string, TerminalRecord[]>>((byTask, terminal) => {
+      if (terminal.state === 'exited') {
+        return byTask
+      }
       byTask[terminal.taskId] = [...(byTask[terminal.taskId] ?? []), terminal]
       return byTask
     }, {})
   }, [terminals])
+  const visibleTasks = useMemo(() => tasks.filter((task) => task.status === activeStatus), [activeStatus, tasks])
+  const taskCounts = useMemo(() => tasks.reduce<Record<TaskStatus, number>>((counts, task) => {
+    counts[task.status] += 1
+    return counts
+  }, {pending: 0, running: 0, completed: 0}), [tasks])
 
   const toggleExpanded = (taskID: string) => {
     setExpanded((current) => ({...current, [taskID]: !current[taskID]}))
@@ -69,21 +90,42 @@ export function TaskTree({
       return
     }
     event.preventDefault()
-    setContextMenu({taskId: task.id, mouseX: event.clientX + 2, mouseY: event.clientY - 6})
+    setTaskMenu({taskID: task.id, position: {top: event.clientY - 6, left: event.clientX + 2}})
+  }
+
+  const performTaskMenuAction = (action: (taskID: string) => void) => {
+    if (taskMenu) {
+      action(taskMenu.taskID)
+    }
+    setTaskMenu(null)
   }
 
   return (
-    <Box component="nav" aria-label="任务和终端" sx={{height: '100%', overflow: 'auto'}}>
-      <List disablePadding dense>
-        {tasks.map((task) => {
+    <Box component="nav" aria-label="任务和终端" sx={{height: '100%', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)'}}>
+      <Tabs
+        value={activeStatus}
+        onChange={(_event, status: TaskStatus) => onChangeStatus(status)}
+        aria-label="任务状态筛选"
+        variant="fullWidth"
+        sx={{borderBottom: 1, borderColor: 'divider', minHeight: 42}}
+      >
+        <Tab value="pending" label={`未执行 (${taskCounts.pending})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
+        <Tab value="running" label={`执行中 (${taskCounts.running})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
+        <Tab value="completed" label={`已完成 (${taskCounts.completed})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
+      </Tabs>
+      <List disablePadding dense sx={{overflow: 'auto'}}>
+        {visibleTasks.map((task) => {
           const childTerminals = terminalsByTask[task.id] ?? []
           const isExpanded = expanded[task.id] ?? true
+          const taskColor = task.color || defaultTaskColor
           return (
             <Box key={task.id}>
               <ListItemButton
+                data-task-id={task.id}
                 onClick={() => onSelectTask(task)}
                 onContextMenu={(event) => requestContextMenu(event, task)}
-                sx={{minHeight: 48, gap: 0.5}}
+                style={{borderLeftColor: taskColor}}
+                sx={{minHeight: 48, gap: 0.5, borderLeft: 4, borderLeftStyle: 'solid', bgcolor: `${taskColor}14`}}
               >
                 <IconButton
                   aria-label={isExpanded ? '收起终端' : '展开终端'}
@@ -97,13 +139,12 @@ export function TaskTree({
                 </IconButton>
                 <ListItemText
                   primary={task.title}
-                  secondary={task.description || taskStatusLabel[task.status]}
+                  secondary={task.description || undefined}
                   slotProps={{
                     primary: {noWrap: true, sx: {fontWeight: 600}},
                     secondary: {noWrap: true},
                   }}
                 />
-                <Chip label={taskStatusLabel[task.status]} size="small" color={statusColor(task.status)} variant="outlined"/>
                 {task.status === 'pending' && (
                   <Tooltip title="执行">
                     <IconButton
@@ -119,18 +160,32 @@ export function TaskTree({
                   </Tooltip>
                 )}
                 {task.status === 'running' && (
-                  <Tooltip title="结束">
-                    <IconButton
-                      aria-label="结束"
-                      size="small"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onFinishTask(task.id)
-                      }}
-                    >
-                      <TaskAltOutlinedIcon fontSize="small"/>
-                    </IconButton>
-                  </Tooltip>
+                  <>
+                    <Tooltip title="结束">
+                      <IconButton
+                        aria-label="结束"
+                        size="small"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onFinishTask(task.id)
+                        }}
+                      >
+                        <TaskAltOutlinedIcon fontSize="small"/>
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="任务操作">
+                      <IconButton
+                        aria-label="任务操作"
+                        size="small"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
+                        }}
+                      >
+                        <MoreVertIcon fontSize="small"/>
+                      </IconButton>
+                    </Tooltip>
+                  </>
                 )}
               </ListItemButton>
               <Collapse in={isExpanded} timeout="auto" unmountOnExit>
@@ -177,33 +232,23 @@ export function TaskTree({
         })}
       </List>
       <Menu
-        open={contextMenu !== null}
-        onClose={() => setContextMenu(null)}
-        anchorReference="anchorPosition"
-        anchorPosition={contextMenu ? {top: contextMenu.mouseY, left: contextMenu.mouseX} : undefined}
+        open={taskMenu !== null}
+        onClose={() => setTaskMenu(null)}
+        anchorEl={taskMenu?.anchorEl}
+        anchorReference={taskMenu?.anchorEl ? 'anchorEl' : 'anchorPosition'}
+        anchorPosition={taskMenu?.position}
       >
         <MenuItem
-          onClick={() => {
-            if (contextMenu) {
-              onCreateTerminal(contextMenu.taskId)
-            }
-            setContextMenu(null)
-          }}
+          onClick={() => performTaskMenuAction(onCreateTerminal)}
         >
           <TerminalOutlinedIcon fontSize="small"/>
           <Typography component="span" sx={{ml: 1}}>新增终端</Typography>
         </MenuItem>
+        <MenuItem onClick={() => performTaskMenuAction(onOpenTaskFolder)}>
+          <FolderOpenOutlinedIcon fontSize="small"/>
+          <Typography component="span" sx={{ml: 1}}>打开任务文件夹</Typography>
+        </MenuItem>
       </Menu>
     </Box>
   )
-}
-
-function statusColor(status: TaskRecord['status']): 'default' | 'primary' | 'success' {
-  if (status === 'running') {
-    return 'primary'
-  }
-  if (status === 'completed') {
-    return 'success'
-  }
-  return 'default'
 }

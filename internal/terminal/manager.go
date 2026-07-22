@@ -206,7 +206,7 @@ func (manager *Manager) watch(managed *managedSession) {
 			})
 		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
+			if !errors.Is(err, io.EOF) && !isExpectedTerminalReadError(err) {
 				manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "error", Data: err.Error()})
 			}
 			return

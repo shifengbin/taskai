@@ -4,11 +4,19 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 )
 
-var ErrTitleRequired = errors.New("任务标题不能为空")
+var (
+	ErrTitleRequired = errors.New("任务标题不能为空")
+	ErrInvalidColor  = errors.New("任务颜色必须是十六进制颜色值")
+)
+
+const DefaultColor = "#4f46e5"
+
+var colorPattern = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
 type Status string
 
@@ -22,6 +30,7 @@ type Task struct {
 	ID            string     `json:"id"`
 	Title         string     `json:"title"`
 	Description   string     `json:"description"`
+	Color         string     `json:"color"`
 	Status        Status     `json:"status"`
 	CreatedAt     time.Time  `json:"createdAt"`
 	CompletedAt   *time.Time `json:"completedAt,omitempty"`
@@ -29,19 +38,35 @@ type Task struct {
 	WorkspacePath string     `json:"workspacePath,omitempty"`
 }
 
-func NewTask(title, description string, now time.Time) (Task, error) {
+func NewTask(title, description, color string, now time.Time) (Task, error) {
 	trimmedTitle := strings.TrimSpace(title)
 	if trimmedTitle == "" {
 		return Task{}, ErrTitleRequired
+	}
+	normalizedColor, err := NormalizeColor(color)
+	if err != nil {
+		return Task{}, err
 	}
 
 	return Task{
 		ID:          newID(),
 		Title:       trimmedTitle,
 		Description: description,
+		Color:       normalizedColor,
 		Status:      StatusPending,
 		CreatedAt:   now,
 	}, nil
+}
+
+func NormalizeColor(color string) (string, error) {
+	normalizedColor := strings.ToLower(strings.TrimSpace(color))
+	if normalizedColor == "" {
+		return DefaultColor, nil
+	}
+	if !colorPattern.MatchString(normalizedColor) {
+		return "", ErrInvalidColor
+	}
+	return normalizedColor, nil
 }
 
 func newID() string {

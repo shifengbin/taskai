@@ -1,4 +1,4 @@
-import {cleanup, render, screen, waitFor} from '@testing-library/react'
+import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
@@ -11,16 +11,18 @@ const bindings = vi.hoisted(() => ({
   SaveSettings: vi.fn(),
   DetectShells: vi.fn(),
   CreateTerminal: vi.fn(),
+  OpenTaskFolder: vi.fn(),
   WriteTerminal: vi.fn(),
   ResizeTerminal: vi.fn(),
   CloseTerminal: vi.fn(),
   HasRunningTasks: vi.fn(),
   PrepareQuit: vi.fn(),
 }))
+const runtime = vi.hoisted(() => ({EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: vi.fn()}))
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
-vi.mock('../wailsjs/runtime/runtime', () => ({EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: vi.fn()}))
-vi.mock('./components/TerminalView', () => ({TerminalView: () => null}))
+vi.mock('../wailsjs/runtime/runtime', () => runtime)
+vi.mock('./components/TerminalView', () => ({TerminalView: () => <div>终端视图</div>}))
 
 import App from './App'
 
@@ -29,6 +31,7 @@ describe('App confirmation flows', () => {
 
   beforeEach(() => {
     Object.values(bindings).forEach((mock) => mock.mockReset())
+    Object.values(runtime).forEach((mock) => mock.mockReset())
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
@@ -43,6 +46,7 @@ describe('App confirmation flows', () => {
     const user = userEvent.setup()
     render(<App/>)
 
+    await user.click(screen.getByRole('tab', {name: /执行中/}))
     await screen.findByText('清理临时文件')
     await user.click(screen.getByRole('button', {name: '结束'}))
     expect(screen.getByText('结束任务？')).toBeInTheDocument()
@@ -63,6 +67,7 @@ describe('App confirmation flows', () => {
     bindings.PrepareQuit.mockResolvedValue(undefined)
     render(<App/>)
 
+    await user.click(screen.getByRole('tab', {name: /执行中/}))
     await screen.findByText('清理临时文件')
     await user.click(screen.getByRole('button', {name: '退出应用'}))
     expect(screen.getByText('仍有执行中的任务')).toBeInTheDocument()
@@ -132,5 +137,44 @@ describe('App confirmation flows', () => {
       colorScheme: 'light',
       shellPath: '/custom/shell',
     })
+  })
+
+  it('通过颜色选择器创建未执行任务', async () => {
+    const user = userEvent.setup()
+    bindings.CreateTask.mockResolvedValue({
+      id: 'task-2', title: '彩色任务', description: '', status: 'pending', color: '#22c55e', createdAt: '2026-07-22T00:00:00Z',
+    })
+    render(<App/>)
+
+    await user.click(screen.getByRole('button', {name: '新建任务'}))
+    await user.type(await screen.findByRole('textbox', {name: '标题'}), '彩色任务')
+    fireEvent.change(screen.getByLabelText('任务颜色'), {target: {value: '#22c55e'}})
+    await user.click(screen.getByRole('button', {name: '创建'}))
+
+    expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
+  })
+
+  it('终端退出后不再显示右侧终端视图', async () => {
+    const user = userEvent.setup()
+    let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'exited'}) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-terminal:event') {
+        terminalEventListener = listener
+      }
+    })
+    bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+    render(<App/>)
+
+    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await screen.findByText('终端视图')
+
+    if (!terminalEventListener) {
+      throw new Error('未注册终端事件监听器')
+    }
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'exited'})
+
+    await waitFor(() => expect(screen.queryByText('终端视图')).not.toBeInTheDocument())
   })
 })

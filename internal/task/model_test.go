@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-func TestNewTaskStartsPending(t *testing.T) {
+func TestNewTaskStartsPendingWithConfiguredColor(t *testing.T) {
 	now := time.Date(2026, time.July, 22, 8, 0, 0, 0, time.UTC)
 
-	task, err := NewTask("  编写登录页  ", "实现邮箱登录表单", now)
+	task, err := NewTask("  编写登录页  ", "实现邮箱登录表单", "#A1B2C3", now)
 
 	if err != nil {
 		t.Fatalf("NewTask() error = %v", err)
@@ -25,6 +25,9 @@ func TestNewTaskStartsPending(t *testing.T) {
 	if task.Status != StatusPending {
 		t.Errorf("NewTask() Status = %q, want %q", task.Status, StatusPending)
 	}
+	if task.Color != "#a1b2c3" {
+		t.Errorf("NewTask() Color = %q, want %q", task.Color, "#a1b2c3")
+	}
 	if !task.CreatedAt.Equal(now) {
 		t.Errorf("NewTask() CreatedAt = %v, want %v", task.CreatedAt, now)
 	}
@@ -34,9 +37,17 @@ func TestNewTaskStartsPending(t *testing.T) {
 }
 
 func TestNewTaskRejectsBlankTitle(t *testing.T) {
-	_, err := NewTask(" \t\n ", "", time.Now())
+	_, err := NewTask(" \t\n ", "", "#4f46e5", time.Now())
 
 	if err == nil {
 		t.Fatal("NewTask() error = nil, want title validation error")
+	}
+}
+
+func TestNewTaskRejectsInvalidColor(t *testing.T) {
+	_, err := NewTask("编写登录页", "", "red", time.Now())
+
+	if err == nil {
+		t.Fatal("NewTask() error = nil, want invalid color error")
 	}
 }

@@ -7,7 +7,7 @@ import (
 )
 
 type TaskBinding interface {
-	CreateTask(title, description string) (task.Task, error)
+	CreateTask(title, description, color string) (task.Task, error)
 	ListTasks() ([]task.Task, error)
 	StartTask(taskID string) (task.Task, error)
 	FinishTask(taskID string) (task.Task, error)

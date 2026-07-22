@@ -27,7 +27,7 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	t.Parallel()
 
 	app := newApp(t.TempDir())
-	created, err := app.CreateTask("整理文档", "在工作目录中完成")
+	created, err := app.CreateTask("整理文档", "在工作目录中完成", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
@@ -66,5 +66,29 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	}
 	if listed[0].Status != task.StatusRunning {
 		t.Fatalf("退出清理不应改变任务状态: %#v", listed[0])
+	}
+}
+
+func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
+	app := newApp(t.TempDir())
+	created, err := app.CreateTask("打开目录", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("开始任务: %v", err)
+	}
+
+	var openedPath string
+	app.directoryOpener = func(path string) error {
+		openedPath = path
+		return nil
+	}
+	if err := app.OpenTaskFolder(started.ID); err != nil {
+		t.Fatalf("打开任务目录: %v", err)
+	}
+	if openedPath != started.WorkspacePath {
+		t.Fatalf("打开目录 = %q，期望 %q", openedPath, started.WorkspacePath)
 	}
 }

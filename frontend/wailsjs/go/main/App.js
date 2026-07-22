@@ -6,8 +6,8 @@ export function CloseTerminal(arg1, arg2) {
   return window['go']['main']['App']['CloseTerminal'](arg1, arg2);
 }
 
-export function CreateTask(arg1, arg2) {
-  return window['go']['main']['App']['CreateTask'](arg1, arg2);
+export function CreateTask(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateTask'](arg1, arg2, arg3);
 }
 
 export function CreateTerminal(arg1, arg2, arg3) {
@@ -32,6 +32,10 @@ export function HasRunningTasks() {
 
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
+}
+
+export function OpenTaskFolder(arg1) {
+  return window['go']['main']['App']['OpenTaskFolder'](arg1);
 }
 
 export function PrepareQuit() {

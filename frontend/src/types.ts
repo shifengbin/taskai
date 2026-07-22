@@ -1,11 +1,13 @@
 export type TaskStatus = 'pending' | 'running' | 'completed'
 export type TerminalState = 'active' | 'exited'
 export type ColorScheme = 'light' | 'dark'
+export const defaultTaskColor = '#4f46e5'
 
 export interface TaskRecord {
   id: string
   title: string
   description: string
+  color?: string
   status: TaskStatus
   createdAt: string
   completedAt?: string

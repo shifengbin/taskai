@@ -32,10 +32,12 @@ import {TerminalView} from './components/TerminalView'
 import {applyTerminalEvent} from './state'
 import {
   clampTaskTreeWidth,
+  defaultTaskColor,
   taskStatusLabel,
   type ColorScheme,
   type SettingsRecord,
   type TaskRecord,
+  type TaskStatus,
   type TerminalRecord,
 } from './types'
 import './App.css'
@@ -48,12 +50,14 @@ export default function App() {
   const [treeWidth, setTreeWidth] = useState(360)
   const [selectedTaskID, setSelectedTaskID] = useState<string>()
   const [selectedTerminalID, setSelectedTerminalID] = useState<string>()
+  const [activeTaskStatus, setActiveTaskStatus] = useState<TaskStatus>('pending')
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [finishTask, setFinishTask] = useState<TaskRecord>()
   const [quitDialogOpen, setQuitDialogOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftDescription, setDraftDescription] = useState('')
+  const [draftColor, setDraftColor] = useState(defaultTaskColor)
   const [settingsDraft, setSettingsDraft] = useState<SettingsRecord>()
   const [message, setMessage] = useState<string>()
   const dragging = useRef(false)
@@ -86,7 +90,7 @@ export default function App() {
   const colorScheme: ColorScheme = settings?.colorScheme === 'dark' ? 'dark' : 'light'
   const theme = useMemo(() => createAppTheme(colorScheme), [colorScheme])
   const selectedTask = tasks.find((task) => task.id === selectedTaskID)
-  const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID)
+  const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
 
   const createTask = async (event: FormEvent) => {
     event.preventDefault()
@@ -95,12 +99,14 @@ export default function App() {
       return
     }
     try {
-      const created = await api.createTask(draftTitle, draftDescription)
+      const created = await api.createTask(draftTitle, draftDescription, draftColor)
       setTasks((current) => [...current, created])
+      setActiveTaskStatus('pending')
       setSelectedTaskID(created.id)
       setSelectedTerminalID(undefined)
       setDraftTitle('')
       setDraftDescription('')
+      setDraftColor(defaultTaskColor)
       setTaskDialogOpen(false)
     } catch (error) {
       showError(error, setMessage)
@@ -111,6 +117,7 @@ export default function App() {
     try {
       const started = await api.startTask(taskID)
       setTasks((current) => replaceTask(current, started))
+      setActiveTaskStatus('running')
       setSelectedTaskID(taskID)
       setSelectedTerminalID(undefined)
     } catch (error) {
@@ -125,6 +132,7 @@ export default function App() {
     try {
       const completed = await api.finishTask(finishTask.id)
       setTasks((current) => replaceTask(current, completed))
+      setActiveTaskStatus('completed')
       setTerminals((current) => current.filter((terminal) => terminal.taskId !== finishTask.id))
       if (selectedTaskID === finishTask.id) {
         setSelectedTerminalID(undefined)
@@ -141,6 +149,14 @@ export default function App() {
       setTerminals((current) => [...current, {...created, output: ''}])
       setSelectedTaskID(taskID)
       setSelectedTerminalID(created.id)
+    } catch (error) {
+      showError(error, setMessage)
+    }
+  }
+
+  const openTaskFolder = async (taskID: string) => {
+    try {
+      await api.openTaskFolder(taskID)
     } catch (error) {
       showError(error, setMessage)
     }
@@ -219,7 +235,12 @@ export default function App() {
             <Typography variant="subtitle1" sx={{fontWeight: 800, letterSpacing: 0.3}}>任务工作台</Typography>
             <Box sx={{flex: 1}}/>
             <Tooltip title="新建任务">
-              <IconButton aria-label="新建任务" onClick={() => setTaskDialogOpen(true)} color="primary">
+              <IconButton aria-label="新建任务" onClick={() => {
+                setDraftTitle('')
+                setDraftDescription('')
+                setDraftColor(defaultTaskColor)
+                setTaskDialogOpen(true)
+              }} color="primary">
                 <AddOutlinedIcon/>
               </IconButton>
             </Tooltip>
@@ -255,7 +276,9 @@ export default function App() {
               <TaskTree
                 tasks={tasks}
                 terminals={terminals}
+                activeStatus={activeTaskStatus}
                 selectedTerminalId={selectedTerminalID}
+                onChangeStatus={setActiveTaskStatus}
                 onSelectTask={(task) => {
                   setSelectedTaskID(task.id)
                   setSelectedTerminalID(undefined)
@@ -265,6 +288,7 @@ export default function App() {
                   setSelectedTerminalID(terminal.id)
                 }}
                 onCreateTerminal={(taskID) => void createTerminal(taskID)}
+                onOpenTaskFolder={(taskID) => void openTaskFolder(taskID)}
                 onStartTask={(taskID) => void startTask(taskID)}
                 onFinishTask={(taskID) => setFinishTask(tasks.find((task) => task.id === taskID))}
                 onCloseTerminal={(terminal) => void closeTerminal(terminal)}
@@ -315,6 +339,17 @@ export default function App() {
           <DialogContent sx={{display: 'grid', gap: 2, pt: '12px !important'}}>
             <TextField autoFocus required label="标题" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)}/>
             <TextField label="任务描述" value={draftDescription} multiline minRows={3} onChange={(event) => setDraftDescription(event.target.value)}/>
+            <Box sx={{display: 'flex', alignItems: 'center', gap: 1.5}}>
+              <Typography component="label" htmlFor="task-color-picker" variant="body2">任务颜色</Typography>
+              <input
+                id="task-color-picker"
+                aria-label="任务颜色"
+                type="color"
+                value={draftColor}
+                onChange={(event) => setDraftColor(event.target.value)}
+                style={{width: 48, height: 36, padding: 2, border: 'none', background: 'transparent', cursor: 'pointer'}}
+              />
+            </Box>
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setTaskDialogOpen(false)}>取消</Button>

@@ -25,13 +25,16 @@ func (closer *closerStub) CloseTask(taskID string) error {
 func TestServiceCreatesPendingTask(t *testing.T) {
 	service, repository, _ := newService(t)
 
-	created, err := service.CreateTask("编写登录页", "实现邮箱登录表单")
+	created, err := service.CreateTask("编写登录页", "实现邮箱登录表单", "#ef4444")
 
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	if created.Status != task.StatusPending {
 		t.Errorf("CreateTask() Status = %q, want %q", created.Status, task.StatusPending)
+	}
+	if created.Color != "#ef4444" {
+		t.Errorf("CreateTask() Color = %q, want %q", created.Color, "#ef4444")
 	}
 	data, err := repository.Load()
 	if err != nil {
@@ -44,7 +47,7 @@ func TestServiceCreatesPendingTask(t *testing.T) {
 
 func TestServiceStartsPendingTaskWithWorkspaceSnapshot(t *testing.T) {
 	service, _, root := newService(t)
-	created, err := service.CreateTask("编写登录页", "")
+	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -75,7 +78,7 @@ func TestServiceKeepsPendingTaskWhenWorkspaceCreationFails(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	service, repository := newServiceWithRoot(t, root)
-	created, err := service.CreateTask("编写登录页", "")
+	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -96,7 +99,7 @@ func TestServiceKeepsPendingTaskWhenWorkspaceCreationFails(t *testing.T) {
 
 func TestServiceFinishesTaskAfterClosingTerminalsAndDeletingWorkspace(t *testing.T) {
 	service, _, _ := newService(t)
-	created, err := service.CreateTask("编写登录页", "")
+	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -127,7 +130,7 @@ func TestServiceFinishesTaskAfterClosingTerminalsAndDeletingWorkspace(t *testing
 func TestServiceKeepsRunningTaskWhenTerminalCleanupFails(t *testing.T) {
 	service, repository, _ := newService(t)
 	service.closer.(*closerStub).err = errors.New("close failed")
-	created, err := service.CreateTask("编写登录页", "")
+	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -155,7 +158,7 @@ func TestServiceKeepsRunningTaskWhenTerminalCleanupFails(t *testing.T) {
 
 func TestServiceKeepsRunningTaskWhenWorkspaceCleanupFails(t *testing.T) {
 	service, repository, _ := newService(t)
-	created, err := service.CreateTask("编写登录页", "")
+	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
@@ -187,7 +190,7 @@ func TestServiceKeepsRunningTaskWhenWorkspaceCleanupFails(t *testing.T) {
 
 func TestServiceDoesNotRestartCompletedTask(t *testing.T) {
 	service, _, _ := newService(t)
-	created, err := service.CreateTask("编写登录页", "")
+	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}

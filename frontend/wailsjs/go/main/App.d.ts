@@ -6,7 +6,7 @@ import {settings} from '../models';
 
 export function CloseTerminal(arg1:string,arg2:string):Promise<void>;
 
-export function CreateTask(arg1:string,arg2:string):Promise<task.Task>;
+export function CreateTask(arg1:string,arg2:string,arg3:string):Promise<task.Task>;
 
 export function CreateTerminal(arg1:string,arg2:number,arg3:number):Promise<terminal.Info>;
 
@@ -19,6 +19,8 @@ export function GetSettings():Promise<settings.Settings>;
 export function HasRunningTasks():Promise<boolean>;
 
 export function ListTasks():Promise<Array<task.Task>>;
+
+export function OpenTaskFolder(arg1:string):Promise<void>;
 
 export function PrepareQuit():Promise<void>;
 
