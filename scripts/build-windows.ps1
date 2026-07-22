@@ -1,0 +1,36 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('amd64', 'arm64', '386')]
+    [string]$Architecture = 'amd64',
+    [switch]$NSIS
+)
+
+$ErrorActionPreference = 'Stop'
+$ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+
+if ($env:OS -ne 'Windows_NT') {
+    throw '此脚本只能在 Windows 主机上运行。'
+}
+if (-not (Get-Command wails -ErrorAction SilentlyContinue)) {
+    throw '未找到 Wails CLI。请先安装 Wails v2。'
+}
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+    throw '未找到 Go。请安装项目所需的 Go 工具链。'
+}
+
+$Arguments = @('build', '-platform', "windows/$Architecture", '-clean')
+if ($NSIS) {
+    $Arguments += '-nsis'
+}
+
+Push-Location $ProjectDir
+try {
+    & wails @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+} finally {
+    Pop-Location
+}
+
+Write-Host "Windows 构建完成: $ProjectDir\build\bin\taskai.exe"

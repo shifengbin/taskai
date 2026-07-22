@@ -1,0 +1,74 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "command": "\"/usr/bin/todoai\" claude-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"/usr/bin/todoai\" claude-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"/usr/bin/todoai\" claude-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "\"/usr/bin/todoai\" claude-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "\"/usr/bin/todoai\" claude-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "\"/usr/bin/todoai\" claude-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "\"/usr/bin/todoai\" claude-hook",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
