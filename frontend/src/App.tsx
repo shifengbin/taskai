@@ -10,9 +10,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Snackbar,
+  Switch,
   TextField,
   ThemeProvider,
   Toolbar,
@@ -21,6 +23,8 @@ import {
   createTheme,
 } from '@mui/material'
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
+import ArrowDownwardOutlinedIcon from '@mui/icons-material/ArrowDownwardOutlined'
+import ArrowUpwardOutlinedIcon from '@mui/icons-material/ArrowUpwardOutlined'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
@@ -33,10 +37,12 @@ import {applyTerminalEvent} from './state'
 import {
   clampTaskTreeWidth,
   defaultTaskColor,
+	defaultTaskMenuItems,
   taskStatusLabel,
   type ColorScheme,
   type SettingsRecord,
   type TaskRecord,
+	type TaskMenuItem,
   type TaskStatus,
   type TerminalRecord,
 } from './types'
@@ -52,6 +58,7 @@ export default function App() {
   const [selectedTerminalID, setSelectedTerminalID] = useState<string>()
   const [activeTaskStatus, setActiveTaskStatus] = useState<TaskStatus>('pending')
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
+  const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [finishTask, setFinishTask] = useState<TaskRecord>()
   const [quitDialogOpen, setQuitDialogOpen] = useState(false)
@@ -59,6 +66,7 @@ export default function App() {
   const [draftDescription, setDraftDescription] = useState('')
   const [draftColor, setDraftColor] = useState(defaultTaskColor)
   const [settingsDraft, setSettingsDraft] = useState<SettingsRecord>()
+  const [selectedTaskMenuItemID, setSelectedTaskMenuItemID] = useState<string>()
   const [message, setMessage] = useState<string>()
   const dragging = useRef(false)
   const currentTreeWidth = useRef(treeWidth)
@@ -91,23 +99,43 @@ export default function App() {
   const theme = useMemo(() => createAppTheme(colorScheme), [colorScheme])
   const selectedTask = tasks.find((task) => task.id === selectedTaskID)
   const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
+  const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
+  const selectedTaskMenuItem = settingsDraft?.taskMenuItems.find((item) => item.id === selectedTaskMenuItemID)
 
-  const createTask = async (event: FormEvent) => {
+  const openTaskDialog = (task?: TaskRecord) => {
+    setEditingTask(task)
+    setDraftTitle(task?.title ?? '')
+    setDraftDescription(task?.description ?? '')
+    setDraftColor(task?.color || defaultTaskColor)
+    setTaskDialogOpen(true)
+  }
+
+  const closeTaskDialog = () => {
+    setTaskDialogOpen(false)
+    setEditingTask(undefined)
+  }
+
+  const saveTask = async (event: FormEvent) => {
     event.preventDefault()
     if (!draftTitle.trim()) {
       setMessage('任务标题不能为空')
       return
     }
     try {
-      const created = await api.createTask(draftTitle, draftDescription, draftColor)
-      setTasks((current) => [...current, created])
-      setActiveTaskStatus('pending')
-      setSelectedTaskID(created.id)
-      setSelectedTerminalID(undefined)
+      if (editingTask) {
+        const updated = await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
+        setTasks((current) => replaceTask(current, updated))
+      } else {
+        const created = await api.createTask(draftTitle, draftDescription, draftColor)
+        setTasks((current) => [...current, created])
+        setActiveTaskStatus('pending')
+        setSelectedTaskID(created.id)
+        setSelectedTerminalID(undefined)
+      }
       setDraftTitle('')
       setDraftDescription('')
       setDraftColor(defaultTaskColor)
-      setTaskDialogOpen(false)
+      closeTaskDialog()
     } catch (error) {
       showError(error, setMessage)
     }
@@ -154,6 +182,21 @@ export default function App() {
     }
   }
 
+  const runTaskMenuCommand = async (taskID: string, item: TaskMenuItem) => {
+    try {
+      if (item.showTerminal) {
+        const created = await api.createCommandTerminal(taskID, item.command ?? '', item.arguments ?? [], 100, 32)
+        setTerminals((current) => [...current, {...created, output: ''}])
+        setSelectedTaskID(taskID)
+        setSelectedTerminalID(created.id)
+        return
+      }
+      await api.runTaskCommand(taskID, item.command ?? '', item.arguments ?? [])
+    } catch (error) {
+      showError(error, setMessage)
+    }
+  }
+
   const openTaskFolder = async (taskID: string) => {
     try {
       await api.openTaskFolder(taskID)
@@ -178,9 +221,51 @@ export default function App() {
       const saved = await api.saveSettings(settingsDraft)
       setSettings(saved)
       setSettingsDialogOpen(false)
+      setSelectedTaskMenuItemID(undefined)
     } catch (error) {
       showError(error, setMessage)
     }
+  }
+
+  const updateTaskMenuItem = (itemID: string, update: Partial<TaskMenuItem>) => {
+    setSettingsDraft((current) => current ? {
+      ...current,
+      taskMenuItems: current.taskMenuItems.map((item) => item.id === itemID ? {...item, ...update} : item),
+    } : current)
+  }
+
+  const moveTaskMenuItem = (itemID: string, offset: number) => {
+    setSettingsDraft((current) => {
+      if (!current) {
+        return current
+      }
+      const index = current.taskMenuItems.findIndex((item) => item.id === itemID)
+      const nextIndex = index + offset
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.taskMenuItems.length) {
+        return current
+      }
+      const taskMenuItems = [...current.taskMenuItems]
+      const [item] = taskMenuItems.splice(index, 1)
+      taskMenuItems.splice(nextIndex, 0, item)
+      return {...current, taskMenuItems}
+    })
+  }
+
+  const addTaskMenuItem = () => {
+    const taskMenuItem = createCustomTaskMenuItem()
+    setSettingsDraft((current) => current ? {
+      ...current,
+      taskMenuItems: [...current.taskMenuItems, taskMenuItem],
+    } : current)
+    setSelectedTaskMenuItemID(taskMenuItem.id)
+  }
+
+  const removeTaskMenuItem = (itemID: string) => {
+    setSettingsDraft((current) => current ? {
+      ...current,
+      taskMenuItems: current.taskMenuItems.filter((item) => item.id !== itemID),
+    } : current)
+    setSelectedTaskMenuItemID(undefined)
   }
 
   const setPanelWidth = (nextWidth: number) => {
@@ -235,12 +320,7 @@ export default function App() {
             <Typography variant="subtitle1" sx={{fontWeight: 800, letterSpacing: 0.3}}>任务工作台</Typography>
             <Box sx={{flex: 1}}/>
             <Tooltip title="新建任务">
-              <IconButton aria-label="新建任务" onClick={() => {
-                setDraftTitle('')
-                setDraftDescription('')
-                setDraftColor(defaultTaskColor)
-                setTaskDialogOpen(true)
-              }} color="primary">
+              <IconButton aria-label="新建任务" onClick={() => openTaskDialog()} color="primary">
                 <AddOutlinedIcon/>
               </IconButton>
             </Tooltip>
@@ -248,11 +328,14 @@ export default function App() {
               <IconButton
                 aria-label="设置"
                 onClick={() => {
+                  const draftMenuItems = cloneTaskMenuItems(taskMenuItems)
                   setSettingsDraft(settings ? {
                     ...settings,
                     colorScheme,
                     shellPath: settings.shellPath || detectedShells[0] || '',
+                    taskMenuItems: draftMenuItems,
                   } : undefined)
+                  setSelectedTaskMenuItemID(draftMenuItems[0]?.id)
                   setSettingsDialogOpen(true)
                 }}
               >
@@ -276,6 +359,7 @@ export default function App() {
               <TaskTree
                 tasks={tasks}
                 terminals={terminals}
+                menuItems={taskMenuItems}
                 activeStatus={activeTaskStatus}
                 selectedTerminalId={selectedTerminalID}
                 onChangeStatus={setActiveTaskStatus}
@@ -288,7 +372,14 @@ export default function App() {
                   setSelectedTerminalID(terminal.id)
                 }}
                 onCreateTerminal={(taskID) => void createTerminal(taskID)}
+                onEditTask={(taskID) => {
+                  const task = tasks.find((current) => current.id === taskID)
+                  if (task) {
+                    openTaskDialog(task)
+                  }
+                }}
                 onOpenTaskFolder={(taskID) => void openTaskFolder(taskID)}
+                onRunMenuCommand={(taskID, item) => void runTaskMenuCommand(taskID, item)}
                 onStartTask={(taskID) => void startTask(taskID)}
                 onFinishTask={(taskID) => setFinishTask(tasks.find((task) => task.id === taskID))}
                 onCloseTerminal={(terminal) => void closeTerminal(terminal)}
@@ -333,9 +424,9 @@ export default function App() {
         </Box>
       </Box>
 
-      <Dialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} fullWidth maxWidth="sm">
-        <Box component="form" onSubmit={createTask}>
-          <DialogTitle>新建任务</DialogTitle>
+      <Dialog open={taskDialogOpen} onClose={closeTaskDialog} fullWidth maxWidth="sm">
+        <Box component="form" onSubmit={saveTask}>
+          <DialogTitle>{editingTask ? '编辑任务' : '新建任务'}</DialogTitle>
           <DialogContent sx={{display: 'grid', gap: 2, pt: '12px !important'}}>
             <TextField autoFocus required label="标题" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)}/>
             <TextField label="任务描述" value={draftDescription} multiline minRows={3} onChange={(event) => setDraftDescription(event.target.value)}/>
@@ -352,8 +443,8 @@ export default function App() {
             </Box>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setTaskDialogOpen(false)}>取消</Button>
-            <Button type="submit" variant="contained">创建</Button>
+            <Button onClick={closeTaskDialog}>取消</Button>
+            <Button type="submit" variant="contained">{editingTask ? '保存' : '创建'}</Button>
           </DialogActions>
         </Box>
       </Dialog>
@@ -372,6 +463,7 @@ export default function App() {
               taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
               colorScheme: current?.colorScheme ?? colorScheme,
               shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
+              taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
             }))}
           />
           <TextField
@@ -384,6 +476,7 @@ export default function App() {
               taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
               colorScheme: event.target.value as ColorScheme,
               shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
+              taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
             }))}
           >
             <MenuItem value="light">亮色</MenuItem>
@@ -404,6 +497,7 @@ export default function App() {
                 taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
                 colorScheme: current?.colorScheme ?? colorScheme,
                 shellPath: event.target.value,
+                taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
               }))
             }}
           >
@@ -421,8 +515,65 @@ export default function App() {
               taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
               colorScheme: current?.colorScheme ?? colorScheme,
               shellPath: event.target.value,
+              taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
             }))}
           />
+          <Box sx={{display: 'grid', gap: 1.25}}>
+            <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
+              <Typography variant="subtitle2">任务操作菜单</Typography>
+              <Button size="small" variant="outlined" onClick={addTaskMenuItem}>新增自定义菜单项</Button>
+            </Box>
+            <Typography variant="caption" color="text.secondary">系统菜单项仅可调整顺序；自定义命令的启动参数每行一个。</Typography>
+            <Box sx={{display: 'grid', gap: 0.75}}>
+              {settingsDraft?.taskMenuItems.map((item, index) => (
+                <Box key={item.id} sx={{display: 'flex', alignItems: 'center', gap: 0.5}}>
+                  <Button
+                    aria-label={`编辑菜单项 ${item.name}`}
+                    color={selectedTaskMenuItemID === item.id ? 'primary' : 'inherit'}
+                    onClick={() => setSelectedTaskMenuItemID(item.id)}
+                    sx={{justifyContent: 'flex-start', flex: 1}}
+                  >
+                    {item.name}
+                  </Button>
+                  <IconButton aria-label={`上移 ${item.name}`} disabled={index === 0} onClick={() => moveTaskMenuItem(item.id, -1)} size="small"><ArrowUpwardOutlinedIcon fontSize="inherit"/></IconButton>
+                  <IconButton aria-label={`下移 ${item.name}`} disabled={index === settingsDraft.taskMenuItems.length - 1} onClick={() => moveTaskMenuItem(item.id, 1)} size="small"><ArrowDownwardOutlinedIcon fontSize="inherit"/></IconButton>
+                </Box>
+              ))}
+            </Box>
+            {selectedTaskMenuItem && selectedTaskMenuItem.kind !== 'command' ? (
+              <Typography variant="body2" color="text.secondary">系统固定菜单项仅可调整顺序。</Typography>
+            ) : selectedTaskMenuItem ? (
+              <Box sx={{display: 'grid', gap: 1.5, pt: 0.5}}>
+                <TextField
+                  required
+                  label="菜单名称"
+                  value={selectedTaskMenuItem.name}
+                  onChange={(event) => updateTaskMenuItem(selectedTaskMenuItem.id, {name: event.target.value})}
+                />
+                <TextField
+                  required
+                  label="启动命令"
+                  value={selectedTaskMenuItem.command ?? ''}
+                  onChange={(event) => updateTaskMenuItem(selectedTaskMenuItem.id, {command: event.target.value})}
+                />
+                <TextField
+                  label="启动参数（每行一个）"
+                  helperText="每行代表一个启动参数。"
+                  minRows={2}
+                  multiline
+                  value={(selectedTaskMenuItem.arguments ?? []).join('\n')}
+                  onChange={(event) => updateTaskMenuItem(selectedTaskMenuItem.id, {arguments: event.target.value.split('\n')})}
+                />
+                <FormControlLabel
+                  control={<Switch checked={selectedTaskMenuItem.showTerminal} onChange={(event) => updateTaskMenuItem(selectedTaskMenuItem.id, {showTerminal: event.target.checked})}/>}
+                  label="显示终端"
+                />
+                <Box>
+                  <Button color="error" size="small" onClick={() => removeTaskMenuItem(selectedTaskMenuItem.id)}>删除菜单项</Button>
+                </Box>
+              </Box>
+            ) : null}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSettingsDialogOpen(false)}>取消</Button>
@@ -509,6 +660,22 @@ function TaskDetail({task}: {task?: TaskRecord}) {
 
 function replaceTask(tasks: TaskRecord[], next: TaskRecord): TaskRecord[] {
   return tasks.map((task) => task.id === next.id ? next : task)
+}
+
+function cloneTaskMenuItems(items: TaskMenuItem[]): TaskMenuItem[] {
+  return items.map((item) => item.arguments ? {...item, arguments: [...item.arguments]} : {...item})
+}
+
+function createCustomTaskMenuItem(): TaskMenuItem {
+  const randomID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return {
+    id: `custom-${randomID}`,
+    kind: 'command',
+    name: '自定义命令',
+    command: '',
+    arguments: [],
+    showTerminal: true,
+  }
 }
 
 function showError(error: unknown, setMessage: (message: string) => void) {

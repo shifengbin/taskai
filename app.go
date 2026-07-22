@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ type App struct {
 	tasks           *lifecycle.Service
 	terminals       *terminal.Manager
 	directoryOpener func(string) error
+	commandRunner   func(string, string, string, []string) error
 }
 
 func NewApp() *App {
@@ -37,7 +39,7 @@ func NewApp() *App {
 func newApp(dataDirectory string) *App {
 	defaults := settings.Default(dataDirectory)
 	repository := storage.New(filepath.Join(dataDirectory, "tasks.json"), defaults)
-	app := &App{repository: repository, directoryOpener: openDirectory}
+	app := &App{repository: repository, directoryOpener: openDirectory, commandRunner: runTaskCommand}
 	app.terminals = terminal.NewManager(terminal.NewBackend(), app.publishTerminalEvent)
 	app.tasks = lifecycle.New(repository, app.terminals, time.Now)
 	return app
@@ -80,6 +82,10 @@ func (app *App) ListTasks() ([]task.Task, error) {
 	return app.tasks.ListTasks()
 }
 
+func (app *App) UpdateTask(taskID, title, description, color string) (task.Task, error) {
+	return app.tasks.UpdateTask(taskID, title, description, color)
+}
+
 func (app *App) StartTask(taskID string) (task.Task, error) {
 	return app.tasks.StartTask(taskID)
 }
@@ -114,6 +120,30 @@ func (app *App) CreateTerminal(taskID string, columns, rows uint16) (terminal.In
 		return terminal.Info{}, err
 	}
 	return app.terminals.Create(taskID, running.WorkspacePath, shellPath, columns, rows)
+}
+
+func (app *App) CreateCommandTerminal(taskID, command string, arguments []string, columns, rows uint16) (terminal.Info, error) {
+	running, shellPath, err := app.runningTask(taskID)
+	if err != nil {
+		return terminal.Info{}, err
+	}
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return terminal.Info{}, fmt.Errorf("任务命令不能为空")
+	}
+	return app.terminals.CreateCommand(taskID, running.WorkspacePath, shellPath, command, arguments, columns, rows)
+}
+
+func (app *App) RunTaskCommand(taskID, command string, arguments []string) error {
+	running, shellPath, err := app.runningTask(taskID)
+	if err != nil {
+		return err
+	}
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return fmt.Errorf("任务命令不能为空")
+	}
+	return app.commandRunner(running.WorkspacePath, shellPath, command, append([]string(nil), arguments...))
 }
 
 func (app *App) OpenTaskFolder(taskID string) error {
@@ -211,4 +241,23 @@ func openDirectory(directory string) error {
 		return fmt.Errorf("打开任务工作目录: %w", err)
 	}
 	return nil
+}
+
+func runTaskCommand(directory, shellPath, command string, arguments []string) error {
+	process := commandProcess(shellPath, command, arguments)
+	process.Dir = directory
+	process.Env = os.Environ()
+	if err := process.Start(); err != nil {
+		return fmt.Errorf("启动任务命令: %w", err)
+	}
+	go func() { _ = process.Wait() }()
+	return nil
+}
+
+func commandProcess(shellPath, command string, arguments []string) *exec.Cmd {
+	if goruntime.GOOS != "windows" && shellPath != "" {
+		shellArguments := append([]string{"-ic", `exec "$@"`, shellPath, command}, arguments...)
+		return exec.Command(shellPath, shellArguments...)
+	}
+	return exec.Command(command, arguments...)
 }

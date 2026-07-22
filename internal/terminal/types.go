@@ -13,6 +13,8 @@ type StartRequest struct {
 	TaskID    string
 	Directory string
 	ShellPath string
+	Command   string
+	Arguments []string
 	Columns   uint16
 	Rows      uint16
 }

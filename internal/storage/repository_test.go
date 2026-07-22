@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestRepositoryReturnsDefaultsForMissingDataFile(t *testing.T) {
 	if len(data.Tasks) != 0 {
 		t.Errorf("Load() Tasks = %d, want 0", len(data.Tasks))
 	}
-	if data.Settings != defaults {
+	if !reflect.DeepEqual(data.Settings, defaults) {
 		t.Errorf("Load() Settings = %#v, want %#v", data.Settings, defaults)
 	}
 }
@@ -93,7 +94,7 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 	if len(got.Tasks) != 1 || got.Tasks[0] != want.Tasks[0] {
 		t.Errorf("Load() Tasks = %#v, want %#v", got.Tasks, want.Tasks)
 	}
-	if got.Settings != want.Settings {
+	if !reflect.DeepEqual(got.Settings, want.Settings) {
 		t.Errorf("Load() Settings = %#v, want %#v", got.Settings, want.Settings)
 	}
 
@@ -174,7 +175,7 @@ func TestRepositorySaveSettingsKeepsTaskWorkspaceSnapshot(t *testing.T) {
 	if len(got.Tasks) != 1 || got.Tasks[0].WorkspacePath != originalTask.WorkspacePath || got.Tasks[0].WorkspaceRoot != originalTask.WorkspaceRoot {
 		t.Errorf("SaveSettings() changed task workspace snapshot: %#v", got.Tasks)
 	}
-	if got.Settings != nextSettings {
+	if !reflect.DeepEqual(got.Settings, nextSettings) {
 		t.Errorf("SaveSettings() Settings = %#v, want %#v", got.Settings, nextSettings)
 	}
 }

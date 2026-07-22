@@ -102,3 +102,60 @@ func TestUnixBackendUsesShellFromStartRequest(t *testing.T) {
 		t.Fatalf("未使用请求指定的 Shell，输出: %q", output)
 	}
 }
+
+func TestUnixBackendStartsConfiguredCommandWithArguments(t *testing.T) {
+	commandPath := filepath.Join(t.TempDir(), "task-command")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf '__TASK_COMMAND__%s__\\n' \"$1\"\n"), 0o700); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	session, err := (&unixBackend{}).Start(StartRequest{
+		TaskID: "task-a", Directory: t.TempDir(), Command: commandPath, Arguments: []string{"--full-auto"}, Columns: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatalf("启动配置命令: %v", err)
+	}
+	defer session.Close()
+
+	output, readErr := io.ReadAll(session)
+	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
+		t.Fatalf("读取配置命令输出: %v", readErr)
+	}
+	if err := session.Wait(); err != nil {
+		t.Fatalf("等待配置命令: %v", err)
+	}
+	if !strings.Contains(string(output), "__TASK_COMMAND__--full-auto__") {
+		t.Fatalf("配置命令输出 = %q", output)
+	}
+}
+
+func TestUnixBackendStartsConfiguredCommandThroughRequestedShell(t *testing.T) {
+	directory := t.TempDir()
+	shellPath := filepath.Join(directory, "configured-shell")
+	commandPath := filepath.Join(directory, "task-command")
+	if err := os.WriteFile(shellPath, []byte("#!/bin/sh\nexport TASKAI_SHELL_INITIALIZED=1\nshift 3\nexec \"$@\"\n"), 0o700); err != nil {
+		t.Fatalf("WriteFile(shell) error = %v", err)
+	}
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf '__SHELL_PATH__%s__\\n' \"$TASKAI_SHELL_INITIALIZED\"\n"), 0o700); err != nil {
+		t.Fatalf("WriteFile(command) error = %v", err)
+	}
+
+	session, err := (&unixBackend{}).Start(StartRequest{
+		TaskID: "task-a", Directory: directory, ShellPath: shellPath, Command: commandPath, Columns: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatalf("启动配置命令: %v", err)
+	}
+	defer session.Close()
+
+	output, readErr := io.ReadAll(session)
+	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
+		t.Fatalf("读取配置命令输出: %v", readErr)
+	}
+	if err := session.Wait(); err != nil {
+		t.Fatalf("等待配置命令: %v", err)
+	}
+	if !strings.Contains(string(output), "__SHELL_PATH__1__") {
+		t.Fatalf("配置命令未通过请求指定的 Shell 启动，输出: %q", output)
+	}
+}

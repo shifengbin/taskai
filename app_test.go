@@ -92,3 +92,31 @@ func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
 		t.Fatalf("打开目录 = %q，期望 %q", openedPath, started.WorkspacePath)
 	}
 }
+
+func TestRunTaskCommandUsesRunningTaskWorkspace(t *testing.T) {
+	app := newApp(t.TempDir())
+	created, err := app.CreateTask("运行命令", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("开始任务: %v", err)
+	}
+
+	var directory, shellPath, command string
+	var arguments []string
+	app.commandRunner = func(nextDirectory, nextShellPath, nextCommand string, nextArguments []string) error {
+		directory = nextDirectory
+		shellPath = nextShellPath
+		command = nextCommand
+		arguments = nextArguments
+		return nil
+	}
+	if err := app.RunTaskCommand(started.ID, "code", []string{"."}); err != nil {
+		t.Fatalf("运行任务命令: %v", err)
+	}
+	if directory != started.WorkspacePath || shellPath == "" || command != "code" || len(arguments) != 1 || arguments[0] != "." {
+		t.Fatalf("运行任务命令参数 = directory:%q shell:%q command:%q arguments:%#v", directory, shellPath, command, arguments)
+	}
+}

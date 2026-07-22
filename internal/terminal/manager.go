@@ -39,44 +39,62 @@ func NewManager(backend Backend, publish func(Event)) *Manager {
 }
 
 func (manager *Manager) Create(taskID, directory, shellPath string, columns, rows uint16) (Info, error) {
-	if taskID == "" {
+	return manager.create(StartRequest{
+		TaskID:    taskID,
+		Directory: directory,
+		ShellPath: shellPath,
+		Columns:   columns,
+		Rows:      rows,
+	})
+}
+
+func (manager *Manager) CreateCommand(taskID, directory, shellPath, command string, arguments []string, columns, rows uint16) (Info, error) {
+	return manager.create(StartRequest{
+		TaskID:    taskID,
+		Directory: directory,
+		ShellPath: shellPath,
+		Command:   command,
+		Arguments: append([]string(nil), arguments...),
+		Columns:   columns,
+		Rows:      rows,
+	})
+}
+
+func (manager *Manager) create(request StartRequest) (Info, error) {
+	if request.TaskID == "" {
 		return Info{}, fmt.Errorf("任务 ID 不能为空")
 	}
-	if directory == "" {
+	if request.Directory == "" {
 		return Info{}, fmt.Errorf("终端工作目录不能为空")
 	}
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if manager.closingTasks[taskID] {
+	if manager.closingTasks[request.TaskID] {
 		return Info{}, ErrTaskClosing
 	}
 
-	session, err := manager.backend.Start(StartRequest{
-		TaskID:    taskID,
-		Directory: directory,
-		ShellPath: shellPath,
-		Columns:   normalizedDimension(columns, 80),
-		Rows:      normalizedDimension(rows, 24),
-	})
+	request.Columns = normalizedDimension(request.Columns, 80)
+	request.Rows = normalizedDimension(request.Rows, 24)
+	session, err := manager.backend.Start(request)
 	if err != nil {
 		return Info{}, err
 	}
 
-	info := Info{ID: session.ID(), TaskID: taskID, State: StateActive}
+	info := Info{ID: session.ID(), TaskID: request.TaskID, State: StateActive}
 	if info.ID == "" {
 		_ = session.Close()
 		return Info{}, fmt.Errorf("终端会话未提供 ID")
 	}
 	managed := &managedSession{info: info, session: session, done: make(chan struct{})}
-	if manager.sessions[taskID] == nil {
-		manager.sessions[taskID] = make(map[string]*managedSession)
+	if manager.sessions[request.TaskID] == nil {
+		manager.sessions[request.TaskID] = make(map[string]*managedSession)
 	}
-	if _, exists := manager.sessions[taskID][info.ID]; exists {
+	if _, exists := manager.sessions[request.TaskID][info.ID]; exists {
 		_ = session.Close()
 		return Info{}, fmt.Errorf("终端 ID 重复")
 	}
-	manager.sessions[taskID][info.ID] = managed
+	manager.sessions[request.TaskID][info.ID] = managed
 	go manager.watch(managed)
 
 	return info, nil

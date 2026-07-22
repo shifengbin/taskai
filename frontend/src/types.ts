@@ -1,6 +1,7 @@
 export type TaskStatus = 'pending' | 'running' | 'completed'
 export type TerminalState = 'active' | 'exited'
 export type ColorScheme = 'light' | 'dark'
+export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'command'
 export const defaultTaskColor = '#4f46e5'
 
 export interface TaskRecord {
@@ -34,7 +35,23 @@ export interface SettingsRecord {
 	taskTreeWidth: number
 	colorScheme: ColorScheme
 	shellPath: string
+	taskMenuItems: TaskMenuItem[]
 }
+
+export interface TaskMenuItem {
+  id: string
+  kind: TaskMenuItemKind
+  name: string
+  command?: string
+  arguments?: string[]
+  showTerminal: boolean
+}
+
+export const defaultTaskMenuItems: TaskMenuItem[] = [
+  {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
+  {id: 'system.create-terminal', kind: 'create-terminal', name: '新增终端', showTerminal: false},
+  {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
+]
 
 export const taskStatusLabel: Record<TaskStatus, string> = {
   pending: '未执行',

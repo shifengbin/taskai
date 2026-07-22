@@ -4,6 +4,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const bindings = vi.hoisted(() => ({
   CreateTask: vi.fn(),
+  UpdateTask: vi.fn(),
   ListTasks: vi.fn(),
   StartTask: vi.fn(),
   FinishTask: vi.fn(),
@@ -11,7 +12,9 @@ const bindings = vi.hoisted(() => ({
   SaveSettings: vi.fn(),
   DetectShells: vi.fn(),
   CreateTerminal: vi.fn(),
+  CreateCommandTerminal: vi.fn(),
   OpenTaskFolder: vi.fn(),
+  RunTaskCommand: vi.fn(),
   WriteTerminal: vi.fn(),
   ResizeTerminal: vi.fn(),
   CloseTerminal: vi.fn(),
@@ -26,6 +29,12 @@ vi.mock('./components/TerminalView', () => ({TerminalView: () => <div>终端视�
 
 import App from './App'
 
+const fixedTaskMenuItems = [
+  {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
+  {id: 'system.create-terminal', kind: 'create-terminal', name: '新增终端', showTerminal: false},
+  {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
+]
+
 describe('App confirmation flows', () => {
   afterEach(cleanup)
 
@@ -35,7 +44,9 @@ describe('App confirmation flows', () => {
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
-    bindings.GetSettings.mockResolvedValue({workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh'})
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+    })
     bindings.DetectShells.mockResolvedValue(['/bin/sh', '/bin/zsh'])
     bindings.FinishTask.mockResolvedValue({
       id: 'task-1', title: '清理临时文件', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z',
@@ -93,6 +104,7 @@ describe('App confirmation flows', () => {
       taskTreeWidth: 360,
       colorScheme: 'dark',
       shellPath: '/bin/sh',
+      taskMenuItems: fixedTaskMenuItems,
     })
 
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
@@ -116,6 +128,7 @@ describe('App confirmation flows', () => {
       taskTreeWidth: 360,
       colorScheme: 'light',
       shellPath: '/bin/zsh',
+      taskMenuItems: fixedTaskMenuItems,
     })
   })
 
@@ -136,6 +149,7 @@ describe('App confirmation flows', () => {
       taskTreeWidth: 360,
       colorScheme: 'light',
       shellPath: '/custom/shell',
+      taskMenuItems: fixedTaskMenuItems,
     })
   })
 
@@ -152,6 +166,27 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '创建'}))
 
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
+  })
+
+  it('通过任务操作编辑标题、描述和颜色', async () => {
+    const user = userEvent.setup()
+    bindings.UpdateTask.mockResolvedValue({
+      id: 'task-1', title: '更新后的临时文件', description: '已补充说明', status: 'running', color: '#22c55e', createdAt: '2026-07-22T00:00:00Z',
+    })
+    render(<App/>)
+
+    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+    expect(screen.getByText('编辑任务')).toBeInTheDocument()
+    await user.clear(screen.getByRole('textbox', {name: '标题'}))
+    await user.type(screen.getByRole('textbox', {name: '标题'}), '更新后的临时文件')
+    await user.type(screen.getByRole('textbox', {name: '任务描述'}), '已补充说明')
+    fireEvent.change(screen.getByLabelText('任务颜色'), {target: {value: '#22c55e'}})
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(bindings.UpdateTask).toHaveBeenCalledWith('task-1', '更新后的临时文件', '已补充说明', '#22c55e')
+    await screen.findByText('更新后的临时文件')
   })
 
   it('终端退出后不再显示右侧终端视图', async () => {
@@ -176,5 +211,67 @@ describe('App confirmation flows', () => {
     terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'exited'})
 
     await waitFor(() => expect(screen.queryByText('终端视图')).not.toBeInTheDocument())
+  })
+
+  it('自定义菜单可创建独立终端或后台启动命令', async () => {
+    const user = userEvent.setup()
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
+      taskMenuItems: [
+        {id: 'custom-codex', kind: 'command', name: 'Codex', command: 'codex', arguments: ['--full-auto'], showTerminal: true},
+        {id: 'custom-vscode', kind: 'command', name: '打开 VS Code', command: 'code', arguments: ['.'], showTerminal: false},
+      ],
+    })
+    bindings.CreateCommandTerminal.mockResolvedValue({id: 'terminal-codex', taskId: 'task-1', state: 'active'})
+    bindings.RunTaskCommand.mockResolvedValue(undefined)
+    render(<App/>)
+
+    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
+    expect(bindings.CreateCommandTerminal).toHaveBeenCalledWith('task-1', 'codex', ['--full-auto'], 100, 32)
+    await screen.findByText('终端视图')
+
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '打开 VS Code'}))
+    expect(bindings.RunTaskCommand).toHaveBeenCalledWith('task-1', 'code', ['.'])
+  })
+
+  it('设置中可新增、编辑自定义菜单项并调整系统项顺序', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
+      taskMenuItems: [
+        {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
+        {id: 'system.create-terminal', kind: 'create-terminal', name: '新增终端', showTerminal: false},
+        {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
+      ],
+    })
+    render(<App/>)
+
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('button', {name: '新增自定义菜单项'}))
+    await user.clear(screen.getByRole('textbox', {name: '菜单名称'}))
+    await user.type(screen.getByRole('textbox', {name: '菜单名称'}), 'Codex')
+    await user.type(screen.getByRole('textbox', {name: '启动命令'}), 'codex')
+    await user.type(screen.getByRole('textbox', {name: '启动参数（每行一个）'}), '--full-auto\n--dangerously-bypass-approvals-and-sandbox')
+
+    await user.click(screen.getByRole('button', {name: '上移 打开任务文件夹'}))
+    await user.click(screen.getByRole('button', {name: '编辑菜单项 编辑任务'}))
+    expect(screen.getByText('系统固定菜单项仅可调整顺序。')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', {name: '菜单名称'})).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '编辑菜单项 Codex'}))
+    expect(screen.getByRole('switch', {name: '显示终端'})).toBeChecked()
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    const saved = bindings.SaveSettings.mock.calls[0][0]
+    expect(saved.taskMenuItems.map((item: {id: string}) => item.id)).toEqual([
+      'system.edit-task', 'system.open-folder', 'system.create-terminal', saved.taskMenuItems[3].id,
+    ])
+    expect(saved.taskMenuItems[3]).toMatchObject({
+      kind: 'command', name: 'Codex', command: 'codex', arguments: ['--full-auto', '--dangerously-bypass-approvals-and-sandbox'], showTerminal: true,
+    })
   })
 })

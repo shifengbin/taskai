@@ -45,6 +45,37 @@ func TestServiceCreatesPendingTask(t *testing.T) {
 	}
 }
 
+func TestServiceUpdatesTaskDetailsWithoutChangingLifecycle(t *testing.T) {
+	service, repository, _ := newService(t)
+	created, err := service.CreateTask("编写登录页", "旧描述", "#ef4444")
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	started, err := service.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+
+	updated, err := service.UpdateTask(started.ID, "  更新登录页  ", "新描述", "#A1B2C3")
+
+	if err != nil {
+		t.Fatalf("UpdateTask() error = %v", err)
+	}
+	if updated.Title != "更新登录页" || updated.Description != "新描述" || updated.Color != "#a1b2c3" {
+		t.Errorf("UpdateTask() details = %#v", updated)
+	}
+	if updated.Status != started.Status || updated.CreatedAt != started.CreatedAt || updated.WorkspaceRoot != started.WorkspaceRoot || updated.WorkspacePath != started.WorkspacePath {
+		t.Errorf("UpdateTask() changed lifecycle fields: %#v", updated)
+	}
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(data.Tasks) != 1 || data.Tasks[0] != updated {
+		t.Errorf("UpdateTask() persisted Tasks = %#v, want %#v", data.Tasks, updated)
+	}
+}
+
 func TestServiceStartsPendingTaskWithWorkspaceSnapshot(t *testing.T) {
 	service, _, root := newService(t)
 	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)

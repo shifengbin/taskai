@@ -6,6 +6,10 @@ export function CloseTerminal(arg1, arg2) {
   return window['go']['main']['App']['CloseTerminal'](arg1, arg2);
 }
 
+export function CreateCommandTerminal(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['CreateCommandTerminal'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function CreateTask(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateTask'](arg1, arg2, arg3);
 }
@@ -46,12 +50,20 @@ export function ResizeTerminal(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ResizeTerminal'](arg1, arg2, arg3, arg4);
 }
 
+export function RunTaskCommand(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RunTaskCommand'](arg1, arg2, arg3);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
 export function StartTask(arg1) {
   return window['go']['main']['App']['StartTask'](arg1);
+}
+
+export function UpdateTask(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['UpdateTask'](arg1, arg2, arg3, arg4);
 }
 
 export function WriteTerminal(arg1, arg2, arg3) {

@@ -34,25 +34,29 @@ func (backend *windowsBackend) Start(request StartRequest) (Session, error) {
 		return nil, err
 	}
 
-	shell := request.ShellPath
-	if shell == "" {
-		shell = backend.shell
+	commandPath := request.Command
+	if commandPath == "" {
+		commandPath = request.ShellPath
 	}
-	if shell == "" {
-		shell = os.Getenv("ComSpec")
+	if commandPath == "" {
+		commandPath = backend.shell
 	}
-	if shell == "" {
-		shell = "cmd.exe"
+	if commandPath == "" {
+		commandPath = os.Getenv("ComSpec")
 	}
-	resolvedShell, err := exec.LookPath(shell)
+	if commandPath == "" {
+		commandPath = "cmd.exe"
+	}
+	resolvedCommand, err := exec.LookPath(commandPath)
 	if err != nil {
-		return nil, fmt.Errorf("找不到 Windows 命令解释器: %w", err)
+		return nil, fmt.Errorf("找不到 Windows 终端命令: %w", err)
 	}
 	console, err := conpty.New(int(normalizedDimension(request.Columns, 80)), int(normalizedDimension(request.Rows, 24)), 0)
 	if err != nil {
 		return nil, fmt.Errorf("创建 Windows ConPTY 失败: %w", err)
 	}
-	pid, processHandle, err := console.Spawn(resolvedShell, []string{resolvedShell}, &syscall.ProcAttr{Dir: request.Directory})
+	arguments := append([]string{resolvedCommand}, request.Arguments...)
+	pid, processHandle, err := console.Spawn(resolvedCommand, arguments, &syscall.ProcAttr{Dir: request.Directory})
 	if err != nil {
 		_ = console.Close()
 		return nil, fmt.Errorf("启动 Windows 终端失败: %w", err)

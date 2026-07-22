@@ -39,6 +39,14 @@ type Task struct {
 }
 
 func NewTask(title, description, color string, now time.Time) (Task, error) {
+	return Task{
+		ID:        newID(),
+		Status:    StatusPending,
+		CreatedAt: now,
+	}.UpdateDetails(title, description, color)
+}
+
+func (current Task) UpdateDetails(title, description, color string) (Task, error) {
 	trimmedTitle := strings.TrimSpace(title)
 	if trimmedTitle == "" {
 		return Task{}, ErrTitleRequired
@@ -47,15 +55,10 @@ func NewTask(title, description, color string, now time.Time) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-
-	return Task{
-		ID:          newID(),
-		Title:       trimmedTitle,
-		Description: description,
-		Color:       normalizedColor,
-		Status:      StatusPending,
-		CreatedAt:   now,
-	}, nil
+	current.Title = trimmedTitle
+	current.Description = description
+	current.Color = normalizedColor
+	return current, nil
 }
 
 func NormalizeColor(color string) (string, error) {

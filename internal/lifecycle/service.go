@@ -54,6 +54,26 @@ func (service *Service) ListTasks() ([]task.Task, error) {
 	return data.Tasks, nil
 }
 
+func (service *Service) UpdateTask(taskID, title, description, color string) (task.Task, error) {
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	updated, err := data.Tasks[index].UpdateDetails(title, description, color)
+	if err != nil {
+		return task.Task{}, err
+	}
+	data.Tasks[index] = updated
+	if err := service.repository.Save(data); err != nil {
+		return task.Task{}, err
+	}
+	return updated, nil
+}
+
 func (service *Service) StartTask(taskID string) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {

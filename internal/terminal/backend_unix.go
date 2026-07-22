@@ -33,16 +33,30 @@ func (backend *unixBackend) Start(request StartRequest) (Session, error) {
 		return nil, err
 	}
 
-	shell := request.ShellPath
-	if shell == "" {
-		shell = backend.shell
+	commandPath := request.Command
+	if commandPath != "" && request.ShellPath != "" {
+		arguments := append([]string{"-ic", `exec "$@"`, request.ShellPath, commandPath}, request.Arguments...)
+		command := exec.Command(request.ShellPath, arguments...)
+		command.Dir = request.Directory
+		command.Env = embeddedTerminalEnvironment()
+		return startUnixCommand(command, request)
 	}
-	if shell == "" {
-		shell = "/bin/sh"
+	if commandPath == "" {
+		commandPath = request.ShellPath
 	}
-	command := exec.Command(shell)
+	if commandPath == "" {
+		commandPath = backend.shell
+	}
+	if commandPath == "" {
+		commandPath = "/bin/sh"
+	}
+	command := exec.Command(commandPath, request.Arguments...)
 	command.Dir = request.Directory
 	command.Env = embeddedTerminalEnvironment()
+	return startUnixCommand(command, request)
+}
+
+func startUnixCommand(command *exec.Cmd, request StartRequest) (Session, error) {
 	file, err := pty.StartWithSize(command, &pty.Winsize{
 		Cols: normalizedDimension(request.Columns, 80),
 		Rows: normalizedDimension(request.Rows, 24),

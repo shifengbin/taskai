@@ -19,11 +19,34 @@ const (
 
 const DefaultColorScheme = ColorSchemeLight
 
+type TaskMenuItemKind string
+
+const (
+	TaskMenuItemKindEditTask       TaskMenuItemKind = "edit-task"
+	TaskMenuItemKindCreateTerminal TaskMenuItemKind = "create-terminal"
+	TaskMenuItemKindOpenFolder     TaskMenuItemKind = "open-folder"
+	TaskMenuItemKindCommand        TaskMenuItemKind = "command"
+
+	TaskMenuItemEditTaskID       = "system.edit-task"
+	TaskMenuItemCreateTerminalID = "system.create-terminal"
+	TaskMenuItemOpenFolderID     = "system.open-folder"
+)
+
+type TaskMenuItem struct {
+	ID           string           `json:"id"`
+	Kind         TaskMenuItemKind `json:"kind"`
+	Name         string           `json:"name"`
+	Command      string           `json:"command,omitempty"`
+	Arguments    []string         `json:"arguments,omitempty"`
+	ShowTerminal bool             `json:"showTerminal"`
+}
+
 type Settings struct {
-	WorkspaceRoot string      `json:"workspaceRoot"`
-	TaskTreeWidth int         `json:"taskTreeWidth"`
-	ColorScheme   ColorScheme `json:"colorScheme"`
-	ShellPath     string      `json:"shellPath"`
+	WorkspaceRoot string         `json:"workspaceRoot"`
+	TaskTreeWidth int            `json:"taskTreeWidth"`
+	ColorScheme   ColorScheme    `json:"colorScheme"`
+	ShellPath     string         `json:"shellPath"`
+	TaskMenuItems []TaskMenuItem `json:"taskMenuItems"`
 }
 
 func Default(applicationDataDirectory string) Settings {
@@ -32,6 +55,15 @@ func Default(applicationDataDirectory string) Settings {
 		TaskTreeWidth: DefaultTaskTreeWidth,
 		ColorScheme:   DefaultColorScheme,
 		ShellPath:     DefaultShellPath(),
+		TaskMenuItems: DefaultTaskMenuItems(),
+	}
+}
+
+func DefaultTaskMenuItems() []TaskMenuItem {
+	return []TaskMenuItem{
+		fixedTaskMenuItem(TaskMenuItemEditTaskID),
+		fixedTaskMenuItem(TaskMenuItemCreateTerminalID),
+		fixedTaskMenuItem(TaskMenuItemOpenFolderID),
 	}
 }
 
@@ -55,6 +87,11 @@ func Validate(next Settings) (Settings, error) {
 		}
 		next.ShellPath = normalizedShellPath
 	}
+	menuItems, err := normalizeTaskMenuItems(next.TaskMenuItems)
+	if err != nil {
+		return Settings{}, err
+	}
+	next.TaskMenuItems = menuItems
 
 	absoluteRoot, err := filepath.Abs(next.WorkspaceRoot)
 	if err != nil {
@@ -82,4 +119,71 @@ func Validate(next Settings) (Settings, error) {
 	}
 
 	return next, nil
+}
+
+func fixedTaskMenuItem(id string) TaskMenuItem {
+	switch id {
+	case TaskMenuItemEditTaskID:
+		return TaskMenuItem{ID: id, Kind: TaskMenuItemKindEditTask, Name: "编辑任务"}
+	case TaskMenuItemCreateTerminalID:
+		return TaskMenuItem{ID: id, Kind: TaskMenuItemKindCreateTerminal, Name: "新增终端"}
+	case TaskMenuItemOpenFolderID:
+		return TaskMenuItem{ID: id, Kind: TaskMenuItemKindOpenFolder, Name: "打开任务文件夹"}
+	default:
+		return TaskMenuItem{}
+	}
+}
+
+func normalizeTaskMenuItems(items []TaskMenuItem) ([]TaskMenuItem, error) {
+	if len(items) == 0 {
+		return DefaultTaskMenuItems(), nil
+	}
+
+	normalized := make([]TaskMenuItem, 0, len(items)+3)
+	seen := make(map[string]bool)
+	for _, item := range items {
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" {
+			return nil, fmt.Errorf("任务菜单项 ID 不能为空")
+		}
+		if seen[item.ID] {
+			return nil, fmt.Errorf("任务菜单项 ID 重复: %q", item.ID)
+		}
+		seen[item.ID] = true
+
+		if fixed := fixedTaskMenuItem(item.ID); fixed.ID != "" {
+			normalized = append(normalized, fixed)
+			continue
+		}
+		if item.Kind != TaskMenuItemKindCommand {
+			return nil, fmt.Errorf("不支持的自定义任务菜单项类型: %q", item.Kind)
+		}
+		item.Name = strings.TrimSpace(item.Name)
+		if item.Name == "" {
+			return nil, fmt.Errorf("自定义任务菜单项名称不能为空")
+		}
+		item.Command = strings.TrimSpace(item.Command)
+		if item.Command == "" {
+			return nil, fmt.Errorf("自定义任务菜单项启动命令不能为空")
+		}
+		item.Arguments = normalizeArguments(item.Arguments)
+		normalized = append(normalized, item)
+	}
+
+	for _, fixed := range DefaultTaskMenuItems() {
+		if !seen[fixed.ID] {
+			normalized = append(normalized, fixed)
+		}
+	}
+	return normalized, nil
+}
+
+func normalizeArguments(arguments []string) []string {
+	normalized := make([]string, 0, len(arguments))
+	for _, argument := range arguments {
+		if trimmed := strings.TrimSpace(argument); trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return normalized
 }
