@@ -16,11 +16,11 @@ func TestManagerRoutesOutputAndKeepsTasksIsolated(t *testing.T) {
 	events := make(chan Event, 8)
 	manager := NewManager(backend, func(event Event) { events <- event })
 
-	first, err := manager.Create("task-a", t.TempDir(), 80, 24)
+	first, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
 	if err != nil {
 		t.Fatalf("创建第一个终端: %v", err)
 	}
-	second, err := manager.Create("task-b", t.TempDir(), 80, 24)
+	second, err := manager.Create("task-b", t.TempDir(), "", 80, 24)
 	if err != nil {
 		t.Fatalf("创建第二个终端: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestManagerBlocksNewTerminalWhileTaskIsClosing(t *testing.T) {
 
 	backend := &fakeBackend{}
 	manager := NewManager(backend, func(Event) {})
-	created, err := manager.Create("task-a", t.TempDir(), 80, 24)
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
 	if err != nil {
 		t.Fatalf("创建终端: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestManagerBlocksNewTerminalWhileTaskIsClosing(t *testing.T) {
 		t.Fatal("关闭任务终端超时")
 	}
 
-	if _, err := manager.Create("task-a", t.TempDir(), 80, 24); err == nil {
+	if _, err := manager.Create("task-a", t.TempDir(), "", 80, 24); err == nil {
 		t.Fatal("结束任务期间不应允许新增终端")
 	}
 	if backend.session(created.ID).wasClosed() == false {
@@ -87,11 +87,11 @@ func TestManagerClosesAllWithoutChangingTaskInformation(t *testing.T) {
 
 	backend := &fakeBackend{}
 	manager := NewManager(backend, func(Event) {})
-	first, err := manager.Create("task-a", t.TempDir(), 80, 24)
+	first, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
 	if err != nil {
 		t.Fatalf("创建终端: %v", err)
 	}
-	second, err := manager.Create("task-b", t.TempDir(), 80, 24)
+	second, err := manager.Create("task-b", t.TempDir(), "", 80, 24)
 	if err != nil {
 		t.Fatalf("创建终端: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestManagerAllowsConcurrentCloseOfOneTerminal(t *testing.T) {
 	t.Parallel()
 
 	manager := NewManager(&fakeBackend{}, func(Event) {})
-	created, err := manager.Create("task-a", t.TempDir(), 80, 24)
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
 	if err != nil {
 		t.Fatalf("创建终端: %v", err)
 	}

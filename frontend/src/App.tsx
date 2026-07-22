@@ -1,4 +1,4 @@
-import {type FormEvent, useEffect, useRef, useState} from 'react'
+import {type FormEvent, useEffect, useMemo, useRef, useState} from 'react'
 import {
   Alert,
   AppBar,
@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  MenuItem,
   Snackbar,
   TextField,
   ThemeProvider,
@@ -32,26 +33,18 @@ import {applyTerminalEvent} from './state'
 import {
   clampTaskTreeWidth,
   taskStatusLabel,
+  type ColorScheme,
   type SettingsRecord,
   type TaskRecord,
   type TerminalRecord,
 } from './types'
 import './App.css'
 
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {main: '#0f766e'},
-    background: {default: '#f8fafc', paper: '#ffffff'},
-  },
-  shape: {borderRadius: 8},
-  typography: {fontFamily: 'Inter, "Noto Sans SC", system-ui, sans-serif'},
-})
-
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [terminals, setTerminals] = useState<TerminalRecord[]>([])
   const [settings, setSettings] = useState<SettingsRecord>()
+  const [detectedShells, setDetectedShells] = useState<string[]>([])
   const [treeWidth, setTreeWidth] = useState(360)
   const [selectedTaskID, setSelectedTaskID] = useState<string>()
   const [selectedTerminalID, setSelectedTerminalID] = useState<string>()
@@ -69,9 +62,10 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const [loadedTasks, loadedSettings] = await Promise.all([api.listTasks(), api.getSettings()])
+        const [loadedTasks, loadedSettings, loadedShells] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells()])
         setTasks(loadedTasks)
         setSettings(loadedSettings)
+        setDetectedShells(loadedShells)
         const width = clampTaskTreeWidth(loadedSettings.taskTreeWidth)
         currentTreeWidth.current = width
         setTreeWidth(width)
@@ -89,6 +83,8 @@ export default function App() {
 
   useEffect(() => api.onCloseRequested(() => setQuitDialogOpen(true)), [])
 
+  const colorScheme: ColorScheme = settings?.colorScheme === 'dark' ? 'dark' : 'light'
+  const theme = useMemo(() => createAppTheme(colorScheme), [colorScheme])
   const selectedTask = tasks.find((task) => task.id === selectedTaskID)
   const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID)
 
@@ -184,7 +180,8 @@ export default function App() {
     const next = {...settings, taskTreeWidth: currentTreeWidth.current}
     setSettings(next)
     try {
-      await api.saveSettings(next)
+      const saved = await api.saveSettings(next)
+      setSettings(saved)
     } catch (error) {
       showError(error, setMessage)
     }
@@ -230,7 +227,11 @@ export default function App() {
               <IconButton
                 aria-label="设置"
                 onClick={() => {
-                  setSettingsDraft(settings)
+                  setSettingsDraft(settings ? {
+                    ...settings,
+                    colorScheme,
+                    shellPath: settings.shellPath || detectedShells[0] || '',
+                  } : undefined)
                   setSettingsDialogOpen(true)
                 }}
               >
@@ -324,7 +325,7 @@ export default function App() {
 
       <Dialog open={settingsDialogOpen} onClose={() => setSettingsDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>设置</DialogTitle>
-        <DialogContent sx={{pt: '12px !important'}}>
+        <DialogContent sx={{display: 'grid', gap: 2, pt: '12px !important'}}>
           <TextField
             fullWidth
             required
@@ -334,6 +335,57 @@ export default function App() {
             onChange={(event) => setSettingsDraft((current) => ({
               workspaceRoot: event.target.value,
               taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
+              colorScheme: current?.colorScheme ?? colorScheme,
+              shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
+            }))}
+          />
+          <TextField
+            fullWidth
+            select
+            label="颜色模式"
+            value={settingsDraft?.colorScheme ?? colorScheme}
+            onChange={(event) => setSettingsDraft((current) => ({
+              workspaceRoot: current?.workspaceRoot ?? settings?.workspaceRoot ?? '',
+              taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
+              colorScheme: event.target.value as ColorScheme,
+              shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
+            }))}
+          >
+            <MenuItem value="light">亮色</MenuItem>
+            <MenuItem value="dark">暗色</MenuItem>
+          </TextField>
+          <TextField
+            fullWidth
+            select
+            label="探测到的 Shell"
+            helperText="选择后会自动填入下方的 Shell 路径。"
+            value={detectedShells.includes(settingsDraft?.shellPath ?? '') ? settingsDraft?.shellPath ?? '' : ''}
+            onChange={(event) => {
+              if (!event.target.value) {
+                return
+              }
+              setSettingsDraft((current) => ({
+                workspaceRoot: current?.workspaceRoot ?? settings?.workspaceRoot ?? '',
+                taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
+                colorScheme: current?.colorScheme ?? colorScheme,
+                shellPath: event.target.value,
+              }))
+            }}
+          >
+            <MenuItem value="">手动设置路径</MenuItem>
+            {detectedShells.map((shellPath) => <MenuItem key={shellPath} value={shellPath}>{shellPath}</MenuItem>)}
+          </TextField>
+          <TextField
+            fullWidth
+            required
+            label="Shell 路径"
+            helperText="此路径决定从任务右键菜单新建的终端所启动的 Shell。"
+            value={settingsDraft?.shellPath ?? ''}
+            onChange={(event) => setSettingsDraft((current) => ({
+              workspaceRoot: current?.workspaceRoot ?? settings?.workspaceRoot ?? '',
+              taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
+              colorScheme: current?.colorScheme ?? colorScheme,
+              shellPath: event.target.value,
             }))}
           />
         </DialogContent>
@@ -374,6 +426,20 @@ export default function App() {
       </Snackbar>
     </ThemeProvider>
   )
+}
+
+function createAppTheme(colorScheme: ColorScheme) {
+  return createTheme({
+    palette: {
+      mode: colorScheme,
+      primary: {main: '#0f766e'},
+      background: colorScheme === 'dark'
+        ? {default: '#0f172a', paper: '#111827'}
+        : {default: '#f8fafc', paper: '#ffffff'},
+    },
+    shape: {borderRadius: 8},
+    typography: {fontFamily: 'Inter, "Noto Sans SC", system-ui, sans-serif'},
+  })
 }
 
 function TaskDetail({task}: {task?: TaskRecord}) {

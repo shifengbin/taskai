@@ -1,5 +1,6 @@
 export type TaskStatus = 'pending' | 'running' | 'completed'
 export type TerminalState = 'active' | 'exited'
+export type ColorScheme = 'light' | 'dark'
 
 export interface TaskRecord {
   id: string
@@ -27,8 +28,10 @@ export interface TerminalEvent {
 }
 
 export interface SettingsRecord {
-  workspaceRoot: string
-  taskTreeWidth: number
+	workspaceRoot: string
+	taskTreeWidth: number
+	colorScheme: ColorScheme
+	shellPath: string
 }
 
 export const taskStatusLabel: Record<TaskStatus, string> = {

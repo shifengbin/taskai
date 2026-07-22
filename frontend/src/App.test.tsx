@@ -1,6 +1,6 @@
-import {render, screen, waitFor} from '@testing-library/react'
+import {cleanup, render, screen, waitFor} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const bindings = vi.hoisted(() => ({
   CreateTask: vi.fn(),
@@ -9,6 +9,7 @@ const bindings = vi.hoisted(() => ({
   FinishTask: vi.fn(),
   GetSettings: vi.fn(),
   SaveSettings: vi.fn(),
+  DetectShells: vi.fn(),
   CreateTerminal: vi.fn(),
   WriteTerminal: vi.fn(),
   ResizeTerminal: vi.fn(),
@@ -24,12 +25,15 @@ vi.mock('./components/TerminalView', () => ({TerminalView: () => null}))
 import App from './App'
 
 describe('App confirmation flows', () => {
+  afterEach(cleanup)
+
   beforeEach(() => {
     Object.values(bindings).forEach((mock) => mock.mockReset())
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
-    bindings.GetSettings.mockResolvedValue({workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360})
+    bindings.GetSettings.mockResolvedValue({workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh'})
+    bindings.DetectShells.mockResolvedValue(['/bin/sh', '/bin/zsh'])
     bindings.FinishTask.mockResolvedValue({
       id: 'task-1', title: '清理临时文件', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z',
     })
@@ -67,5 +71,66 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '关闭终端并退出'}))
     expect(bindings.PrepareQuit).toHaveBeenCalledOnce()
     expect(bindings.FinishTask).not.toHaveBeenCalled()
+  })
+
+  it('保存颜色模式并在当前会话中保留选择', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    render(<App/>)
+
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(screen.getByLabelText('颜色模式'))
+    await user.click(screen.getByRole('option', {name: '暗色'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(bindings.SaveSettings).toHaveBeenCalledWith({
+      workspaceRoot: '/tmp/workspaces',
+      taskTreeWidth: 360,
+      colorScheme: 'dark',
+      shellPath: '/bin/sh',
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    expect(screen.getByLabelText('颜色模式')).toHaveTextContent('暗色')
+  })
+
+  it('选择探测到的 Shell 并保存', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    render(<App/>)
+
+    await waitFor(() => expect(bindings.DetectShells).toHaveBeenCalledOnce())
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(screen.getByLabelText('探测到的 Shell'))
+    await user.click(screen.getByRole('option', {name: '/bin/zsh'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(bindings.SaveSettings).toHaveBeenCalledWith({
+      workspaceRoot: '/tmp/workspaces',
+      taskTreeWidth: 360,
+      colorScheme: 'light',
+      shellPath: '/bin/zsh',
+    })
+  })
+
+  it('允许手动设置 Shell 路径', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    render(<App/>)
+
+    await waitFor(() => expect(bindings.DetectShells).toHaveBeenCalledOnce())
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    const shellPath = await screen.findByRole('textbox', {name: 'Shell 路径'})
+    await user.clear(shellPath)
+    await user.type(shellPath, '/custom/shell')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(bindings.SaveSettings).toHaveBeenCalledWith({
+      workspaceRoot: '/tmp/workspaces',
+      taskTreeWidth: 360,
+      colorScheme: 'light',
+      shellPath: '/custom/shell',
+    })
   })
 })

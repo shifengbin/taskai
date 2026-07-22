@@ -33,7 +33,10 @@ func (backend *unixBackend) Start(request StartRequest) (Session, error) {
 		return nil, err
 	}
 
-	shell := backend.shell
+	shell := request.ShellPath
+	if shell == "" {
+		shell = backend.shell
+	}
 	if shell == "" {
 		shell = "/bin/sh"
 	}

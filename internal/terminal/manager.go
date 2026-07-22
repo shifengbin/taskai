@@ -38,7 +38,7 @@ func NewManager(backend Backend, publish func(Event)) *Manager {
 	}
 }
 
-func (manager *Manager) Create(taskID, directory string, columns, rows uint16) (Info, error) {
+func (manager *Manager) Create(taskID, directory, shellPath string, columns, rows uint16) (Info, error) {
 	if taskID == "" {
 		return Info{}, fmt.Errorf("任务 ID 不能为空")
 	}
@@ -55,6 +55,7 @@ func (manager *Manager) Create(taskID, directory string, columns, rows uint16) (
 	session, err := manager.backend.Start(StartRequest{
 		TaskID:    taskID,
 		Directory: directory,
+		ShellPath: shellPath,
 		Columns:   normalizedDimension(columns, 80),
 		Rows:      normalizedDimension(rows, 24),
 	})

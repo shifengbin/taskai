@@ -3,6 +3,8 @@ export namespace settings {
 	export class Settings {
 	    workspaceRoot: string;
 	    taskTreeWidth: number;
+	    colorScheme: string;
+	    shellPath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -12,6 +14,8 @@ export namespace settings {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.workspaceRoot = source["workspaceRoot"];
 	        this.taskTreeWidth = source["taskTreeWidth"];
+	        this.colorScheme = source["colorScheme"];
+	        this.shellPath = source["shellPath"];
 	    }
 	}
 

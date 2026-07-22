@@ -14,6 +14,10 @@ export function CreateTerminal(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateTerminal'](arg1, arg2, arg3);
 }
 
+export function DetectShells() {
+  return window['go']['main']['App']['DetectShells']();
+}
+
 export function FinishTask(arg1) {
   return window['go']['main']['App']['FinishTask'](arg1);
 }

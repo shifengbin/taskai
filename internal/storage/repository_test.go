@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,40 @@ import (
 	"taskai/internal/settings"
 	"taskai/internal/task"
 )
+
+func TestRepositoryLoadsPersistedColorScheme(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents, err := json.Marshal(map[string]any{
+		"tasks": []task.Task{},
+		"settings": map[string]any{
+			"workspaceRoot": filepath.Join(t.TempDir(), "workspaces"),
+			"taskTreeWidth": settings.DefaultTaskTreeWidth,
+			"colorScheme":   "dark",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	persisted, err := json.Marshal(data.Settings)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var settingsData map[string]any
+	if err := json.Unmarshal(persisted, &settingsData); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got, want := settingsData["colorScheme"], "dark"; got != want {
+		t.Errorf("加载的颜色模式 = %#v，期望 %q", got, want)
+	}
+}
 
 func TestRepositoryReturnsDefaultsForMissingDataFile(t *testing.T) {
 	defaults := settings.Default(t.TempDir())

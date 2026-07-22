@@ -12,6 +12,7 @@ const (
 type StartRequest struct {
 	TaskID    string
 	Directory string
+	ShellPath string
 	Columns   uint16
 	Rows      uint16
 }

@@ -10,6 +10,8 @@ export function CreateTask(arg1:string,arg2:string):Promise<task.Task>;
 
 export function CreateTerminal(arg1:string,arg2:number,arg3:number):Promise<terminal.Info>;
 
+export function DetectShells():Promise<Array<string>>;
+
 export function FinishTask(arg1:string):Promise<task.Task>;
 
 export function GetSettings():Promise<settings.Settings>;

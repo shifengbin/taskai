@@ -23,6 +23,7 @@ type TerminalBinding interface {
 type SettingsBinding interface {
 	GetSettings() (settings.Settings, error)
 	SaveSettings(next settings.Settings) (settings.Settings, error)
+	DetectShells() []string
 }
 
 type EventPublisher interface {

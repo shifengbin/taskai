@@ -101,12 +101,16 @@ func (app *App) SaveSettings(next settings.Settings) (settings.Settings, error) 
 	return app.repository.SaveSettings(validated)
 }
 
+func (app *App) DetectShells() []string {
+	return settings.DetectShells()
+}
+
 func (app *App) CreateTerminal(taskID string, columns, rows uint16) (terminal.Info, error) {
-	running, err := app.runningTask(taskID)
+	running, shellPath, err := app.runningTask(taskID)
 	if err != nil {
 		return terminal.Info{}, err
 	}
-	return app.terminals.Create(taskID, running.WorkspacePath, columns, rows)
+	return app.terminals.Create(taskID, running.WorkspacePath, shellPath, columns, rows)
 }
 
 func (app *App) WriteTerminal(taskID, terminalID, data string) error {
@@ -145,24 +149,24 @@ func (app *App) PrepareQuit() error {
 	return nil
 }
 
-func (app *App) runningTask(taskID string) (task.Task, error) {
-	tasks, err := app.tasks.ListTasks()
+func (app *App) runningTask(taskID string) (task.Task, string, error) {
+	data, err := app.repository.Load()
 	if err != nil {
-		return task.Task{}, err
+		return task.Task{}, "", err
 	}
-	for _, current := range tasks {
+	for _, current := range data.Tasks {
 		if current.ID != taskID {
 			continue
 		}
 		if current.Status != task.StatusRunning {
-			return task.Task{}, fmt.Errorf("仅执行中的任务可以创建终端")
+			return task.Task{}, "", fmt.Errorf("仅执行中的任务可以创建终端")
 		}
 		if current.WorkspacePath == "" {
-			return task.Task{}, fmt.Errorf("任务缺少工作目录")
+			return task.Task{}, "", fmt.Errorf("任务缺少工作目录")
 		}
-		return current, nil
+		return current, data.Settings.ShellPath, nil
 	}
-	return task.Task{}, fmt.Errorf("任务不存在")
+	return task.Task{}, "", fmt.Errorf("任务不存在")
 }
 
 func (app *App) publishTerminalEvent(event terminal.Event) {

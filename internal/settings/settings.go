@@ -10,21 +10,50 @@ import (
 const DefaultTaskTreeWidth = 360
 const MinimumTaskTreeWidth = 280
 
+type ColorScheme string
+
+const (
+	ColorSchemeLight ColorScheme = "light"
+	ColorSchemeDark  ColorScheme = "dark"
+)
+
+const DefaultColorScheme = ColorSchemeLight
+
 type Settings struct {
-	WorkspaceRoot string `json:"workspaceRoot"`
-	TaskTreeWidth int    `json:"taskTreeWidth"`
+	WorkspaceRoot string      `json:"workspaceRoot"`
+	TaskTreeWidth int         `json:"taskTreeWidth"`
+	ColorScheme   ColorScheme `json:"colorScheme"`
+	ShellPath     string      `json:"shellPath"`
 }
 
 func Default(applicationDataDirectory string) Settings {
 	return Settings{
 		WorkspaceRoot: filepath.Join(applicationDataDirectory, "workspaces"),
 		TaskTreeWidth: DefaultTaskTreeWidth,
+		ColorScheme:   DefaultColorScheme,
+		ShellPath:     DefaultShellPath(),
 	}
 }
 
 func Validate(next Settings) (Settings, error) {
 	if strings.TrimSpace(next.WorkspaceRoot) == "" {
 		return Settings{}, fmt.Errorf("任务工作区根目录不能为空")
+	}
+	if next.ColorScheme == "" {
+		next.ColorScheme = DefaultColorScheme
+	}
+	if next.ColorScheme != ColorSchemeLight && next.ColorScheme != ColorSchemeDark {
+		return Settings{}, fmt.Errorf("不支持的颜色模式: %q", next.ColorScheme)
+	}
+	if strings.TrimSpace(next.ShellPath) == "" {
+		next.ShellPath = DefaultShellPath()
+	}
+	if next.ShellPath != "" {
+		normalizedShellPath, err := NormalizeShellPath(next.ShellPath)
+		if err != nil {
+			return Settings{}, err
+		}
+		next.ShellPath = normalizedShellPath
 	}
 
 	absoluteRoot, err := filepath.Abs(next.WorkspaceRoot)
