@@ -26,6 +26,8 @@ export function OpenTaskFolder(arg1:string):Promise<void>;
 
 export function PrepareQuit():Promise<void>;
 
+export function ReorderTasks(arg1:task.Status,arg2:Array<string>):Promise<Array<task.Task>>;
+
 export function ResizeTerminal(arg1:string,arg2:string,arg3:number,arg4:number):Promise<void>;
 
 export function RunTaskCommand(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;

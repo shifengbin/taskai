@@ -82,6 +82,10 @@ func (app *App) ListTasks() ([]task.Task, error) {
 	return app.tasks.ListTasks()
 }
 
+func (app *App) ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error) {
+	return app.tasks.ReorderTasks(status, taskIDs)
+}
+
 func (app *App) UpdateTask(taskID, title, description, color string) (task.Task, error) {
 	return app.tasks.UpdateTask(taskID, title, description, color)
 }

@@ -1,4 +1,4 @@
-import {cleanup, fireEvent, render, screen} from '@testing-library/react'
+import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
@@ -15,6 +15,24 @@ const runningTask: TaskRecord = {
 }
 
 const terminal: TerminalRecord = {id: 'terminal-1', taskId: 'task-1', state: 'active'}
+
+function mockPointerTarget(target: Element) {
+  const descriptor = Object.getOwnPropertyDescriptor(document, 'elementFromPoint')
+  Object.defineProperty(document, 'elementFromPoint', {configurable: true, value: () => target})
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(document, 'elementFromPoint', descriptor)
+      return
+    }
+    Reflect.deleteProperty(document, 'elementFromPoint')
+  }
+}
+
+function dispatchPointerEvent(target: Element, type: string, pointerId: number, clientX: number, clientY: number) {
+  const event = new MouseEvent(type, {bubbles: true, cancelable: true, button: 0, clientX, clientY})
+  Object.defineProperty(event, 'pointerId', {configurable: true, value: pointerId})
+  fireEvent(target, event)
+}
 
 describe('TaskTree', () => {
   afterEach(cleanup)
@@ -183,6 +201,203 @@ describe('TaskTree', () => {
 
     await user.hover(screen.getByText('整理发布说明'))
     expect(await screen.findByRole('tooltip')).toHaveTextContent(description)
+  })
+
+  it('双击任务条目的非按钮区域可展开或收起终端', async () => {
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[terminal]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    fireEvent.doubleClick(screen.getByText('整理发布说明'))
+    await waitFor(() => expect(screen.queryByText('终端 1')).not.toBeInTheDocument())
+
+    fireEvent.doubleClick(screen.getByText('整理发布说明'))
+    expect(screen.getByText('终端 1')).toBeInTheDocument()
+  })
+
+  it('指针拖动任务时显示明确的插入位置，并按位置请求重排', () => {
+    const onReorderTasks = vi.fn()
+    const secondTask: TaskRecord = {...runningTask, id: 'task-2', title: '补充发布说明'}
+    render(
+      <TaskTree
+        tasks={[runningTask, secondTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        onReorderTasks={onReorderTasks}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const source = screen.getByText('整理发布说明').closest('[data-task-id]')
+    const target = screen.getByText('补充发布说明').closest('[data-task-id]')
+    if (!source || !target) {
+      throw new Error('未找到可拖动的任务条目')
+    }
+    Object.defineProperty(target, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({top: 100, height: 48}),
+    })
+    const restorePointerTarget = mockPointerTarget(target)
+    try {
+      dispatchPointerEvent(source, 'pointerdown', 1, 20, 0)
+      dispatchPointerEvent(source, 'pointermove', 1, 20, 105)
+
+      expect(screen.getByRole('status', {name: '将任务插入“补充发布说明”之前'})).toBeInTheDocument()
+
+      dispatchPointerEvent(source, 'pointerup', 1, 20, 105)
+      expect(onReorderTasks).toHaveBeenCalledWith('task-1', 'task-2', 'before')
+
+      dispatchPointerEvent(source, 'pointerdown', 2, 20, 0)
+      dispatchPointerEvent(source, 'pointermove', 2, 20, 140)
+
+      expect(screen.getByRole('status', {name: '将任务插入“补充发布说明”之后'})).toBeInTheDocument()
+    } finally {
+      restorePointerTarget()
+    }
+  })
+
+  it('指针移动到目标任务的终端子项时按目标任务之后排序', () => {
+    const onReorderTasks = vi.fn()
+    const secondTask: TaskRecord = {...runningTask, id: 'task-2', title: '补充发布说明'}
+    const secondTerminal: TerminalRecord = {...terminal, id: 'terminal-2', taskId: 'task-2'}
+    render(
+      <TaskTree
+        tasks={[runningTask, secondTask]}
+        terminals={[secondTerminal]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        onReorderTasks={onReorderTasks}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const source = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!source) {
+      throw new Error('未找到可拖动的任务条目')
+    }
+    const restorePointerTarget = mockPointerTarget(screen.getByText('终端 1'))
+    try {
+      dispatchPointerEvent(source, 'pointerdown', 1, 20, 0)
+      dispatchPointerEvent(source, 'pointermove', 1, 20, 100)
+      dispatchPointerEvent(source, 'pointerup', 1, 20, 100)
+
+      expect(onReorderTasks).toHaveBeenCalledWith('task-1', 'task-2', 'after')
+    } finally {
+      restorePointerTarget()
+    }
+  })
+
+  it('指针排序时显示被移动任务的预览，并在释放后隐藏', () => {
+    const secondTask: TaskRecord = {...runningTask, id: 'task-2', title: '补充发布说明'}
+    render(
+      <TaskTree
+        tasks={[runningTask, secondTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const source = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!source) {
+      throw new Error('未找到可拖动的任务条目')
+    }
+    const restorePointerTarget = mockPointerTarget(screen.getByText('补充发布说明'))
+    try {
+      dispatchPointerEvent(source, 'pointerdown', 1, 20, 0)
+      dispatchPointerEvent(source, 'pointermove', 1, 20, 100)
+
+      expect(screen.getByRole('status', {name: '正在调整任务“整理发布说明”'})).toHaveTextContent('整理发布说明')
+
+      dispatchPointerEvent(source, 'pointerup', 1, 20, 100)
+      expect(screen.queryByRole('status', {name: '正在调整任务“整理发布说明”'})).not.toBeInTheDocument()
+
+      dispatchPointerEvent(source, 'pointerdown', 2, 20, 0)
+      dispatchPointerEvent(source, 'pointermove', 2, 20, 100)
+      dispatchPointerEvent(source, 'pointercancel', 2, 20, 100)
+      expect(screen.queryByRole('status', {name: '正在调整任务“整理发布说明”'})).not.toBeInTheDocument()
+    } finally {
+      restorePointerTarget()
+    }
+  })
+
+  it('指针排序时保持终端子节点可见且不改变展开状态', () => {
+    const secondTask: TaskRecord = {...runningTask, id: 'task-2', title: '补充发布说明'}
+    const secondTerminal: TerminalRecord = {...terminal, id: 'terminal-2', taskId: 'task-2'}
+    render(
+      <TaskTree
+        tasks={[runningTask, secondTask]}
+        terminals={[terminal, secondTerminal]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const taskItem = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!taskItem) {
+      throw new Error('未找到可拖动的任务条目')
+    }
+    expect(screen.getAllByText('终端 1')).toHaveLength(2)
+
+    const taskTree = screen.getByRole('navigation', {name: '任务和终端'})
+    const restorePointerTarget = mockPointerTarget(screen.getByText('补充发布说明'))
+    try {
+      dispatchPointerEvent(taskItem, 'pointerdown', 1, 20, 0)
+      dispatchPointerEvent(taskItem, 'pointermove', 1, 20, 100)
+      expect(taskTree).not.toHaveAttribute('data-task-dragging')
+      expect(screen.getAllByText('终端 1')).toHaveLength(2)
+      expect(screen.getAllByText('终端 1')[0]).toBeVisible()
+
+      dispatchPointerEvent(taskItem, 'pointerup', 1, 20, 100)
+      expect(taskTree).not.toHaveAttribute('data-task-dragging')
+      expect(screen.getAllByText('终端 1')[0]).toBeVisible()
+    } finally {
+      restorePointerTarget()
+    }
   })
 
   it('按配置顺序从右键和下拉菜单运行自定义任务命令', async () => {

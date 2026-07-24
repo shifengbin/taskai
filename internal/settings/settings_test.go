@@ -32,6 +32,28 @@ func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 	}
 }
 
+func TestValidateDefaultsAndValidatesActiveTaskStatus(t *testing.T) {
+	validated, err := Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if validated.ActiveTaskStatus != TaskStatusPending {
+		t.Errorf("Validate() ActiveTaskStatus = %q, want %q", validated.ActiveTaskStatus, TaskStatusPending)
+	}
+
+	_, err = Validate(Settings{
+		WorkspaceRoot:    t.TempDir(),
+		TaskTreeWidth:    DefaultTaskTreeWidth,
+		ActiveTaskStatus: "archived",
+	})
+	if err == nil {
+		t.Fatal("Validate() error = nil, want invalid active task status error")
+	}
+}
+
 func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 	validated, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),

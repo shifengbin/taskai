@@ -28,6 +28,7 @@ export namespace settings {
 	    colorScheme: string;
 	    shellPath: string;
 	    taskMenuItems: TaskMenuItem[];
+	    activeTaskStatus: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -40,6 +41,7 @@ export namespace settings {
 	        this.colorScheme = source["colorScheme"];
 	        this.shellPath = source["shellPath"];
 	        this.taskMenuItems = this.convertValues(source["taskMenuItems"], TaskMenuItem);
+	        this.activeTaskStatus = source["activeTaskStatus"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

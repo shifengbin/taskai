@@ -76,6 +76,71 @@ func TestServiceUpdatesTaskDetailsWithoutChangingLifecycle(t *testing.T) {
 	}
 }
 
+func TestServiceReordersTasksWithinStatusAndPersistsOrder(t *testing.T) {
+	service, repository, _ := newService(t)
+	first, err := service.CreateTask("第一个待办", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	running, err := service.CreateTask("执行中的任务", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	second, err := service.CreateTask("第二个待办", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Tasks[1].Status = task.StatusRunning
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	reordered, err := service.ReorderTasks(task.StatusPending, []string{second.ID, first.ID})
+
+	if err != nil {
+		t.Fatalf("ReorderTasks() error = %v", err)
+	}
+	if got, want := []string{reordered[0].ID, reordered[1].ID, reordered[2].ID}, []string{second.ID, running.ID, first.ID}; !sameTaskIDs(got, want) {
+		t.Errorf("ReorderTasks() IDs = %#v, want %#v", got, want)
+	}
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := []string{persisted.Tasks[0].ID, persisted.Tasks[1].ID, persisted.Tasks[2].ID}, []string{second.ID, running.ID, first.ID}; !sameTaskIDs(got, want) {
+		t.Errorf("persisted task IDs = %#v, want %#v", got, want)
+	}
+}
+
+func TestServiceRejectsInvalidTaskOrder(t *testing.T) {
+	service, repository, _ := newService(t)
+	first, err := service.CreateTask("第一个待办", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	second, err := service.CreateTask("第二个待办", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	_, err = service.ReorderTasks(task.StatusPending, []string{first.ID, first.ID})
+	if err == nil {
+		t.Fatal("ReorderTasks() error = nil, want duplicate task ID error")
+	}
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := []string{persisted.Tasks[0].ID, persisted.Tasks[1].ID}, []string{first.ID, second.ID}; !sameTaskIDs(got, want) {
+		t.Errorf("invalid order changed persisted IDs = %#v, want %#v", got, want)
+	}
+}
+
 func TestServiceStartsPendingTaskWithWorkspaceSnapshot(t *testing.T) {
 	service, _, root := newService(t)
 	created, err := service.CreateTask("编写登录页", "", task.DefaultColor)
@@ -256,4 +321,16 @@ func newServiceWithRoot(t *testing.T, root string) (*Service, storage.Repository
 	return New(repository, closer, func() time.Time {
 		return time.Date(2026, time.July, 22, 10, 0, 0, 0, time.UTC)
 	}), repository
+}
+
+func sameTaskIDs(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
 }

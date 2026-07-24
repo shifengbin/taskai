@@ -54,6 +54,48 @@ func (service *Service) ListTasks() ([]task.Task, error) {
 	return data.Tasks, nil
 }
 
+func (service *Service) ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error) {
+	if !isTaskStatus(status) {
+		return nil, fmt.Errorf("不支持的任务状态: %q", status)
+	}
+	data, err := service.repository.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	positions := make([]int, 0)
+	tasksByID := make(map[string]task.Task)
+	for index, current := range data.Tasks {
+		if current.Status != status {
+			continue
+		}
+		positions = append(positions, index)
+		tasksByID[current.ID] = current
+	}
+	if len(taskIDs) != len(positions) {
+		return nil, fmt.Errorf("任务排序数量不匹配")
+	}
+
+	seen := make(map[string]bool, len(taskIDs))
+	for _, taskID := range taskIDs {
+		if seen[taskID] {
+			return nil, fmt.Errorf("任务排序包含重复任务: %q", taskID)
+		}
+		if _, ok := tasksByID[taskID]; !ok {
+			return nil, fmt.Errorf("任务排序包含无效任务: %q", taskID)
+		}
+		seen[taskID] = true
+	}
+	for index, position := range positions {
+		data.Tasks[position] = tasksByID[taskIDs[index]]
+	}
+	if err := service.repository.Save(data); err != nil {
+		return nil, err
+	}
+
+	return data.Tasks, nil
+}
+
 func (service *Service) UpdateTask(taskID, title, description, color string) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
@@ -143,4 +185,8 @@ func taskIndex(tasks []task.Task, taskID string) (int, error) {
 	}
 
 	return 0, fmt.Errorf("任务不存在")
+}
+
+func isTaskStatus(status task.Status) bool {
+	return status == task.StatusPending || status == task.StatusRunning || status == task.StatusCompleted
 }

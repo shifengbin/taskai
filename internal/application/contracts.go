@@ -9,6 +9,7 @@ import (
 type TaskBinding interface {
 	CreateTask(title, description, color string) (task.Task, error)
 	ListTasks() ([]task.Task, error)
+	ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error)
 	UpdateTask(taskID, title, description, color string) (task.Task, error)
 	StartTask(taskID string) (task.Task, error)
 	FinishTask(taskID string) (task.Task, error)

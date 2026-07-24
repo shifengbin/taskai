@@ -69,6 +69,27 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	}
 }
 
+func TestAppReordersTasksWithinStatus(t *testing.T) {
+	app := newApp(t.TempDir())
+	first, err := app.CreateTask("第一个待办", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建第一个任务: %v", err)
+	}
+	second, err := app.CreateTask("第二个待办", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建第二个任务: %v", err)
+	}
+
+	reordered, err := app.ReorderTasks(task.StatusPending, []string{second.ID, first.ID})
+
+	if err != nil {
+		t.Fatalf("重排任务: %v", err)
+	}
+	if len(reordered) != 2 || reordered[0].ID != second.ID || reordered[1].ID != first.ID {
+		t.Fatalf("重排任务结果 = %#v", reordered)
+	}
+}
+
 func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
 	app := newApp(t.TempDir())
 	created, err := app.CreateTask("打开目录", "", task.DefaultColor)

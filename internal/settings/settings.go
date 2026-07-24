@@ -19,6 +19,16 @@ const (
 
 const DefaultColorScheme = ColorSchemeLight
 
+type TaskStatus string
+
+const (
+	TaskStatusPending   TaskStatus = "pending"
+	TaskStatusRunning   TaskStatus = "running"
+	TaskStatusCompleted TaskStatus = "completed"
+)
+
+const DefaultActiveTaskStatus = TaskStatusPending
+
 type TaskMenuItemKind string
 
 const (
@@ -42,20 +52,22 @@ type TaskMenuItem struct {
 }
 
 type Settings struct {
-	WorkspaceRoot string         `json:"workspaceRoot"`
-	TaskTreeWidth int            `json:"taskTreeWidth"`
-	ColorScheme   ColorScheme    `json:"colorScheme"`
-	ShellPath     string         `json:"shellPath"`
-	TaskMenuItems []TaskMenuItem `json:"taskMenuItems"`
+	WorkspaceRoot    string         `json:"workspaceRoot"`
+	TaskTreeWidth    int            `json:"taskTreeWidth"`
+	ColorScheme      ColorScheme    `json:"colorScheme"`
+	ShellPath        string         `json:"shellPath"`
+	TaskMenuItems    []TaskMenuItem `json:"taskMenuItems"`
+	ActiveTaskStatus TaskStatus     `json:"activeTaskStatus"`
 }
 
 func Default(applicationDataDirectory string) Settings {
 	return Settings{
-		WorkspaceRoot: filepath.Join(applicationDataDirectory, "workspaces"),
-		TaskTreeWidth: DefaultTaskTreeWidth,
-		ColorScheme:   DefaultColorScheme,
-		ShellPath:     DefaultShellPath(),
-		TaskMenuItems: DefaultTaskMenuItems(),
+		WorkspaceRoot:    filepath.Join(applicationDataDirectory, "workspaces"),
+		TaskTreeWidth:    DefaultTaskTreeWidth,
+		ColorScheme:      DefaultColorScheme,
+		ShellPath:        DefaultShellPath(),
+		TaskMenuItems:    DefaultTaskMenuItems(),
+		ActiveTaskStatus: DefaultActiveTaskStatus,
 	}
 }
 
@@ -76,6 +88,12 @@ func Validate(next Settings) (Settings, error) {
 	}
 	if next.ColorScheme != ColorSchemeLight && next.ColorScheme != ColorSchemeDark {
 		return Settings{}, fmt.Errorf("不支持的颜色模式: %q", next.ColorScheme)
+	}
+	if next.ActiveTaskStatus == "" {
+		next.ActiveTaskStatus = DefaultActiveTaskStatus
+	}
+	if next.ActiveTaskStatus != TaskStatusPending && next.ActiveTaskStatus != TaskStatusRunning && next.ActiveTaskStatus != TaskStatusCompleted {
+		return Settings{}, fmt.Errorf("不支持的当前任务标签: %q", next.ActiveTaskStatus)
 	}
 	if strings.TrimSpace(next.ShellPath) == "" {
 		next.ShellPath = DefaultShellPath()

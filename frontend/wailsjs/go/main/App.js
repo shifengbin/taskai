@@ -46,6 +46,10 @@ export function PrepareQuit() {
   return window['go']['main']['App']['PrepareQuit']();
 }
 
+export function ReorderTasks(arg1, arg2) {
+  return window['go']['main']['App']['ReorderTasks'](arg1, arg2);
+}
+
 export function ResizeTerminal(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ResizeTerminal'](arg1, arg2, arg3, arg4);
 }

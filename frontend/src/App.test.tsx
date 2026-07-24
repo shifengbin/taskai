@@ -1,4 +1,4 @@
-import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
+import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
@@ -6,6 +6,7 @@ const bindings = vi.hoisted(() => ({
   CreateTask: vi.fn(),
   UpdateTask: vi.fn(),
   ListTasks: vi.fn(),
+  ReorderTasks: vi.fn(),
   StartTask: vi.fn(),
   FinishTask: vi.fn(),
   GetSettings: vi.fn(),
@@ -35,12 +36,19 @@ const fixedTaskMenuItems = [
   {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
 ]
 
+function dispatchPointerEvent(target: Element, type: string, pointerId: number, clientX: number, clientY: number) {
+  const event = new MouseEvent(type, {bubbles: true, cancelable: true, button: 0, clientX, clientY})
+  Object.defineProperty(event, 'pointerId', {configurable: true, value: pointerId})
+  fireEvent(target, event)
+}
+
 describe('App confirmation flows', () => {
   afterEach(cleanup)
 
   beforeEach(() => {
     Object.values(bindings).forEach((mock) => mock.mockReset())
     Object.values(runtime).forEach((mock) => mock.mockReset())
+    bindings.SaveSettings.mockImplementation(async (next) => next)
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
@@ -57,7 +65,7 @@ describe('App confirmation flows', () => {
     const user = userEvent.setup()
     render(<App/>)
 
-    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
     await screen.findByText('清理临时文件')
     await user.click(screen.getByRole('button', {name: '结束'}))
     expect(screen.getByText('结束任务？')).toBeInTheDocument()
@@ -78,7 +86,7 @@ describe('App confirmation flows', () => {
     bindings.PrepareQuit.mockResolvedValue(undefined)
     render(<App/>)
 
-    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
     await screen.findByText('清理临时文件')
     await user.click(screen.getByRole('button', {name: '退出应用'}))
     expect(screen.getByText('仍有执行中的任务')).toBeInTheDocument()
@@ -89,12 +97,89 @@ describe('App confirmation flows', () => {
     expect(bindings.FinishTask).not.toHaveBeenCalled()
   })
 
+  it('恢复上次选中的任务标签，并在切换后持久化选择', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'running',
+    })
+    render(<App/>)
+
+    const runningTab = await screen.findByRole('tab', {name: /执行中/})
+    expect(runningTab).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('清理临时文件')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', {name: /已完成/}))
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'completed'})))
+  })
+
+  it('指针拖动任务条目后持久化同状态内的新顺序', async () => {
+    bindings.ListTasks.mockResolvedValue([
+      {id: 'task-1', title: '先处理的任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z'},
+      {id: 'task-2', title: '后处理的任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z'},
+    ])
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'running',
+    })
+    bindings.ReorderTasks.mockResolvedValue([
+      {id: 'task-2', title: '后处理的任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z'},
+      {id: 'task-1', title: '先处理的任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z'},
+    ])
+    render(<App/>)
+
+    const source = (await screen.findByText('先处理的任务')).closest('[data-task-id]')
+    const target = screen.getByText('后处理的任务').closest('[data-task-id]')
+    if (!source || !target) {
+      throw new Error('未找到可拖动的任务条目')
+    }
+    Object.defineProperty(target, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({top: 100, height: 48}),
+    })
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'elementFromPoint')
+    Object.defineProperty(document, 'elementFromPoint', {configurable: true, value: () => target})
+    try {
+      dispatchPointerEvent(source, 'pointerdown', 1, 20, 0)
+      dispatchPointerEvent(source, 'pointermove', 1, 20, 140)
+      dispatchPointerEvent(source, 'pointerup', 1, 20, 140)
+
+      await waitFor(() => expect(bindings.ReorderTasks).toHaveBeenCalledWith('running', ['task-2', 'task-1']))
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(document, 'elementFromPoint', descriptor)
+      } else {
+        Reflect.deleteProperty(document, 'elementFromPoint')
+      }
+    }
+  })
+
+  it('初始数据加载完成前仅显示稳定的加载页面', async () => {
+    let resolveTasks: (tasks: Array<Record<string, unknown>>) => void
+    bindings.ListTasks.mockImplementation(() => new Promise((resolve) => {
+      resolveTasks = resolve
+    }))
+
+    render(<App/>)
+
+    expect(screen.getByRole('status', {name: '正在加载任务工作台'})).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', {name: '任务和终端'})).not.toBeInTheDocument()
+
+    resolveTasks!([{
+      id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+    }])
+
+    await screen.findByRole('navigation', {name: '任务和终端'})
+    expect(screen.queryByRole('status', {name: '正在加载任务工作台'})).not.toBeInTheDocument()
+  })
+
   it('保存颜色模式并在当前会话中保留选择', async () => {
     const user = userEvent.setup()
     bindings.SaveSettings.mockImplementation(async (next) => next)
     render(<App/>)
 
-    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(await screen.findByRole('button', {name: '设置'}))
     await user.click(screen.getByLabelText('颜色模式'))
     await user.click(screen.getByRole('option', {name: '暗色'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
@@ -105,10 +190,11 @@ describe('App confirmation flows', () => {
       colorScheme: 'dark',
       shellPath: '/bin/sh',
       taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'pending',
     })
 
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
-    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(await screen.findByRole('button', {name: '设置'}))
     expect(screen.getByLabelText('颜色模式')).toHaveTextContent('暗色')
   })
 
@@ -118,7 +204,7 @@ describe('App confirmation flows', () => {
     render(<App/>)
 
     await waitFor(() => expect(bindings.DetectShells).toHaveBeenCalledOnce())
-    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(await screen.findByRole('button', {name: '设置'}))
     await user.click(screen.getByLabelText('探测到的 Shell'))
     await user.click(screen.getByRole('option', {name: '/bin/zsh'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
@@ -129,6 +215,7 @@ describe('App confirmation flows', () => {
       colorScheme: 'light',
       shellPath: '/bin/zsh',
       taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'pending',
     })
   })
 
@@ -150,6 +237,7 @@ describe('App confirmation flows', () => {
       colorScheme: 'light',
       shellPath: '/custom/shell',
       taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'pending',
     })
   })
 
@@ -160,7 +248,7 @@ describe('App confirmation flows', () => {
     })
     render(<App/>)
 
-    await user.click(screen.getByRole('button', {name: '新建任务'}))
+    await user.click(await screen.findByRole('button', {name: '新建任务'}))
     await user.type(await screen.findByRole('textbox', {name: '标题'}), '彩色任务')
     fireEvent.change(screen.getByLabelText('任务颜色'), {target: {value: '#22c55e'}})
     await user.click(screen.getByRole('button', {name: '创建'}))
@@ -175,7 +263,7 @@ describe('App confirmation flows', () => {
     })
     render(<App/>)
 
-    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
     expect(screen.getByText('编辑任务')).toBeInTheDocument()
@@ -200,7 +288,7 @@ describe('App confirmation flows', () => {
     bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
     render(<App/>)
 
-    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
     await screen.findByText('终端视图')
@@ -226,7 +314,7 @@ describe('App confirmation flows', () => {
     bindings.RunTaskCommand.mockResolvedValue(undefined)
     render(<App/>)
 
-    await user.click(screen.getByRole('tab', {name: /执行中/}))
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
     expect(bindings.CreateCommandTerminal).toHaveBeenCalledWith('task-1', 'codex', ['--full-auto'], 100, 32)
@@ -237,7 +325,7 @@ describe('App confirmation flows', () => {
     expect(bindings.RunTaskCommand).toHaveBeenCalledWith('task-1', 'code', ['.'])
   })
 
-  it('设置中可新增、编辑自定义菜单项并调整系统项顺序', async () => {
+  it('设置中通过独立弹窗配置菜单项并调整系统项顺序', async () => {
     const user = userEvent.setup()
     bindings.SaveSettings.mockImplementation(async (next) => next)
     bindings.GetSettings.mockResolvedValue({
@@ -250,20 +338,29 @@ describe('App confirmation flows', () => {
     })
     render(<App/>)
 
-    await user.click(screen.getByRole('button', {name: '设置'}))
-    await user.click(screen.getByRole('button', {name: '新增自定义菜单项'}))
-    await user.clear(screen.getByRole('textbox', {name: '菜单名称'}))
-    await user.type(screen.getByRole('textbox', {name: '菜单名称'}), 'Codex')
-    await user.type(screen.getByRole('textbox', {name: '启动命令'}), 'codex')
-    await user.type(screen.getByRole('textbox', {name: '启动参数（每行一个）'}), '--full-auto\n--dangerously-bypass-approvals-and-sandbox')
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    expect(screen.getByText('工作区与外观')).toBeInTheDocument()
+    expect(screen.getByText('终端 Shell')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '新增菜单项'}))
 
-    await user.click(screen.getByRole('button', {name: '上移 打开任务文件夹'}))
-    await user.click(screen.getByRole('button', {name: '编辑菜单项 编辑任务'}))
-    expect(screen.getByText('系统固定菜单项仅可调整顺序。')).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', {name: '菜单名称'})).not.toBeInTheDocument()
+    const createDialog = screen.getByRole('dialog', {name: '新增菜单项'})
+    await user.clear(within(createDialog).getByRole('textbox', {name: '菜单名称'}))
+    await user.type(within(createDialog).getByRole('textbox', {name: '菜单名称'}), 'Codex')
+    await user.type(within(createDialog).getByRole('textbox', {name: '启动命令'}), 'codex')
+    await user.type(within(createDialog).getByRole('textbox', {name: '启动参数（每行一个）'}), '--full-auto\n--dangerously-bypass-approvals-and-sandbox')
+    await user.click(within(createDialog).getByRole('button', {name: '添加菜单项'}))
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增菜单项'})).not.toBeInTheDocument())
+    expect(bindings.SaveSettings).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', {name: '编辑菜单项 Codex'}))
-    expect(screen.getByRole('switch', {name: '显示终端'})).toBeChecked()
+    const editDialog = screen.getByRole('dialog', {name: '编辑菜单项'})
+    await user.clear(within(editDialog).getByRole('textbox', {name: '菜单名称'}))
+    await user.type(within(editDialog).getByRole('textbox', {name: '菜单名称'}), 'Codex CLI')
+    expect(within(editDialog).getByRole('switch', {name: '显示终端'})).toBeChecked()
+    await user.click(within(editDialog).getByRole('button', {name: '保存菜单项'}))
+
+    await user.click(screen.getByRole('button', {name: '上移 打开任务文件夹'}))
+    expect(screen.queryByRole('button', {name: '编辑菜单项 编辑任务'})).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '保存'}))
 
     const saved = bindings.SaveSettings.mock.calls[0][0]
@@ -271,7 +368,7 @@ describe('App confirmation flows', () => {
       'system.edit-task', 'system.open-folder', 'system.create-terminal', saved.taskMenuItems[3].id,
     ])
     expect(saved.taskMenuItems[3]).toMatchObject({
-      kind: 'command', name: 'Codex', command: 'codex', arguments: ['--full-auto', '--dangerously-bypass-approvals-and-sandbox'], showTerminal: true,
+      kind: 'command', name: 'Codex CLI', command: 'codex', arguments: ['--full-auto', '--dangerously-bypass-approvals-and-sandbox'], showTerminal: true,
     })
   })
 })

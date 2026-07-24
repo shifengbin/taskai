@@ -36,6 +36,7 @@ export interface SettingsRecord {
 	colorScheme: ColorScheme
 	shellPath: string
 	taskMenuItems: TaskMenuItem[]
+	activeTaskStatus: TaskStatus
 }
 
 export interface TaskMenuItem {
