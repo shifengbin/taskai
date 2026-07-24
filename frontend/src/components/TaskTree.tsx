@@ -64,8 +64,10 @@ interface TaskTreeProps {
   terminals: TerminalRecord[]
   menuItems?: TaskMenuItem[]
   activeStatus: TaskStatus
+  expandedTasks?: Record<string, boolean>
   selectedTerminalId?: string
   onChangeStatus(status: TaskStatus): void
+  onToggleTaskExpanded?(taskID: string): void
   onSelectTask(task: TaskRecord): void
   onSelectTerminal(terminal: TerminalRecord): void
   onCreateTerminal(taskID: string): void
@@ -83,8 +85,10 @@ export function TaskTree({
   terminals,
   menuItems = defaultTaskMenuItems,
   activeStatus,
+  expandedTasks,
   selectedTerminalId,
   onChangeStatus,
+  onToggleTaskExpanded,
   onSelectTask,
   onSelectTerminal,
   onCreateTerminal,
@@ -96,7 +100,7 @@ export function TaskTree({
   onCloseTerminal,
   onReorderTasks,
 }: TaskTreeProps) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [localExpandedTasks, setLocalExpandedTasks] = useState<Record<string, boolean>>({})
   const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null)
   const [draggedTaskID, setDraggedTaskID] = useState<string>()
   const [dragPreviewPosition, setDragPreviewPosition] = useState<TaskDragPreviewPosition>()
@@ -119,8 +123,13 @@ export function TaskTree({
   }, {pending: 0, running: 0, completed: 0}), [tasks])
   const taskMenuTask = taskMenu ? tasks.find((task) => task.id === taskMenu.taskID) : undefined
   const draggedTask = draggedTaskID ? tasks.find((task) => task.id === draggedTaskID) : undefined
+  const expanded = expandedTasks ?? localExpandedTasks
   const toggleExpanded = (taskID: string) => {
-    setExpanded((current) => ({...current, [taskID]: !(current[taskID] ?? true)}))
+    if (onToggleTaskExpanded) {
+      onToggleTaskExpanded(taskID)
+      return
+    }
+    setLocalExpandedTasks((current) => ({...current, [taskID]: !(current[taskID] ?? true)}))
   }
 
   const getDropPosition = (taskItem: HTMLElement, clientY: number): TaskDropPosition => {
@@ -308,16 +317,18 @@ export function TaskTree({
                     '&:active': {cursor: 'grabbing'},
                   }}
                 >
-                <IconButton
-                  aria-label={isExpanded ? '收起终端' : '展开终端'}
-                  size="small"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    toggleExpanded(task.id)
-                  }}
-                >
-                  {isExpanded ? <ExpandMoreIcon fontSize="small"/> : <ChevronRightIcon fontSize="small"/>}
-                </IconButton>
+                {task.status === 'running' && (
+                  <IconButton
+                    aria-label={isExpanded ? '收起终端' : '展开终端'}
+                    size="small"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      toggleExpanded(task.id)
+                    }}
+                  >
+                    {isExpanded ? <ExpandMoreIcon fontSize="small"/> : <ChevronRightIcon fontSize="small"/>}
+                  </IconButton>
+                )}
                 <ListItemText
                   primary={task.title}
                   secondary={task.description || undefined}

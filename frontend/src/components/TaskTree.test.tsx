@@ -106,6 +106,48 @@ describe('TaskTree', () => {
     expect(screen.queryByRole('button', {name: '执行'})).not.toBeInTheDocument()
   })
 
+  it('仅执行中任务显示展开或收起终端按钮', () => {
+    const taskProps = {
+      terminals: [],
+      selectedTerminalId: undefined,
+      onSelectTask: vi.fn(),
+      onSelectTerminal: vi.fn(),
+      onCreateTerminal: vi.fn(),
+      onEditTask: vi.fn(),
+      onOpenTaskFolder: vi.fn(),
+      onStartTask: vi.fn(),
+      onFinishTask: vi.fn(),
+      onChangeStatus: vi.fn(),
+    }
+    const {rerender} = render(
+      <TaskTree
+        {...taskProps}
+        tasks={[{...runningTask, status: 'pending'}]}
+        activeStatus="pending"
+      />,
+    )
+
+    expect(screen.queryByRole('button', {name: '收起终端'})).not.toBeInTheDocument()
+
+    rerender(
+      <TaskTree
+        {...taskProps}
+        tasks={[{...runningTask, status: 'completed'}]}
+        activeStatus="completed"
+      />,
+    )
+    expect(screen.queryByRole('button', {name: '收起终端'})).not.toBeInTheDocument()
+
+    rerender(
+      <TaskTree
+        {...taskProps}
+        tasks={[runningTask]}
+        activeStatus="running"
+      />,
+    )
+    expect(screen.getByRole('button', {name: '收起终端'})).toBeInTheDocument()
+  })
+
   it('状态由标签页表达，不在任务条目中重复显示', () => {
     render(
       <TaskTree

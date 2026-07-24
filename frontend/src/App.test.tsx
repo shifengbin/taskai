@@ -267,6 +267,22 @@ describe('App confirmation flows', () => {
     expect(within(taskTreeHeader).getByRole('button', {name: '新建任务'})).toBeInTheDocument()
   })
 
+  it('将一键展开和收起按钮放在新建任务按钮旁边', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    const taskTreeHeader = (await screen.findByText('任务与终端')).parentElement
+    if (!taskTreeHeader) {
+      throw new Error('未找到任务树标题栏')
+    }
+
+    expect(within(taskTreeHeader).getByRole('button', {name: '收起全部任务'})).toBeInTheDocument()
+    expect(within(screen.getByRole('tablist', {name: '任务状态筛选'})).queryByRole('button', {name: /全部任务/})).not.toBeInTheDocument()
+
+    await user.click(within(taskTreeHeader).getByRole('button', {name: '收起全部任务'}))
+    expect(within(taskTreeHeader).getByRole('button', {name: '展开全部任务'})).toBeInTheDocument()
+  })
+
   it('暗色模式默认使用低对比但可见的面板分割条', async () => {
     bindings.GetSettings.mockResolvedValue({
       workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'dark', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,

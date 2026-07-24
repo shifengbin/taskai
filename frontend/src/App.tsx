@@ -30,6 +30,8 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
+import UnfoldLessOutlinedIcon from '@mui/icons-material/UnfoldLessOutlined'
+import UnfoldMoreOutlinedIcon from '@mui/icons-material/UnfoldMoreOutlined'
 
 import {api} from './api'
 import {TaskTree} from './components/TaskTree'
@@ -59,6 +61,7 @@ export default function App() {
   const [selectedTaskID, setSelectedTaskID] = useState<string>()
   const [selectedTerminalID, setSelectedTerminalID] = useState<string>()
   const [activeTaskStatus, setActiveTaskStatus] = useState<TaskStatus>('pending')
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({})
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
@@ -106,6 +109,16 @@ export default function App() {
   const selectedTask = tasks.find((task) => task.id === selectedTaskID)
   const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
   const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
+  const areAllTasksExpanded = tasks.length > 0 && tasks.every((task) => expandedTasks[task.id] ?? true)
+
+  const toggleTaskExpanded = (taskID: string) => {
+    setExpandedTasks((current) => ({...current, [taskID]: !(current[taskID] ?? true)}))
+  }
+
+  const toggleAllTasksExpanded = () => {
+    const nextExpanded = !areAllTasksExpanded
+    setExpandedTasks(Object.fromEntries(tasks.map((task) => [task.id, nextExpanded])))
+  }
 
   if (!initialLoadComplete) {
     return (
@@ -448,6 +461,18 @@ export default function App() {
             <Box sx={{height: 42, display: 'flex', alignItems: 'center', px: 1.25, borderBottom: 1, borderColor: 'divider'}}>
               <Typography variant="overline" color="text.secondary">任务与终端</Typography>
               <Box sx={{flex: 1}}/>
+              <Tooltip title={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'}>
+                <span>
+                  <IconButton
+                    aria-label={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'}
+                    disabled={tasks.length === 0}
+                    onClick={toggleAllTasksExpanded}
+                    size="small"
+                  >
+                    {areAllTasksExpanded ? <UnfoldLessOutlinedIcon fontSize="small"/> : <UnfoldMoreOutlinedIcon fontSize="small"/>}
+                  </IconButton>
+                </span>
+              </Tooltip>
               <Tooltip title="新建任务">
                 <IconButton aria-label="新建任务" onClick={() => openTaskDialog()} color="primary" size="small">
                   <AddOutlinedIcon fontSize="small"/>
@@ -460,8 +485,10 @@ export default function App() {
                 terminals={terminals}
                 menuItems={taskMenuItems}
                 activeStatus={activeTaskStatus}
+                expandedTasks={expandedTasks}
                 selectedTerminalId={selectedTerminalID}
                 onChangeStatus={(status) => void changeActiveTaskStatus(status)}
+                onToggleTaskExpanded={toggleTaskExpanded}
                 onSelectTask={(task) => {
                   setSelectedTaskID(task.id)
                   setSelectedTerminalID(undefined)
