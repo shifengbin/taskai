@@ -256,6 +256,27 @@ describe('App confirmation flows', () => {
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
   })
 
+  it('将新建任务按钮放在任务与终端标题栏中', async () => {
+    render(<App/>)
+
+    const taskTreeHeader = (await screen.findByText('任务与终端')).parentElement
+    if (!taskTreeHeader) {
+      throw new Error('未找到任务树标题栏')
+    }
+
+    expect(within(taskTreeHeader).getByRole('button', {name: '新建任务'})).toBeInTheDocument()
+  })
+
+  it('暗色模式默认使用低对比但可见的面板分割条', async () => {
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'dark', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+    })
+    render(<App/>)
+
+    const divider = await screen.findByRole('separator', {name: '调整任务树宽度'})
+    expect(getComputedStyle(divider).backgroundColor).toBe('rgb(30, 41, 59)')
+  })
+
   it('通过任务操作编辑标题、描述和颜色', async () => {
     const user = userEvent.setup()
     bindings.UpdateTask.mockResolvedValue({

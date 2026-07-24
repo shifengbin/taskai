@@ -416,11 +416,6 @@ export default function App() {
             <TaskAltOutlinedIcon color="primary"/>
             <Typography variant="subtitle1" sx={{fontWeight: 800, letterSpacing: 0.3}}>任务工作台</Typography>
             <Box sx={{flex: 1}}/>
-            <Tooltip title="新建任务">
-              <IconButton aria-label="新建任务" onClick={() => openTaskDialog()} color="primary">
-                <AddOutlinedIcon/>
-              </IconButton>
-            </Tooltip>
             <Tooltip title="设置">
               <IconButton
                 aria-label="设置"
@@ -450,8 +445,14 @@ export default function App() {
 
         <Box sx={{display: 'grid', gridTemplateColumns: `${treeWidth}px 6px minmax(0, 1fr)`, minHeight: 0}}>
           <Box sx={{minWidth: 0, borderRight: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
-            <Box sx={{height: 42, display: 'flex', alignItems: 'center', px: 1.75, borderBottom: 1, borderColor: 'divider'}}>
+            <Box sx={{height: 42, display: 'flex', alignItems: 'center', px: 1.25, borderBottom: 1, borderColor: 'divider'}}>
               <Typography variant="overline" color="text.secondary">任务与终端</Typography>
+              <Box sx={{flex: 1}}/>
+              <Tooltip title="新建任务">
+                <IconButton aria-label="新建任务" onClick={() => openTaskDialog()} color="primary" size="small">
+                  <AddOutlinedIcon fontSize="small"/>
+                </IconButton>
+              </Tooltip>
             </Box>
             <Box sx={{height: 'calc(100% - 42px)'}}>
               <TaskTree
@@ -709,6 +710,7 @@ function createAppTheme(colorScheme: ColorScheme) {
       background: colorScheme === 'dark'
         ? {default: '#0f172a', paper: '#111827'}
         : {default: '#f8fafc', paper: '#ffffff'},
+      divider: colorScheme === 'dark' ? '#1e293b' : '#cbd5e1',
     },
     shape: {borderRadius: 8},
     typography: {fontFamily: 'Inter, "Noto Sans SC", system-ui, sans-serif'},
