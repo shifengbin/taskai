@@ -355,6 +355,24 @@ describe('App confirmation flows', () => {
     await waitFor(() => expect(screen.queryByText('终端视图')).not.toBeInTheDocument())
   })
 
+  it('主动关闭终端成功后从树和右侧终端视图移除', async () => {
+    const user = userEvent.setup()
+    bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active', title: '关闭目标'})
+    bindings.CloseTerminal.mockResolvedValue(undefined)
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await screen.findByText('终端视图')
+
+    await user.click(screen.getByRole('button', {name: '关闭终端'}))
+
+    await waitFor(() => expect(bindings.CloseTerminal).toHaveBeenCalledWith('task-1', 'terminal-1'))
+    await waitFor(() => expect(screen.queryAllByText('关闭目标')).toHaveLength(0))
+    expect(screen.queryByText('终端视图')).not.toBeInTheDocument()
+  })
+
   it('终端输出 OSC 标题后实时更新树节点和右侧终端栏', async () => {
     const user = userEvent.setup()
     let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'output'; data: string}) => void) | undefined

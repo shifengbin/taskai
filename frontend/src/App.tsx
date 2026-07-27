@@ -307,13 +307,19 @@ export default function App() {
     }
   }
 
-  const closeTerminal = async (terminal: TerminalRecord) => {
-    try {
-      await api.closeTerminal(terminal.taskId, terminal.id)
-    } catch (error) {
-      showError(error, setMessage)
+const closeTerminal = async (terminal: TerminalRecord) => {
+  try {
+    await api.closeTerminal(terminal.taskId, terminal.id)
+    setTerminals((current) => current.filter((currentTerminal) => (
+      currentTerminal.id !== terminal.id || currentTerminal.taskId !== terminal.taskId
+    )))
+    if (selectedTerminalID === terminal.id) {
+      setSelectedTerminalID(undefined)
     }
+  } catch (error) {
+    showError(error, setMessage)
   }
+}
 
   const saveSettings = async () => {
     if (!settingsDraft) {
