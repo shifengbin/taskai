@@ -4,6 +4,7 @@ import {
 	CreateCommandTerminal,
 	CreateTerminal,
 	DetectShells,
+	ExecuteTaskMenuCommand,
   FinishTask,
   GetSettings,
   HasRunningTasks,
@@ -21,7 +22,7 @@ import {
 import {settings as settingsModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {SettingsRecord, TaskRecord, TerminalEvent, TerminalRecord} from './types'
+import type {SettingsRecord, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
@@ -35,6 +36,7 @@ export const api = {
 	detectShells: () => DetectShells() as Promise<string[]>,
   createTerminal: (taskID: string, columns: number, rows: number) => CreateTerminal(taskID, columns, rows) as Promise<TerminalRecord>,
   createCommandTerminal: (taskID: string, command: string, arguments_: string[], columns: number, rows: number) => CreateCommandTerminal(taskID, command, arguments_, columns, rows) as Promise<TerminalRecord>,
+	executeTaskMenuCommand: (taskID: string, itemID: string, columns: number, rows: number) => ExecuteTaskMenuCommand(taskID, itemID, columns, rows) as Promise<TaskMenuCommandResult>,
   openTaskFolder: (taskID: string) => OpenTaskFolder(taskID),
   runTaskCommand: (taskID: string, command: string, arguments_: string[]) => RunTaskCommand(taskID, command, arguments_),
   writeTerminal: (taskID: string, terminalID: string, data: string) => WriteTerminal(taskID, terminalID, data),
@@ -48,7 +50,11 @@ export const api = {
     return () => EventsOff('task-terminal:event')
   },
   onCloseRequested(listener: () => void) {
-    EventsOn('application:close-requested', listener)
-    return () => EventsOff('application:close-requested')
+	EventsOn('application:close-requested', listener)
+	return () => EventsOff('application:close-requested')
   },
+	onTaskScriptError(listener: (message: string) => void) {
+		EventsOn('task-script:error', listener)
+		return () => EventsOff('task-script:error')
+	},
 }

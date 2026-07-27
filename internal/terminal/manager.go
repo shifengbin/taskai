@@ -13,10 +13,11 @@ type Manager struct {
 	backend Backend
 	publish func(Event)
 
-	mu           sync.Mutex
-	sessions     map[string]map[string]*managedSession
-	closed       map[string]map[string]bool
-	closingTasks map[string]bool
+	mu            sync.Mutex
+	sessions      map[string]map[string]*managedSession
+	closed        map[string]map[string]bool
+	exitCallbacks map[string]map[string][]func()
+	closingTasks  map[string]bool
 }
 
 type managedSession struct {
@@ -30,11 +31,12 @@ func NewManager(backend Backend, publish func(Event)) *Manager {
 		publish = func(Event) {}
 	}
 	return &Manager{
-		backend:      backend,
-		publish:      publish,
-		sessions:     make(map[string]map[string]*managedSession),
-		closed:       make(map[string]map[string]bool),
-		closingTasks: make(map[string]bool),
+		backend:       backend,
+		publish:       publish,
+		sessions:      make(map[string]map[string]*managedSession),
+		closed:        make(map[string]map[string]bool),
+		exitCallbacks: make(map[string]map[string][]func()),
+		closingTasks:  make(map[string]bool),
 	}
 }
 
@@ -135,6 +137,27 @@ func (manager *Manager) Close(taskID, terminalID string) error {
 	return nil
 }
 
+func (manager *Manager) OnExit(taskID, terminalID string, callback func()) {
+	if callback == nil {
+		return
+	}
+	manager.mu.Lock()
+	if manager.closed[taskID][terminalID] {
+		manager.mu.Unlock()
+		go callback()
+		return
+	}
+	if manager.sessions[taskID][terminalID] == nil {
+		manager.mu.Unlock()
+		return
+	}
+	if manager.exitCallbacks[taskID] == nil {
+		manager.exitCallbacks[taskID] = make(map[string][]func())
+	}
+	manager.exitCallbacks[taskID][terminalID] = append(manager.exitCallbacks[taskID][terminalID], callback)
+	manager.mu.Unlock()
+}
+
 // CloseTask prevents new sessions, closes every existing session and waits for output pumps to stop.
 // The task remains blocked after a successful call because its owner is about to remove the workspace.
 func (manager *Manager) CloseTask(taskID string) error {
@@ -207,8 +230,16 @@ func (manager *Manager) watch(managed *managedSession) {
 			manager.closed[managed.info.TaskID] = make(map[string]bool)
 		}
 		manager.closed[managed.info.TaskID][managed.info.ID] = true
+		callbacks := manager.exitCallbacks[managed.info.TaskID][managed.info.ID]
+		delete(manager.exitCallbacks[managed.info.TaskID], managed.info.ID)
+		if len(manager.exitCallbacks[managed.info.TaskID]) == 0 {
+			delete(manager.exitCallbacks, managed.info.TaskID)
+		}
 		manager.mu.Unlock()
 		manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "exited"})
+		for _, callback := range callbacks {
+			go callback()
+		}
 		close(managed.done)
 	}()
 

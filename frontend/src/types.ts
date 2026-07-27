@@ -21,6 +21,11 @@ export interface TerminalRecord {
   taskId: string
   state: TerminalState
   output?: string
+  title?: string
+}
+
+export function terminalDisplayName(terminal: Pick<TerminalRecord, 'title'>): string {
+  return terminal.title?.trim() || '终端'
 }
 
 export interface TerminalEvent {
@@ -46,6 +51,17 @@ export interface TaskMenuItem {
   command?: string
   arguments?: string[]
   showTerminal: boolean
+  beforeScript?: TaskScript
+  afterScript?: TaskScript
+}
+
+export interface TaskScript {
+  script: string
+  arguments?: string[]
+}
+
+export interface TaskMenuCommandResult {
+  terminal?: TerminalRecord
 }
 
 export const defaultTaskMenuItems: TaskMenuItem[] = [

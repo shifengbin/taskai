@@ -42,6 +42,11 @@ const (
 	TaskMenuItemOpenFolderID     = "system.open-folder"
 )
 
+type TaskScript struct {
+	Script    string   `json:"script,omitempty"`
+	Arguments []string `json:"arguments,omitempty"`
+}
+
 type TaskMenuItem struct {
 	ID           string           `json:"id"`
 	Kind         TaskMenuItemKind `json:"kind"`
@@ -49,6 +54,8 @@ type TaskMenuItem struct {
 	Command      string           `json:"command,omitempty"`
 	Arguments    []string         `json:"arguments,omitempty"`
 	ShowTerminal bool             `json:"showTerminal"`
+	BeforeScript *TaskScript      `json:"beforeScript,omitempty"`
+	AfterScript  *TaskScript      `json:"afterScript,omitempty"`
 }
 
 type Settings struct {
@@ -185,6 +192,8 @@ func normalizeTaskMenuItems(items []TaskMenuItem) ([]TaskMenuItem, error) {
 			return nil, fmt.Errorf("自定义任务菜单项启动命令不能为空")
 		}
 		item.Arguments = normalizeArguments(item.Arguments)
+		item.BeforeScript = normalizeTaskScript(item.BeforeScript)
+		item.AfterScript = normalizeTaskScript(item.AfterScript)
 		normalized = append(normalized, item)
 	}
 
@@ -194,6 +203,17 @@ func normalizeTaskMenuItems(items []TaskMenuItem) ([]TaskMenuItem, error) {
 		}
 	}
 	return normalized, nil
+}
+
+func normalizeTaskScript(script *TaskScript) *TaskScript {
+	if script == nil {
+		return nil
+	}
+	path := strings.TrimSpace(script.Script)
+	if path == "" {
+		return nil
+	}
+	return &TaskScript{Script: path, Arguments: normalizeArguments(script.Arguments)}
 }
 
 func normalizeArguments(arguments []string) []string {

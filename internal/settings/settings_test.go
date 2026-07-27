@@ -59,8 +59,8 @@ func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		TaskTreeWidth: DefaultTaskTreeWidth,
 		TaskMenuItems: []TaskMenuItem{
-			{ID: "custom-codex", Kind: TaskMenuItemKindCommand, Name: "Codex", Command: "codex", Arguments: []string{"--full-auto"}, ShowTerminal: true},
-			{ID: TaskMenuItemOpenFolderID, Kind: TaskMenuItemKindCommand, Name: "被篡改", Command: "rm", Arguments: []string{"-rf"}, ShowTerminal: true},
+			{ID: "custom-codex", Kind: TaskMenuItemKindCommand, Name: "Codex", Command: "codex", Arguments: []string{"--full-auto"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: " prepare-codex ", Arguments: []string{" --task ", "", "  "}}},
+			{ID: TaskMenuItemOpenFolderID, Kind: TaskMenuItemKindCommand, Name: "被篡改", Command: "rm", Arguments: []string{"-rf"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: "不得保存"}},
 			{ID: TaskMenuItemEditTaskID, Kind: TaskMenuItemKindCommand, Name: "被篡改"},
 		},
 	})
@@ -73,6 +73,27 @@ func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 	}
 	if validated.TaskMenuItems[0].ID != "custom-codex" || !reflect.DeepEqual(validated.TaskMenuItems[1], fixedTaskMenuItem(TaskMenuItemOpenFolderID)) || !reflect.DeepEqual(validated.TaskMenuItems[2], fixedTaskMenuItem(TaskMenuItemEditTaskID)) || !reflect.DeepEqual(validated.TaskMenuItems[3], fixedTaskMenuItem(TaskMenuItemCreateTerminalID)) {
 		t.Errorf("规范化任务菜单项 = %#v", validated.TaskMenuItems)
+	}
+	if got, want := validated.TaskMenuItems[0].BeforeScript, (&TaskScript{Script: "prepare-codex", Arguments: []string{"--task"}}); !reflect.DeepEqual(got, want) {
+		t.Errorf("前置脚本 = %#v，期望 %#v", got, want)
+	}
+	if validated.TaskMenuItems[0].AfterScript != nil {
+		t.Errorf("空后置脚本 = %#v，期望 nil", validated.TaskMenuItems[0].AfterScript)
+	}
+	contents, err := json.Marshal(validated.TaskMenuItems[0])
+	if err != nil {
+		t.Fatalf("序列化自定义菜单项: %v", err)
+	}
+	var persisted map[string]any
+	if err := json.Unmarshal(contents, &persisted); err != nil {
+		t.Fatalf("解析自定义菜单项 JSON: %v", err)
+	}
+	if _, ok := persisted["beforeHook"]; ok {
+		t.Fatalf("不应持久化旧钩子字段: %#v", persisted)
+	}
+	beforeScript, ok := persisted["beforeScript"].(map[string]any)
+	if !ok || beforeScript["script"] != "prepare-codex" {
+		t.Fatalf("持久化前置脚本 = %#v", persisted["beforeScript"])
 	}
 }
 

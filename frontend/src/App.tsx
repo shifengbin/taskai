@@ -1,4 +1,4 @@
-import {type FormEvent, useEffect, useMemo, useRef, useState} from 'react'
+import {type Dispatch, type FormEvent, type SetStateAction, useEffect, useMemo, useRef, useState} from 'react'
 import {
   Alert,
   AppBar,
@@ -10,12 +10,14 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControlLabel,
   IconButton,
   MenuItem,
+  Popover,
   Snackbar,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   ThemeProvider,
   Toolbar,
@@ -27,6 +29,7 @@ import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
 import ArrowDownwardOutlinedIcon from '@mui/icons-material/ArrowDownwardOutlined'
 import ArrowUpwardOutlinedIcon from '@mui/icons-material/ArrowUpwardOutlined'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
+import HelpOutlinedIcon from '@mui/icons-material/HelpOutlined'
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
@@ -36,13 +39,24 @@ import UnfoldMoreOutlinedIcon from '@mui/icons-material/UnfoldMoreOutlined'
 import {api} from './api'
 import {TaskTree} from './components/TaskTree'
 import {TerminalView} from './components/TerminalView'
-import {applyTerminalEvent} from './state'
+import {
+  applyTerminalEvent,
+  bufferPendingTerminalEvent,
+  clearTaskTerminalTracking,
+  mergePendingTerminalEvents,
+  parseTerminalEventTitle,
+  registerTerminal,
+  terminalEventKey,
+  type PendingTerminalEvent,
+} from './state'
+import type {TerminalTitleParserState} from './terminal-title'
 import {
   clampTaskTreeWidth,
   defaultTaskColor,
 	defaultTaskMenuItems,
   taskStatusLabel,
   type ColorScheme,
+  type TaskScript,
   type SettingsRecord,
   type TaskRecord,
 	type TaskMenuItem,
@@ -71,11 +85,18 @@ export default function App() {
   const [draftDescription, setDraftDescription] = useState('')
   const [draftColor, setDraftColor] = useState(defaultTaskColor)
   const [settingsDraft, setSettingsDraft] = useState<SettingsRecord>()
+  const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu'>('workspace')
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
+  const [taskMenuItemEditorTab, setTaskMenuItemEditorTab] = useState<'basic' | 'scripts'>('basic')
+  const [scriptHelpAnchor, setScriptHelpAnchor] = useState<HTMLElement>()
   const [message, setMessage] = useState<string>()
   const dragging = useRef(false)
   const currentTreeWidth = useRef(treeWidth)
+  const terminalTitleParserStates = useRef(new Map<string, TerminalTitleParserState>())
+  const pendingTerminalEvents = useRef(new Map<string, PendingTerminalEvent>())
+  const registeredTerminalKeys = useRef(new Set<string>())
+  const finishedTerminalTaskIDs = useRef(new Set<string>())
 
   useEffect(() => {
     void (async () => {
@@ -94,15 +115,32 @@ export default function App() {
         setInitialLoadComplete(true)
       }
     })()
-    return api.onTerminalEvent((event) => {
-      setTerminals((current) => applyTerminalEvent(current, event))
+    const unsubscribe = api.onTerminalEvent((event) => {
+      if (finishedTerminalTaskIDs.current.has(event.taskId)) {
+        return
+      }
+      const title = parseTerminalEventTitle(terminalTitleParserStates.current, event)
+      const key = terminalEventKey(event.taskId, event.terminalId)
+      if (!registeredTerminalKeys.current.has(key)) {
+        bufferPendingTerminalEvent(pendingTerminalEvents.current, event, title)
+      }
+      setTerminals((current) => applyTerminalEvent(current, event, title))
       if (event.type === 'error') {
         setMessage(event.data || '终端发生错误')
       }
     })
+    return () => {
+      unsubscribe()
+      terminalTitleParserStates.current.clear()
+      pendingTerminalEvents.current.clear()
+      registeredTerminalKeys.current.clear()
+      finishedTerminalTaskIDs.current.clear()
+    }
   }, [])
 
   useEffect(() => api.onCloseRequested(() => setQuitDialogOpen(true)), [])
+
+  useEffect(() => api.onTaskScriptError((message) => setMessage(message)), [])
 
   const colorScheme: ColorScheme = settings?.colorScheme === 'dark' ? 'dark' : 'light'
   const theme = useMemo(() => createAppTheme(colorScheme), [colorScheme])
@@ -215,6 +253,8 @@ export default function App() {
       const completed = await api.finishTask(finishTask.id)
       setTasks((current) => replaceTask(current, completed))
       void changeActiveTaskStatus('completed')
+      finishedTerminalTaskIDs.current.add(finishTask.id)
+      clearTaskTerminalTracking(finishTask.id, terminalTitleParserStates.current, pendingTerminalEvents.current, registeredTerminalKeys.current)
       setTerminals((current) => current.filter((terminal) => terminal.taskId !== finishTask.id))
       if (selectedTaskID === finishTask.id) {
         setSelectedTerminalID(undefined)
@@ -225,27 +265,35 @@ export default function App() {
     }
   }
 
+  const addTerminal = (terminal: TerminalRecord): boolean => {
+    if (finishedTerminalTaskIDs.current.has(terminal.taskId)) {
+      return false
+    }
+    const merged = mergePendingTerminalEvents(pendingTerminalEvents.current, terminal)
+    registerTerminal(registeredTerminalKeys.current, merged)
+    setTerminals((current) => [...current, merged])
+    return true
+  }
+
   const createTerminal = async (taskID: string) => {
     try {
       const created = await api.createTerminal(taskID, 100, 32)
-      setTerminals((current) => [...current, {...created, output: ''}])
-      setSelectedTaskID(taskID)
-      setSelectedTerminalID(created.id)
+      if (addTerminal(created)) {
+        setSelectedTaskID(taskID)
+        setSelectedTerminalID(created.id)
+      }
     } catch (error) {
       showError(error, setMessage)
     }
   }
 
-  const runTaskMenuCommand = async (taskID: string, item: TaskMenuItem) => {
+  const runTaskMenuCommand = async (taskID: string, itemID: string) => {
     try {
-      if (item.showTerminal) {
-        const created = await api.createCommandTerminal(taskID, item.command ?? '', item.arguments ?? [], 100, 32)
-        setTerminals((current) => [...current, {...created, output: ''}])
+      const result = await api.executeTaskMenuCommand(taskID, itemID, 100, 32)
+      if (result.terminal && addTerminal(result.terminal)) {
         setSelectedTaskID(taskID)
-        setSelectedTerminalID(created.id)
-        return
+        setSelectedTerminalID(result.terminal.id)
       }
-      await api.runTaskCommand(taskID, item.command ?? '', item.arguments ?? [])
     } catch (error) {
       showError(error, setMessage)
     }
@@ -301,6 +349,7 @@ export default function App() {
 
   const closeSettingsDialog = () => {
     setSettingsDialogOpen(false)
+    setSettingsTab('workspace')
     closeTaskMenuItemEditor()
   }
 
@@ -324,11 +373,15 @@ export default function App() {
   const openTaskMenuItemEditor = (item?: TaskMenuItem) => {
     setTaskMenuItemEditorMode(item ? 'edit' : 'create')
     setTaskMenuItemDraft(item ? cloneTaskMenuItem(item) : createCustomTaskMenuItem())
+    setTaskMenuItemEditorTab('basic')
+    setScriptHelpAnchor(undefined)
   }
 
   const closeTaskMenuItemEditor = () => {
     setTaskMenuItemDraft(undefined)
     setTaskMenuItemEditorMode(undefined)
+    setTaskMenuItemEditorTab('basic')
+    setScriptHelpAnchor(undefined)
   }
 
   const saveTaskMenuItem = (event: FormEvent) => {
@@ -341,6 +394,8 @@ export default function App() {
       name: taskMenuItemDraft.name.trim(),
       command: taskMenuItemDraft.command?.trim(),
       arguments: taskMenuItemDraft.arguments?.filter((argument) => argument.trim()),
+      beforeScript: normalizeTaskScript(taskMenuItemDraft.beforeScript),
+      afterScript: normalizeTaskScript(taskMenuItemDraft.afterScript),
     }
     if (!item.name || !item.command) {
       setMessage('菜单名称和启动命令不能为空')
@@ -442,6 +497,9 @@ export default function App() {
                   } : undefined)
                   setTaskMenuItemDraft(undefined)
                   setTaskMenuItemEditorMode(undefined)
+                  setSettingsTab('workspace')
+                  setTaskMenuItemEditorTab('basic')
+                  setScriptHelpAnchor(undefined)
                   setSettingsDialogOpen(true)
                 }}
               >
@@ -505,7 +563,7 @@ export default function App() {
                   }
                 }}
                 onOpenTaskFolder={(taskID) => void openTaskFolder(taskID)}
-                onRunMenuCommand={(taskID, item) => void runTaskMenuCommand(taskID, item)}
+                onRunMenuCommand={(taskID, itemID) => void runTaskMenuCommand(taskID, itemID)}
                 onStartTask={(taskID) => void startTask(taskID)}
                 onFinishTask={(taskID) => setFinishTask(tasks.find((task) => task.id === taskID))}
                 onCloseTerminal={(terminal) => void closeTerminal(terminal)}
@@ -579,8 +637,19 @@ export default function App() {
       <Dialog open={settingsDialogOpen} onClose={closeSettingsDialog} fullWidth maxWidth="md">
         <DialogTitle>设置</DialogTitle>
         <DialogContent sx={{display: 'grid', gap: 3, pt: '12px !important'}}>
-          <Box component="section" sx={{display: 'grid', gap: 1.5}}>
-            <Divider textAlign="left"><Typography variant="subtitle2">工作区与外观</Typography></Divider>
+          <Tabs
+            value={settingsTab}
+            onChange={(_, value: 'workspace' | 'shell' | 'menu') => setSettingsTab(value)}
+            aria-label="设置分类"
+            variant="scrollable"
+            scrollButtons="auto"
+          >
+            <Tab value="workspace" label="工作区与外观"/>
+            <Tab value="shell" label="终端 Shell"/>
+            <Tab value="menu" label="任务操作"/>
+          </Tabs>
+
+          {settingsTab === 'workspace' && <Box component="section" sx={{display: 'grid', gap: 1.5}}>
             <TextField
               fullWidth
               required
@@ -599,10 +668,9 @@ export default function App() {
               <MenuItem value="light">亮色</MenuItem>
               <MenuItem value="dark">暗色</MenuItem>
             </TextField>
-          </Box>
+          </Box>}
 
-          <Box component="section" sx={{display: 'grid', gap: 1.5}}>
-            <Divider textAlign="left"><Typography variant="subtitle2">终端 Shell</Typography></Divider>
+          {settingsTab === 'shell' && <Box component="section" sx={{display: 'grid', gap: 1.5}}>
             <TextField
               fullWidth
               select
@@ -626,10 +694,9 @@ export default function App() {
               value={settingsDraft?.shellPath ?? ''}
               onChange={(event) => updateSettingsDraft({shellPath: event.target.value})}
             />
-          </Box>
+          </Box>}
 
-          <Box component="section" sx={{display: 'grid', gap: 1.5}}>
-            <Divider textAlign="left"><Typography variant="subtitle2">任务操作菜单</Typography></Divider>
+          {settingsTab === 'menu' && <Box component="section" sx={{display: 'grid', gap: 1.5}}>
             <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2}}>
               <Typography variant="body2" color="text.secondary">右键菜单与“任务操作”下拉菜单共用此顺序。系统项仅可调序。</Typography>
               <Button size="small" variant="contained" onClick={() => openTaskMenuItemEditor()}>新增菜单项</Button>
@@ -648,7 +715,7 @@ export default function App() {
                 </Box>
               ))}
             </Box>
-          </Box>
+          </Box>}
         </DialogContent>
         <DialogActions>
           <Button onClick={closeSettingsDialog}>取消</Button>
@@ -660,32 +727,81 @@ export default function App() {
         <Box component="form" onSubmit={saveTaskMenuItem}>
           <DialogTitle>{taskMenuItemEditorMode === 'create' ? '新增菜单项' : '编辑菜单项'}</DialogTitle>
           <DialogContent sx={{display: 'grid', gap: 2, pt: '12px !important'}}>
-            <Typography variant="body2" color="text.secondary">填写完成后确认菜单项；主设置保存前，变更不会持久化。</Typography>
-            <TextField
-              autoFocus
-              required
-              label="菜单名称"
-              value={taskMenuItemDraft.name}
-              onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, name: event.target.value} : current)}
-            />
-            <TextField
-              required
-              label="启动命令"
-              value={taskMenuItemDraft.command ?? ''}
-              onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, command: event.target.value} : current)}
-            />
-            <TextField
-              label="启动参数（每行一个）"
-              helperText="每行代表一个启动参数。"
-              minRows={2}
-              multiline
-              value={(taskMenuItemDraft.arguments ?? []).join('\n')}
-              onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, arguments: event.target.value.split('\n')} : current)}
-            />
-            <FormControlLabel
-              control={<Switch checked={taskMenuItemDraft.showTerminal} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, showTerminal: event.target.checked} : current)}/>}
-              label="显示终端"
-            />
+            <Tabs
+              value={taskMenuItemEditorTab}
+              onChange={(_, value: 'basic' | 'scripts') => setTaskMenuItemEditorTab(value)}
+              aria-label="菜单项配置分类"
+            >
+              <Tab value="basic" label="基本配置"/>
+              <Tab value="scripts" label="前后置脚本"/>
+            </Tabs>
+
+            {taskMenuItemEditorTab === 'basic' && <>
+              <TextField
+                autoFocus
+                required
+                label="菜单名称"
+                value={taskMenuItemDraft.name}
+                onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, name: event.target.value} : current)}
+              />
+              <TextField
+                required
+                label="启动命令"
+                value={taskMenuItemDraft.command ?? ''}
+                onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, command: event.target.value} : current)}
+              />
+              <TextField
+                label="启动参数（每行一个）"
+                helperText="每行代表一个启动参数。"
+                minRows={2}
+                multiline
+                value={(taskMenuItemDraft.arguments ?? []).join('\n')}
+                onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, arguments: event.target.value.split('\n')} : current)}
+              />
+              <FormControlLabel
+                control={<Switch checked={taskMenuItemDraft.showTerminal} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, showTerminal: event.target.checked} : current)}/>}
+                label="显示终端"
+              />
+            </>}
+
+            {taskMenuItemEditorTab === 'scripts' && <>
+              <Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                <Typography variant="subtitle2">前置与后置脚本</Typography>
+                <Tooltip title="前后置脚本使用说明">
+                  <IconButton aria-label="前后置脚本使用说明" size="small" onClick={(event) => setScriptHelpAnchor(event.currentTarget)}>
+                    <HelpOutlinedIcon fontSize="small"/>
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              <TextField
+                label="前置脚本（命令或路径）"
+                helperText="填写脚本路径或 Shell PATH 中的可执行脚本。"
+                value={taskMenuItemDraft.beforeScript?.script ?? ''}
+                onChange={(event) => updateTaskMenuItemScript(setTaskMenuItemDraft, 'beforeScript', {script: event.target.value})}
+              />
+              <TextField
+                label="前置脚本参数（每行一个）"
+                helperText="每行代表一个前置脚本参数。"
+                minRows={2}
+                multiline
+                value={(taskMenuItemDraft.beforeScript?.arguments ?? []).join('\n')}
+                onChange={(event) => updateTaskMenuItemScript(setTaskMenuItemDraft, 'beforeScript', {arguments: event.target.value.split('\n')})}
+              />
+              <TextField
+                label="后置脚本（命令或路径）"
+                helperText="填写脚本路径或 Shell PATH 中的可执行脚本。"
+                value={taskMenuItemDraft.afterScript?.script ?? ''}
+                onChange={(event) => updateTaskMenuItemScript(setTaskMenuItemDraft, 'afterScript', {script: event.target.value})}
+              />
+              <TextField
+                label="后置脚本参数（每行一个）"
+                helperText="每行代表一个后置脚本参数。"
+                minRows={2}
+                multiline
+                value={(taskMenuItemDraft.afterScript?.arguments ?? []).join('\n')}
+                onChange={(event) => updateTaskMenuItemScript(setTaskMenuItemDraft, 'afterScript', {arguments: event.target.value.split('\n')})}
+              />
+            </>}
           </DialogContent>
           <DialogActions>
             {taskMenuItemEditorMode === 'edit' && <Button color="error" onClick={deleteTaskMenuItem}>删除菜单项</Button>}
@@ -695,6 +811,28 @@ export default function App() {
           </DialogActions>
         </Box>
       </Dialog>}
+
+      <Popover
+        open={Boolean(scriptHelpAnchor)}
+        anchorEl={scriptHelpAnchor}
+        onClose={() => setScriptHelpAnchor(undefined)}
+        anchorOrigin={{vertical: 'bottom', horizontal: 'right'}}
+        transformOrigin={{vertical: 'top', horizontal: 'right'}}
+      >
+        <Box sx={{maxWidth: 460, p: 2, display: 'grid', gap: 1.25}}>
+          <Typography variant="subtitle2">前后置脚本参数</Typography>
+          <Typography variant="body2">脚本通过 UTF-8 JSON 标准输入接收主命令上下文：</Typography>
+          <Box component="pre" sx={{m: 0, p: 1, overflowX: 'auto', borderRadius: 1, bgcolor: 'action.hover', fontSize: 12}}>{'{\n  "taskId": "任务 ID",\n  "directory": "任务工作目录",\n  "command": "主命令",\n  "arguments": ["主命令参数"]\n}'}</Box>
+          <Box component="dl" sx={{m: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 1, rowGap: 0.5}}>
+            <Typography component="dt" variant="body2"><code>taskId</code></Typography><Typography component="dd" variant="body2" sx={{m: 0}}>任务 ID</Typography>
+            <Typography component="dt" variant="body2"><code>directory</code></Typography><Typography component="dd" variant="body2" sx={{m: 0}}>任务工作目录</Typography>
+            <Typography component="dt" variant="body2"><code>command</code></Typography><Typography component="dd" variant="body2" sx={{m: 0}}>主命令</Typography>
+            <Typography component="dt" variant="body2"><code>arguments</code></Typography><Typography component="dd" variant="body2" sx={{m: 0}}>主命令参数数组</Typography>
+          </Box>
+          <Typography variant="body2">脚本填写路径或 Shell PATH 中的可执行脚本；参数每行传递为一个独立参数，空白行会忽略。</Typography>
+          <Typography variant="body2">不支持占位符替换；JSON 不会追加到命令行，也不会与参数拼接。</Typography>
+        </Box>
+      </Popover>
 
       <Dialog open={Boolean(finishTask)} onClose={() => setFinishTask(undefined)} maxWidth="xs" fullWidth>
         <DialogTitle>结束任务？</DialogTitle>
@@ -798,7 +936,39 @@ function cloneTaskMenuItems(items: TaskMenuItem[]): TaskMenuItem[] {
 }
 
 function cloneTaskMenuItem(item: TaskMenuItem): TaskMenuItem {
-  return item.arguments ? {...item, arguments: [...item.arguments]} : {...item}
+  return {
+    ...item,
+    arguments: item.arguments ? [...item.arguments] : undefined,
+    beforeScript: cloneTaskScript(item.beforeScript),
+    afterScript: cloneTaskScript(item.afterScript),
+  }
+}
+
+function cloneTaskScript(script?: TaskScript): TaskScript | undefined {
+	if (!script) {
+		return undefined
+	}
+	return {...script, arguments: script.arguments ? [...script.arguments] : undefined}
+}
+
+function normalizeTaskScript(script?: TaskScript): TaskScript | undefined {
+	const path = script?.script.trim()
+	if (!path) {
+		return undefined
+	}
+	const arguments_ = script?.arguments?.map((argument) => argument.trim()).filter(Boolean)
+	return arguments_?.length ? {script: path, arguments: arguments_} : {script: path}
+}
+
+function updateTaskMenuItemScript(
+	setDraft: Dispatch<SetStateAction<TaskMenuItem | undefined>>,
+	key: 'beforeScript' | 'afterScript',
+	update: Partial<TaskScript>,
+) {
+  setDraft((current) => current ? {
+    ...current,
+    [key]: {...current[key], script: current[key]?.script ?? '', arguments: current[key]?.arguments ?? [], ...update},
+  } : current)
 }
 
 function createCustomTaskMenuItem(): TaskMenuItem {

@@ -18,10 +18,15 @@ type TaskBinding interface {
 type TerminalBinding interface {
 	CreateTerminal(taskID string, columns, rows uint16) (terminal.Info, error)
 	CreateCommandTerminal(taskID, command string, arguments []string, columns, rows uint16) (terminal.Info, error)
+	ExecuteTaskMenuCommand(taskID, itemID string, columns, rows uint16) (TaskMenuCommandResult, error)
 	RunTaskCommand(taskID, command string, arguments []string) error
 	WriteTerminal(taskID, terminalID, data string) error
 	ResizeTerminal(taskID, terminalID string, columns, rows uint16) error
 	CloseTerminal(taskID, terminalID string) error
+}
+
+type TaskMenuCommandResult struct {
+	Terminal *terminal.Info `json:"terminal,omitempty"`
 }
 
 type SettingsBinding interface {

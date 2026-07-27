@@ -22,6 +22,10 @@ export function DetectShells() {
   return window['go']['main']['App']['DetectShells']();
 }
 
+export function ExecuteTaskMenuCommand(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ExecuteTaskMenuCommand'](arg1, arg2, arg3, arg4);
+}
+
 export function FinishTask(arg1) {
   return window['go']['main']['App']['FinishTask'](arg1);
 }

@@ -129,6 +129,32 @@ func TestManagerAllowsConcurrentCloseOfOneTerminal(t *testing.T) {
 	}
 }
 
+func TestManagerRunsExitCallbackRegisteredAfterTerminalExit(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 2)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	if err := backend.session(created.ID).Close(); err != nil {
+		t.Fatalf("关闭终端: %v", err)
+	}
+	for {
+		if event := receiveEvent(t, events); event.Type == "exited" {
+			break
+		}
+	}
+
+	called := make(chan struct{}, 1)
+	manager.OnExit(created.TaskID, created.ID, func() { called <- struct{}{} })
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("退出后注册的回调未执行")
+	}
+}
+
 func receiveEvent(t *testing.T, events <-chan Event) Event {
 	t.Helper()
 	select {

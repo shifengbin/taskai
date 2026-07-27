@@ -1,6 +1,14 @@
 import {describe, expect, it} from 'vitest'
 
-import {applyTerminalEvent} from './state'
+import {
+  applyTerminalEvent,
+  bufferPendingTerminalEvent,
+  clearTaskTerminalTracking,
+  mergePendingTerminalEvents,
+  parseTerminalEventTitle,
+  registerTerminal,
+  terminalEventKey,
+} from './state'
 import {clampTaskTreeWidth, type TerminalRecord} from './types'
 
 describe('终端状态路由', () => {
@@ -18,6 +26,82 @@ describe('终端状态路由', () => {
       {id: 'one', taskId: 'task-a', state: 'active', output: 'hello'},
       {id: 'two', taskId: 'task-b', state: 'exited'},
     ])
+  })
+
+  it('只为收到输出的对应终端更新实时标题', () => {
+    const terminals: TerminalRecord[] = [
+      {id: 'one', taskId: 'task-a', state: 'active', output: '已有输出', title: '旧标题'},
+      {id: 'two', taskId: 'task-b', state: 'active', output: '其他输出', title: '其他标题'},
+    ]
+
+    const updated = applyTerminalEvent(terminals, {
+      taskId: 'task-a', terminalId: 'one', type: 'output', data: '新增输出',
+    }, '实时标题')
+
+    expect(updated).toEqual([
+      {id: 'one', taskId: 'task-a', state: 'active', output: '已有输出新增输出', title: '实时标题'},
+      {id: 'two', taskId: 'task-b', state: 'active', output: '其他输出', title: '其他标题'},
+    ])
+  })
+
+  it('终端退出后清理其未完成标题的解析状态', () => {
+    const parserStates = new Map()
+    const terminal = {taskId: 'task-a', terminalId: 'terminal-1'}
+
+    expect(parseTerminalEventTitle(parserStates, {...terminal, type: 'output', data: '\x1b]0;构建'})).toBeUndefined()
+    expect(parserStates.size).toBe(1)
+
+    parseTerminalEventTitle(parserStates, {...terminal, type: 'exited'})
+
+    expect(parserStates.size).toBe(0)
+    expect(parseTerminalEventTitle(parserStates, {...terminal, type: 'output', data: '完成\x07'})).toBeUndefined()
+  })
+
+  it('合并创建前缓存的输出、最新标题和退出状态后清理缓存', () => {
+    const pendingEvents = new Map()
+    const terminal = {id: 'terminal-1', taskId: 'task-a', state: 'active' as const}
+
+    bufferPendingTerminalEvent(pendingEvents, {...terminal, terminalId: terminal.id, type: 'output', data: '初始输出'}, '初始标题')
+    bufferPendingTerminalEvent(pendingEvents, {...terminal, terminalId: terminal.id, type: 'output', data: '后续输出'}, '最新标题')
+    bufferPendingTerminalEvent(pendingEvents, {...terminal, terminalId: terminal.id, type: 'exited'})
+
+    expect(mergePendingTerminalEvents(pendingEvents, terminal)).toEqual({
+      ...terminal,
+      output: '初始输出后续输出',
+      title: '最新标题',
+      state: 'exited',
+    })
+    expect(pendingEvents.size).toBe(0)
+  })
+
+  it('登记已退出的终端，避免后续事件重新成为创建前缓存', () => {
+    const registeredTerminalKeys = new Set<string>()
+    const terminal = {id: 'terminal-1', taskId: 'task-a', state: 'exited' as const}
+
+    registerTerminal(registeredTerminalKeys, terminal)
+
+    expect(registeredTerminalKeys).toEqual(new Set([terminalEventKey('task-a', 'terminal-1')]))
+  })
+
+  it('结束任务时仅清理该任务的解析、缓存和登记状态', () => {
+    const parserStates = new Map()
+    const pendingEvents = new Map()
+    const registeredTerminalKeys = new Set<string>()
+    const taskATerminal = {taskId: 'task-a', terminalId: 'terminal-a'}
+    const taskBTerminal = {taskId: 'task-b', terminalId: 'terminal-b'}
+
+    parseTerminalEventTitle(parserStates, {...taskATerminal, type: 'output', data: '\x1b]2;任务 A'})
+    parseTerminalEventTitle(parserStates, {...taskBTerminal, type: 'output', data: '\x1b]2;任务 B'})
+    bufferPendingTerminalEvent(pendingEvents, {...taskATerminal, type: 'output', data: '任务 A 输出'})
+    bufferPendingTerminalEvent(pendingEvents, {...taskBTerminal, type: 'output', data: '任务 B 输出'})
+    registerTerminal(registeredTerminalKeys, {id: 'terminal-a', taskId: 'task-a', state: 'active'})
+    registerTerminal(registeredTerminalKeys, {id: 'terminal-b', taskId: 'task-b', state: 'exited'})
+
+    clearTaskTerminalTracking('task-a', parserStates, pendingEvents, registeredTerminalKeys)
+
+    expect([...parserStates.keys()]).toEqual([terminalEventKey('task-b', 'terminal-b')])
+    expect([...pendingEvents.keys()]).toEqual([terminalEventKey('task-b', 'terminal-b')])
+    expect(registeredTerminalKeys).toEqual(new Set([terminalEventKey('task-b', 'terminal-b')]))
   })
 
   it('拖拽宽度遵循最小值和右侧最小空间', () => {

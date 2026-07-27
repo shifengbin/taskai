@@ -1,7 +1,6 @@
 import {useMemo, useRef, useState} from 'react'
 import {
   Box,
-  Chip,
   Collapse,
   IconButton,
   List,
@@ -27,7 +26,8 @@ import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
 
-import {defaultTaskColor, defaultTaskMenuItems, terminalStatusLabel, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
+import {defaultTaskColor, defaultTaskMenuItems, terminalDisplayName, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
+import {TerminalStatusDot} from './TerminalStatusDot'
 
 interface TaskMenuState {
   taskID: string
@@ -73,7 +73,7 @@ interface TaskTreeProps {
   onCreateTerminal(taskID: string): void
   onEditTask(taskID: string): void
   onOpenTaskFolder(taskID: string): void
-  onRunMenuCommand?(taskID: string, item: TaskMenuItem): void
+  onRunMenuCommand?(taskID: string, itemID: string): void
   onStartTask(taskID: string): void
   onFinishTask(taskID: string): void
   onCloseTerminal?(terminal: TerminalRecord): void
@@ -109,9 +109,6 @@ export function TaskTree({
   const suppressTaskClickRef = useRef(false)
   const terminalsByTask = useMemo(() => {
     return terminals.reduce<Record<string, TerminalRecord[]>>((byTask, terminal) => {
-      if (terminal.state === 'exited') {
-        return byTask
-      }
       byTask[terminal.taskId] = [...(byTask[terminal.taskId] ?? []), terminal]
       return byTask
     }, {})
@@ -242,7 +239,7 @@ export function TaskTree({
     } else if (item.kind === 'open-folder') {
       onOpenTaskFolder(taskMenu.taskID)
     } else if (item.kind === 'command') {
-      onRunMenuCommand?.(taskMenu.taskID, item)
+      onRunMenuCommand?.(taskMenu.taskID, item.id)
     }
     setTaskMenu(null)
   }
@@ -381,7 +378,7 @@ export function TaskTree({
               </Tooltip>
               <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                 <List disablePadding dense sx={{pl: 3.25}}>
-                  {childTerminals.map((terminal, index) => (
+                  {childTerminals.map((terminal) => (
                     <ListItemButton
                       key={terminal.id}
                       selected={terminal.id === selectedTerminalId}
@@ -390,10 +387,18 @@ export function TaskTree({
                     >
                       <TerminalOutlinedIcon fontSize="small" color={terminal.state === 'active' ? 'primary' : 'disabled'}/>
                       <ListItemText
-                        primary={`终端 ${index + 1}`}
-                        slotProps={{primary: {noWrap: true, variant: 'body2'}}}
+                        sx={{flex: 1, minWidth: 0}}
+                        primary={
+                          <Typography
+                            data-testid={`task-tree-terminal-title-${terminal.id}`}
+                            variant="body2"
+                            sx={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'}}
+                          >
+                            {terminalDisplayName(terminal)}
+                          </Typography>
+                        }
                       />
-                      <Chip label={terminalStatusLabel[terminal.state]} size="small" variant="outlined"/>
+                      <TerminalStatusDot state={terminal.state}/>
                       {terminal.state === 'active' && onCloseTerminal && (
                         <Tooltip title="关闭终端">
                           <IconButton

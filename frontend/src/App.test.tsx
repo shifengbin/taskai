@@ -1,4 +1,4 @@
-import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
+import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
@@ -14,6 +14,7 @@ const bindings = vi.hoisted(() => ({
   DetectShells: vi.fn(),
   CreateTerminal: vi.fn(),
   CreateCommandTerminal: vi.fn(),
+  ExecuteTaskMenuCommand: vi.fn(),
   OpenTaskFolder: vi.fn(),
   RunTaskCommand: vi.fn(),
   WriteTerminal: vi.fn(),
@@ -26,7 +27,18 @@ const runtime = vi.hoisted(() => ({EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: 
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
 vi.mock('../wailsjs/runtime/runtime', () => runtime)
-vi.mock('./components/TerminalView', () => ({TerminalView: () => <div>终端视图</div>}))
+vi.mock('./components/TerminalView', async () => {
+  const {terminalDisplayName} = await vi.importActual<typeof import('./types')>('./types')
+  return {
+    TerminalView: ({terminal}: {terminal: {title?: string, output?: string}}) => <>
+      <div>终端视图</div>
+      <div data-testid="terminal-view-title-container">
+        <div data-testid="terminal-view-title" aria-label="右侧终端标题">{terminalDisplayName(terminal)}</div>
+      </div>
+      <div aria-label="右侧终端原始输出">{terminal.output}</div>
+    </>,
+  }
+})
 
 import App from './App'
 
@@ -182,6 +194,9 @@ describe('App confirmation flows', () => {
     await user.click(await screen.findByRole('button', {name: '设置'}))
     await user.click(screen.getByLabelText('颜色模式'))
     await user.click(screen.getByRole('option', {name: '暗色'}))
+    await user.click(screen.getByRole('tab', {name: '终端 Shell'}))
+    await user.click(screen.getByRole('tab', {name: '工作区与外观'}))
+    expect(screen.getByLabelText('颜色模式')).toHaveTextContent('暗色')
     await user.click(screen.getByRole('button', {name: '保存'}))
 
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
@@ -205,6 +220,7 @@ describe('App confirmation flows', () => {
 
     await waitFor(() => expect(bindings.DetectShells).toHaveBeenCalledOnce())
     await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端 Shell'}))
     await user.click(screen.getByLabelText('探测到的 Shell'))
     await user.click(screen.getByRole('option', {name: '/bin/zsh'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
@@ -226,6 +242,7 @@ describe('App confirmation flows', () => {
 
     await waitFor(() => expect(bindings.DetectShells).toHaveBeenCalledOnce())
     await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端 Shell'}))
     const shellPath = await screen.findByRole('textbox', {name: 'Shell 路径'})
     await user.clear(shellPath)
     await user.type(shellPath, '/custom/shell')
@@ -338,7 +355,174 @@ describe('App confirmation flows', () => {
     await waitFor(() => expect(screen.queryByText('终端视图')).not.toBeInTheDocument())
   })
 
-  it('自定义菜单可创建独立终端或后台启动命令', async () => {
+  it('终端输出 OSC 标题后实时更新树节点和右侧终端栏', async () => {
+    const user = userEvent.setup()
+    let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'output'; data: string}) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-terminal:event') {
+        terminalEventListener = listener
+      }
+    })
+    bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await screen.findByText('终端视图')
+    expect(screen.getAllByText('终端')).toHaveLength(2)
+
+    if (!terminalEventListener) {
+      throw new Error('未注册终端事件监听器')
+    }
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: '\x1b]2;正在构建\x07'})
+
+    await waitFor(() => expect(screen.getAllByText('正在构建')).toHaveLength(2))
+    expect(screen.queryByText('终端 1')).not.toBeInTheDocument()
+  })
+
+  it('终端输出空白 OSC 标题后在树节点和右侧终端栏回退为终端', async () => {
+    const user = userEvent.setup()
+    let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'output'; data: string}) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-terminal:event') {
+        terminalEventListener = listener
+      }
+    })
+    bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await screen.findByText('终端视图')
+    if (!terminalEventListener) {
+      throw new Error('未注册终端事件监听器')
+    }
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: '\x1b]2;正在构建\x07'})
+    await waitFor(() => expect(screen.getByLabelText('右侧终端标题').textContent).toBe('正在构建'))
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: '\x1b]2;   \x07'})
+
+    await waitFor(() => expect(screen.getByLabelText('右侧终端标题').textContent).toBe('终端'))
+  })
+
+  it('右键新增终端时合并创建返回前到达的标题与原始输出', async () => {
+    const user = userEvent.setup()
+    const output = '\x1b]2;启动标题\x07'
+    let resolveTerminal: (terminal: {id: string, taskId: string, state: 'active'}) => void
+    let terminalEventListener: ((event: {taskId: string, terminalId: string, type: 'output', data: string}) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-terminal:event') {
+        terminalEventListener = listener
+      }
+    })
+    bindings.CreateTerminal.mockImplementation(() => new Promise((resolve) => {
+      resolveTerminal = resolve
+    }))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await waitFor(() => expect(bindings.CreateTerminal).toHaveBeenCalledOnce())
+    if (!terminalEventListener) {
+      throw new Error('未注册终端事件监听器')
+    }
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: output})
+
+    resolveTerminal!({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+
+    await waitFor(() => expect(screen.getAllByText('启动标题')).toHaveLength(2))
+    expect(screen.getByLabelText('右侧终端原始输出').textContent).toBe(output)
+  })
+
+  it('任务结束后忽略右键新增终端的晚到创建结果', async () => {
+    const user = userEvent.setup()
+    let resolveTerminal: (terminal: {id: string, taskId: string, state: 'active'}) => void
+    bindings.CreateTerminal.mockImplementation(() => new Promise((resolve) => {
+      resolveTerminal = resolve
+    }))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await waitFor(() => expect(bindings.CreateTerminal).toHaveBeenCalledOnce())
+    await user.click(screen.getByRole('button', {name: '结束'}))
+    await user.click(screen.getByRole('button', {name: '结束并删除'}))
+    await waitFor(() => expect(bindings.FinishTask).toHaveBeenCalledWith('task-1'))
+
+    await act(async () => {
+      resolveTerminal!({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('终端视图')).not.toBeInTheDocument()
+  })
+
+  it('任务结束后忽略显示终端命令的晚到创建结果', async () => {
+    const user = userEvent.setup()
+    let resolveCommand: (result: {terminal: {id: string, taskId: string, state: 'active'}}) => void
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
+      taskMenuItems: [{id: 'custom-codex', kind: 'command', name: 'Codex', command: 'codex', showTerminal: true}],
+    })
+    bindings.ExecuteTaskMenuCommand.mockImplementation(() => new Promise((resolve) => {
+      resolveCommand = resolve
+    }))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
+    await waitFor(() => expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledOnce())
+    await user.click(screen.getByRole('button', {name: '结束'}))
+    await user.click(screen.getByRole('button', {name: '结束并删除'}))
+    await waitFor(() => expect(bindings.FinishTask).toHaveBeenCalledWith('task-1'))
+
+    await act(async () => {
+      resolveCommand!({terminal: {id: 'terminal-codex', taskId: 'task-1', state: 'active'}})
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('终端视图')).not.toBeInTheDocument()
+  })
+
+  it('显示终端的自定义命令时合并创建返回前到达的标题与原始输出', async () => {
+    const user = userEvent.setup()
+    const output = '\x1b]2;命令标题\x07'
+    let resolveCommand: (result: {terminal: {id: string, taskId: string, state: 'active'}}) => void
+    let terminalEventListener: ((event: {taskId: string, terminalId: string, type: 'output', data: string}) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-terminal:event') {
+        terminalEventListener = listener
+      }
+    })
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
+      taskMenuItems: [{id: 'custom-codex', kind: 'command', name: 'Codex', command: 'codex', showTerminal: true}],
+    })
+    bindings.ExecuteTaskMenuCommand.mockImplementation(() => new Promise((resolve) => {
+      resolveCommand = resolve
+    }))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
+    await waitFor(() => expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledOnce())
+    if (!terminalEventListener) {
+      throw new Error('未注册终端事件监听器')
+    }
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-codex', type: 'output', data: output})
+
+    resolveCommand!({terminal: {id: 'terminal-codex', taskId: 'task-1', state: 'active'}})
+
+    await waitFor(() => expect(screen.getAllByText('命令标题')).toHaveLength(2))
+    expect(screen.getByLabelText('右侧终端原始输出').textContent).toBe(output)
+  })
+
+  it('自定义菜单通过保存的菜单项 ID 统一执行命令', async () => {
     const user = userEvent.setup()
     bindings.GetSettings.mockResolvedValue({
       workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
@@ -347,19 +531,39 @@ describe('App confirmation flows', () => {
         {id: 'custom-vscode', kind: 'command', name: '打开 VS Code', command: 'code', arguments: ['.'], showTerminal: false},
       ],
     })
-    bindings.CreateCommandTerminal.mockResolvedValue({id: 'terminal-codex', taskId: 'task-1', state: 'active'})
-    bindings.RunTaskCommand.mockResolvedValue(undefined)
+    bindings.ExecuteTaskMenuCommand
+      .mockResolvedValueOnce({terminal: {id: 'terminal-codex', taskId: 'task-1', state: 'active'}})
+      .mockResolvedValueOnce({})
     render(<App/>)
 
     await user.click(await screen.findByRole('tab', {name: /执行中/}))
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
-    expect(bindings.CreateCommandTerminal).toHaveBeenCalledWith('task-1', 'codex', ['--full-auto'], 100, 32)
+    expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledWith('task-1', 'custom-codex', 100, 32)
     await screen.findByText('终端视图')
 
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     await user.click(screen.getByRole('menuitem', {name: '打开 VS Code'}))
-    expect(bindings.RunTaskCommand).toHaveBeenCalledWith('task-1', 'code', ['.'])
+    expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledWith('task-1', 'custom-vscode', 100, 32)
+  })
+
+  it('收到后置脚本错误事件时显示错误提示', async () => {
+	const user = userEvent.setup()
+	let scriptErrorListener: ((message: string) => void) | undefined
+	runtime.EventsOn.mockImplementation((eventName, listener) => {
+	  if (eventName === 'task-script:error') {
+		scriptErrorListener = listener
+	  }
+	})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+	if (!scriptErrorListener) {
+	  throw new Error('未注册后置脚本错误监听器')
+	}
+	scriptErrorListener('执行后置脚本: 清理失败')
+
+	expect(await screen.findByText('执行后置脚本: 清理失败')).toBeInTheDocument()
   })
 
   it('设置中通过独立弹窗配置菜单项并调整系统项顺序', async () => {
@@ -378,6 +582,7 @@ describe('App confirmation flows', () => {
     await user.click(await screen.findByRole('button', {name: '设置'}))
     expect(screen.getByText('工作区与外观')).toBeInTheDocument()
     expect(screen.getByText('终端 Shell')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', {name: '任务操作'}))
     await user.click(screen.getByRole('button', {name: '新增菜单项'}))
 
     const createDialog = screen.getByRole('dialog', {name: '新增菜单项'})
@@ -385,6 +590,25 @@ describe('App confirmation flows', () => {
     await user.type(within(createDialog).getByRole('textbox', {name: '菜单名称'}), 'Codex')
     await user.type(within(createDialog).getByRole('textbox', {name: '启动命令'}), 'codex')
     await user.type(within(createDialog).getByRole('textbox', {name: '启动参数（每行一个）'}), '--full-auto\n--dangerously-bypass-approvals-and-sandbox')
+	await user.click(within(createDialog).getByRole('tab', {name: '前后置脚本'}))
+	expect(within(createDialog).getByRole('textbox', {name: '前置脚本（命令或路径）'})).toBeInTheDocument()
+	await user.type(within(createDialog).getByRole('textbox', {name: '前置脚本（命令或路径）'}), 'before-script')
+	await user.type(within(createDialog).getByRole('textbox', {name: '前置脚本参数（每行一个）'}), '--before\n\n--with-space')
+	await user.type(within(createDialog).getByRole('textbox', {name: '后置脚本（命令或路径）'}), 'after-script')
+	await user.type(within(createDialog).getByRole('textbox', {name: '后置脚本参数（每行一个）'}), '--after')
+	await user.click(within(createDialog).getByRole('button', {name: '前后置脚本使用说明'}))
+    expect(await screen.findByText('taskId')).toBeInTheDocument()
+    expect(screen.getByText('directory')).toBeInTheDocument()
+    expect(screen.getByText('command')).toBeInTheDocument()
+    expect(screen.getByText('arguments')).toBeInTheDocument()
+    expect(screen.getByText(/标准输入/)).toBeInTheDocument()
+	expect(screen.getByText('脚本填写路径或 Shell PATH 中的可执行脚本；参数每行传递为一个独立参数，空白行会忽略。')).toBeInTheDocument()
+    expect(screen.getByText(/占位符/)).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(within(createDialog).getByRole('tab', {name: '基本配置'}))
+    expect(within(createDialog).getByRole('textbox', {name: '菜单名称'})).toHaveValue('Codex')
+	await user.click(within(createDialog).getByRole('tab', {name: '前后置脚本'}))
+	expect(within(createDialog).getByRole('textbox', {name: '前置脚本（命令或路径）'})).toHaveValue('before-script')
     await user.click(within(createDialog).getByRole('button', {name: '添加菜单项'}))
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增菜单项'})).not.toBeInTheDocument())
     expect(bindings.SaveSettings).not.toHaveBeenCalled()
@@ -406,6 +630,8 @@ describe('App confirmation flows', () => {
     ])
     expect(saved.taskMenuItems[3]).toMatchObject({
       kind: 'command', name: 'Codex CLI', command: 'codex', arguments: ['--full-auto', '--dangerously-bypass-approvals-and-sandbox'], showTerminal: true,
+	  beforeScript: {script: 'before-script', arguments: ['--before', '--with-space']},
+	  afterScript: {script: 'after-script', arguments: ['--after']},
     })
   })
 })

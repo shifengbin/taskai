@@ -1,12 +1,13 @@
 import {useEffect, useRef} from 'react'
-import {Box, Chip, IconButton, Tooltip, Typography} from '@mui/material'
+import {Box, IconButton, Tooltip, Typography} from '@mui/material'
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
 import {FitAddon} from '@xterm/addon-fit'
 import {Terminal} from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
-import {terminalStatusLabel, type TerminalRecord} from '../types'
+import {terminalDisplayName, type TerminalRecord} from '../types'
+import {TerminalStatusDot} from './TerminalStatusDot'
 
 interface TerminalViewProps {
   terminal: TerminalRecord
@@ -80,9 +81,16 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
     <Box sx={{height: '100%', minWidth: 0, display: 'grid', gridTemplateRows: '44px minmax(0, 1fr)'}}>
       <Box sx={{display: 'flex', alignItems: 'center', gap: 1, px: 1.5, borderBottom: 1, borderColor: 'divider'}}>
         <TerminalOutlinedIcon fontSize="small" color="primary"/>
-        <Typography variant="subtitle2" noWrap>终端</Typography>
-        <Chip label={terminalStatusLabel[terminal.state]} size="small" variant="outlined"/>
-        <Box sx={{flex: 1}}/>
+        <Box data-testid="terminal-view-title-container" sx={{flex: 1, minWidth: 0}}>
+          <Typography
+            data-testid="terminal-view-title"
+            variant="subtitle2"
+            sx={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'}}
+          >
+            {terminalDisplayName(terminal)}
+          </Typography>
+        </Box>
+        <TerminalStatusDot state={terminal.state}/>
         {terminal.state === 'active' && (
           <Tooltip title="关闭终端">
             <IconButton aria-label="关闭终端" size="small" onClick={onClose}>

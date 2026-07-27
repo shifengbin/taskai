@@ -1,4 +1,4 @@
-import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
+import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
@@ -81,8 +81,83 @@ describe('TaskTree', () => {
     await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
     expect(onEditTask).toHaveBeenCalledTimes(2)
 
-    await user.click(screen.getByText('终端 1'))
+    expect(screen.getByText('终端')).toBeInTheDocument()
+    expect(screen.queryByText('终端 1')).not.toBeInTheDocument()
+    await user.click(screen.getByText('终端'))
     expect(onSelectTerminal).toHaveBeenCalledWith(terminal)
+  })
+
+  it('优先显示终端真实标题，缺失标题时使用统一回退名称', () => {
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[{...terminal, id: 'terminal-titled', title: '正在构建'}, terminal]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('正在构建')).toBeInTheDocument()
+    expect(screen.getByText('终端')).toBeInTheDocument()
+    expect(screen.queryByText('终端 1')).not.toBeInTheDocument()
+    expect(screen.queryByText('终端 2')).not.toBeInTheDocument()
+  })
+
+  it('活跃终端以状态点表示运行状态，不显示状态文字', () => {
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[terminal]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const terminalItem = screen.getByText('终端').closest('[role="button"]')
+    if (!(terminalItem instanceof HTMLElement)) {
+      throw new Error('未找到终端条目')
+    }
+    expect(within(terminalItem).getByRole('status', {name: '终端状态：运行中'})).toBeInTheDocument()
+    expect(within(terminalItem).queryByText('运行中', {exact: true})).not.toBeInTheDocument()
+  })
+
+  it('终端标题在可收缩容器中单行裁剪而不显示省略号', () => {
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[{...terminal, title: '这是用于验证任务树终端标题布局的超长真实终端名称'}]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const title = screen.getByTestId('task-tree-terminal-title-terminal-1')
+    expect(title).toHaveStyle({whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'})
+    expect(title.parentElement).toHaveStyle({flex: '1', minWidth: '0'})
   })
 
   it('已完成任务不显示重新执行操作', () => {
@@ -199,7 +274,7 @@ describe('TaskTree', () => {
     expect(onChangeStatus).toHaveBeenCalledWith('running')
   })
 
-  it('不显示已退出终端', () => {
+  it('已退出终端以状态点表示退出状态，不显示状态文字', () => {
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -217,8 +292,12 @@ describe('TaskTree', () => {
       />,
     )
 
-    expect(screen.queryByText('终端 1')).not.toBeInTheDocument()
-    expect(screen.queryByText('已退出')).not.toBeInTheDocument()
+    const terminalItem = screen.getByText('终端').closest('[role="button"]')
+    if (!(terminalItem instanceof HTMLElement)) {
+      throw new Error('未找到终端条目')
+    }
+    expect(within(terminalItem).getByRole('status', {name: '终端状态：已退出'})).toBeInTheDocument()
+    expect(within(terminalItem).queryByText('已退出', {exact: true})).not.toBeInTheDocument()
   })
 
   it('悬浮任务条目时显示完整描述', async () => {
@@ -264,10 +343,10 @@ describe('TaskTree', () => {
     )
 
     fireEvent.doubleClick(screen.getByText('整理发布说明'))
-    await waitFor(() => expect(screen.queryByText('终端 1')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('终端')).not.toBeInTheDocument())
 
     fireEvent.doubleClick(screen.getByText('整理发布说明'))
-    expect(screen.getByText('终端 1')).toBeInTheDocument()
+    expect(screen.getByText('终端')).toBeInTheDocument()
   })
 
   it('指针拖动任务时显示明确的插入位置，并按位置请求重排', () => {
@@ -345,7 +424,7 @@ describe('TaskTree', () => {
     if (!source) {
       throw new Error('未找到可拖动的任务条目')
     }
-    const restorePointerTarget = mockPointerTarget(screen.getByText('终端 1'))
+    const restorePointerTarget = mockPointerTarget(screen.getByText('终端'))
     try {
       dispatchPointerEvent(source, 'pointerdown', 1, 20, 0)
       dispatchPointerEvent(source, 'pointermove', 1, 20, 100)
@@ -423,7 +502,7 @@ describe('TaskTree', () => {
     if (!taskItem) {
       throw new Error('未找到可拖动的任务条目')
     }
-    expect(screen.getAllByText('终端 1')).toHaveLength(2)
+    expect(screen.getAllByText('终端')).toHaveLength(2)
 
     const taskTree = screen.getByRole('navigation', {name: '任务和终端'})
     const restorePointerTarget = mockPointerTarget(screen.getByText('补充发布说明'))
@@ -431,12 +510,12 @@ describe('TaskTree', () => {
       dispatchPointerEvent(taskItem, 'pointerdown', 1, 20, 0)
       dispatchPointerEvent(taskItem, 'pointermove', 1, 20, 100)
       expect(taskTree).not.toHaveAttribute('data-task-dragging')
-      expect(screen.getAllByText('终端 1')).toHaveLength(2)
-      expect(screen.getAllByText('终端 1')[0]).toBeVisible()
+      expect(screen.getAllByText('终端')).toHaveLength(2)
+      expect(screen.getAllByText('终端')[0]).toBeVisible()
 
       dispatchPointerEvent(taskItem, 'pointerup', 1, 20, 100)
       expect(taskTree).not.toHaveAttribute('data-task-dragging')
-      expect(screen.getAllByText('终端 1')[0]).toBeVisible()
+      expect(screen.getAllByText('终端')[0]).toBeVisible()
     } finally {
       restorePointerTarget()
     }
@@ -468,7 +547,7 @@ describe('TaskTree', () => {
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务'])
     await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
-    expect(onRunMenuCommand).toHaveBeenCalledWith('task-1', codexMenuItem)
+    expect(onRunMenuCommand).toHaveBeenCalledWith('task-1', codexMenuItem.id)
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务'])
