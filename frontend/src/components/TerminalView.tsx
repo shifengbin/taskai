@@ -7,6 +7,7 @@ import {Terminal} from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
 import {terminalDisplayName, terminalRealtimeStatus, type TerminalRecord} from '../types'
+import {ClipboardGetText, ClipboardSetText} from '../../wailsjs/runtime/runtime'
 import {TerminalStatusDot} from './TerminalStatusDot'
 
 interface TerminalViewProps {
@@ -52,10 +53,17 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
       observer.observe(containerRef.current)
     }
     const onData = instance.onData((data) => onWrite(data))
+    const onSelectionChange = instance.onSelectionChange(() => {
+      const selection = instance.getSelection()
+      if (selection) {
+        void ClipboardSetText(selection).catch(() => {})
+      }
+    })
     requestAnimationFrame(fit)
 
     return () => {
       onData.dispose()
+      onSelectionChange.dispose()
       observer.disconnect()
       instance.dispose()
       terminalRef.current = undefined
@@ -99,7 +107,19 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
           </Tooltip>
         )}
       </Box>
-      <Box ref={containerRef} sx={{minHeight: 0, overflow: 'hidden', bgcolor: '#111827', p: 1}}/>
+      <Box
+        ref={containerRef}
+        data-testid="terminal-content"
+        onContextMenu={(event) => {
+          event.preventDefault()
+          void ClipboardGetText().then((clipboard) => {
+            if (clipboard) {
+              onWrite(clipboard)
+            }
+          }).catch(() => {})
+        }}
+        sx={{minHeight: 0, overflow: 'hidden', bgcolor: '#111827', p: 1}}
+      />
     </Box>
   )
 }
