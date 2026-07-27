@@ -1,4 +1,5 @@
 import {
+  ClearSelectedTerminal,
   CloseTerminal,
 	CreateTask,
 	CreateCommandTerminal,
@@ -12,9 +13,11 @@ import {
 	OpenTaskFolder,
   PrepareQuit,
   ReorderTasks,
+	ReportTerminalTitleActivity,
   ResizeTerminal,
-	RunTaskCommand,
+  RunTaskCommand,
 	SaveSettings,
+	SelectTerminal,
 	StartTask,
 	UpdateTask,
   WriteTerminal,
@@ -22,7 +25,7 @@ import {
 import {settings as settingsModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {SettingsRecord, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
+import type {RealtimeStatusEvent, SettingsRecord, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
@@ -42,6 +45,9 @@ export const api = {
   writeTerminal: (taskID: string, terminalID: string, data: string) => WriteTerminal(taskID, terminalID, data),
   resizeTerminal: (taskID: string, terminalID: string, columns: number, rows: number) => ResizeTerminal(taskID, terminalID, columns, rows),
   closeTerminal: (taskID: string, terminalID: string) => CloseTerminal(taskID, terminalID),
+	reportTerminalTitleActivity: (taskID: string, terminalID: string) => ReportTerminalTitleActivity(taskID, terminalID),
+	selectTerminal: (taskID: string, terminalID: string) => SelectTerminal(taskID, terminalID),
+	clearSelectedTerminal: () => ClearSelectedTerminal(),
   hasRunningTasks: () => HasRunningTasks(),
   prepareQuit: () => PrepareQuit(),
   quit: () => Quit(),
@@ -49,6 +55,14 @@ export const api = {
     EventsOn('task-terminal:event', listener)
     return () => EventsOff('task-terminal:event')
   },
+	onRealtimeStatusEvent(listener: (event: RealtimeStatusEvent) => void) {
+		EventsOn('task-realtime-status:event', listener)
+		return () => EventsOff('task-realtime-status:event')
+	},
+	onRealtimeStatusError(listener: (message: string) => void) {
+		EventsOn('task-realtime-status:error', listener)
+		return () => EventsOff('task-realtime-status:error')
+	},
   onCloseRequested(listener: () => void) {
 	EventsOn('application:close-requested', listener)
 	return () => EventsOff('application:close-requested')

@@ -16,6 +16,7 @@ type Manager struct {
 	mu            sync.Mutex
 	sessions      map[string]map[string]*managedSession
 	closed        map[string]map[string]bool
+	exitReasons   map[string]map[string]ExitReason
 	exitCallbacks map[string]map[string][]func()
 	closingTasks  map[string]bool
 }
@@ -26,6 +27,8 @@ type managedSession struct {
 	done    chan struct{}
 }
 
+type TerminalEnvironmentBuilder func(terminalID string) []string
+
 func NewManager(backend Backend, publish func(Event)) *Manager {
 	if publish == nil {
 		publish = func(Event) {}
@@ -35,23 +38,56 @@ func NewManager(backend Backend, publish func(Event)) *Manager {
 		publish:       publish,
 		sessions:      make(map[string]map[string]*managedSession),
 		closed:        make(map[string]map[string]bool),
+		exitReasons:   make(map[string]map[string]ExitReason),
 		exitCallbacks: make(map[string]map[string][]func()),
 		closingTasks:  make(map[string]bool),
 	}
 }
 
 func (manager *Manager) Create(taskID, directory, shellPath string, columns, rows uint16) (Info, error) {
+	return manager.CreateWithEnvironment(taskID, directory, shellPath, nil, columns, rows)
+}
+
+func (manager *Manager) CreateWithEnvironment(taskID, directory, shellPath string, environment []string, columns, rows uint16) (Info, error) {
 	return manager.create(StartRequest{
+		TaskID:      taskID,
+		Directory:   directory,
+		ShellPath:   shellPath,
+		Environment: append([]string(nil), environment...),
+		Columns:     columns,
+		Rows:        rows,
+	})
+}
+
+func (manager *Manager) CreateWithEnvironmentBuilder(taskID, directory, shellPath string, environment TerminalEnvironmentBuilder, columns, rows uint16) (Info, error) {
+	return manager.createWithEnvironmentBuilder(StartRequest{
 		TaskID:    taskID,
 		Directory: directory,
 		ShellPath: shellPath,
 		Columns:   columns,
 		Rows:      rows,
-	})
+	}, environment)
 }
 
 func (manager *Manager) CreateCommand(taskID, directory, shellPath, command string, arguments []string, columns, rows uint16) (Info, error) {
+	return manager.CreateCommandWithEnvironment(taskID, directory, shellPath, command, arguments, nil, columns, rows)
+}
+
+func (manager *Manager) CreateCommandWithEnvironment(taskID, directory, shellPath, command string, arguments, environment []string, columns, rows uint16) (Info, error) {
 	return manager.create(StartRequest{
+		TaskID:      taskID,
+		Directory:   directory,
+		ShellPath:   shellPath,
+		Command:     command,
+		Arguments:   append([]string(nil), arguments...),
+		Environment: append([]string(nil), environment...),
+		Columns:     columns,
+		Rows:        rows,
+	})
+}
+
+func (manager *Manager) CreateCommandWithEnvironmentBuilder(taskID, directory, shellPath, command string, arguments []string, environment TerminalEnvironmentBuilder, columns, rows uint16) (Info, error) {
+	return manager.createWithEnvironmentBuilder(StartRequest{
 		TaskID:    taskID,
 		Directory: directory,
 		ShellPath: shellPath,
@@ -59,10 +95,14 @@ func (manager *Manager) CreateCommand(taskID, directory, shellPath, command stri
 		Arguments: append([]string(nil), arguments...),
 		Columns:   columns,
 		Rows:      rows,
-	})
+	}, environment)
 }
 
 func (manager *Manager) create(request StartRequest) (Info, error) {
+	return manager.createWithEnvironmentBuilder(request, nil)
+}
+
+func (manager *Manager) createWithEnvironmentBuilder(request StartRequest, environment TerminalEnvironmentBuilder) (Info, error) {
 	if request.TaskID == "" {
 		return Info{}, fmt.Errorf("任务 ID 不能为空")
 	}
@@ -78,16 +118,16 @@ func (manager *Manager) create(request StartRequest) (Info, error) {
 
 	request.Columns = normalizedDimension(request.Columns, 80)
 	request.Rows = normalizedDimension(request.Rows, 24)
+	request.ID = sessionID(request.ID)
+	if environment != nil {
+		request.Environment = append([]string(nil), environment(request.ID)...)
+	}
 	session, err := manager.backend.Start(request)
 	if err != nil {
 		return Info{}, err
 	}
 
-	info := Info{ID: session.ID(), TaskID: request.TaskID, State: StateActive}
-	if info.ID == "" {
-		_ = session.Close()
-		return Info{}, fmt.Errorf("终端会话未提供 ID")
-	}
+	info := Info{ID: request.ID, TaskID: request.TaskID, State: StateActive}
 	managed := &managedSession{info: info, session: session, done: make(chan struct{})}
 	if manager.sessions[request.TaskID] == nil {
 		manager.sessions[request.TaskID] = make(map[string]*managedSession)
@@ -123,6 +163,9 @@ func (manager *Manager) Close(taskID, terminalID string) error {
 	manager.mu.Lock()
 	managed := manager.sessions[taskID][terminalID]
 	alreadyClosed := manager.closed[taskID][terminalID]
+	if managed != nil {
+		manager.setExitReasonLocked(taskID, terminalID, ExitReasonClosed)
+	}
 	manager.mu.Unlock()
 	if managed == nil {
 		if alreadyClosed {
@@ -131,6 +174,7 @@ func (manager *Manager) Close(taskID, terminalID string) error {
 		return fmt.Errorf("终端不存在或不属于当前任务")
 	}
 	if err := managed.session.Close(); err != nil {
+		manager.clearExitReason(taskID, terminalID, ExitReasonClosed)
 		return err
 	}
 	<-managed.done
@@ -168,11 +212,17 @@ func (manager *Manager) CloseTask(taskID string) error {
 	}
 	manager.closingTasks[taskID] = true
 	sessions := manager.taskSessionsLocked(taskID)
+	for _, managed := range sessions {
+		manager.setExitReasonLocked(taskID, managed.info.ID, ExitReasonTaskEnded)
+	}
 	manager.mu.Unlock()
 
 	if err := closeSessions(sessions); err != nil {
 		manager.mu.Lock()
 		delete(manager.closingTasks, taskID)
+		for _, managed := range sessions {
+			manager.clearExitReasonLocked(taskID, managed.info.ID, ExitReasonTaskEnded)
+		}
 		manager.mu.Unlock()
 		return err
 	}
@@ -191,7 +241,11 @@ func (manager *Manager) CloseAll() error {
 	all := make([]*managedSession, 0)
 	for taskID := range manager.sessions {
 		manager.closingTasks[taskID] = true
-		all = append(all, manager.taskSessionsLocked(taskID)...)
+		sessions := manager.taskSessionsLocked(taskID)
+		for _, managed := range sessions {
+			manager.setExitReasonLocked(taskID, managed.info.ID, ExitReasonApplicationShutdown)
+		}
+		all = append(all, sessions...)
 	}
 	manager.mu.Unlock()
 	return closeSessions(all)
@@ -230,13 +284,15 @@ func (manager *Manager) watch(managed *managedSession) {
 			manager.closed[managed.info.TaskID] = make(map[string]bool)
 		}
 		manager.closed[managed.info.TaskID][managed.info.ID] = true
+		exitReason := manager.exitReasonLocked(managed.info.TaskID, managed.info.ID)
+		manager.clearExitReasonLocked(managed.info.TaskID, managed.info.ID, exitReason)
 		callbacks := manager.exitCallbacks[managed.info.TaskID][managed.info.ID]
 		delete(manager.exitCallbacks[managed.info.TaskID], managed.info.ID)
 		if len(manager.exitCallbacks[managed.info.TaskID]) == 0 {
 			delete(manager.exitCallbacks, managed.info.TaskID)
 		}
 		manager.mu.Unlock()
-		manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "exited"})
+		manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "exited", ExitReason: exitReason})
 		for _, callback := range callbacks {
 			go callback()
 		}
@@ -260,6 +316,38 @@ func (manager *Manager) watch(managed *managedSession) {
 			}
 			return
 		}
+	}
+}
+
+func (manager *Manager) setExitReasonLocked(taskID, terminalID string, reason ExitReason) {
+	if manager.exitReasons[taskID] == nil {
+		manager.exitReasons[taskID] = make(map[string]ExitReason)
+	}
+	manager.exitReasons[taskID][terminalID] = reason
+}
+
+func (manager *Manager) exitReasonLocked(taskID, terminalID string) ExitReason {
+	reason := manager.exitReasons[taskID][terminalID]
+	if reason == "" {
+		return ExitReasonUnexpected
+	}
+	return reason
+}
+
+func (manager *Manager) clearExitReason(taskID, terminalID string, reason ExitReason) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	manager.clearExitReasonLocked(taskID, terminalID, reason)
+}
+
+func (manager *Manager) clearExitReasonLocked(taskID, terminalID string, reason ExitReason) {
+	byID := manager.exitReasons[taskID]
+	if byID == nil || byID[terminalID] != reason {
+		return
+	}
+	delete(byID, terminalID)
+	if len(byID) == 0 {
+		delete(manager.exitReasons, taskID)
 	}
 }
 

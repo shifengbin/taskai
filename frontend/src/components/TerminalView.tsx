@@ -6,7 +6,7 @@ import {FitAddon} from '@xterm/addon-fit'
 import {Terminal} from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
-import {terminalDisplayName, type TerminalRecord} from '../types'
+import {terminalDisplayName, terminalRealtimeStatus, type TerminalRecord} from '../types'
 import {TerminalStatusDot} from './TerminalStatusDot'
 
 interface TerminalViewProps {
@@ -90,7 +90,7 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
             {terminalDisplayName(terminal)}
           </Typography>
         </Box>
-        <TerminalStatusDot state={terminal.state}/>
+        <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
         {terminal.state === 'active' && (
           <Tooltip title="关闭终端">
             <IconButton aria-label="关闭终端" size="small" onClick={onClose}>

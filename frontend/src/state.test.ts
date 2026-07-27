@@ -1,15 +1,18 @@
 import {describe, expect, it} from 'vitest'
 
 import {
-  applyTerminalEvent,
+	applyRealtimeStatusEvent,
+	applyTerminalEvent,
+  bufferPendingRealtimeStatusEvent,
   bufferPendingTerminalEvent,
   clearTaskTerminalTracking,
   mergePendingTerminalEvents,
   parseTerminalEventTitle,
-  registerTerminal,
+	registerTerminal,
+	shouldReportTerminalTitleActivity,
   terminalEventKey,
 } from './state'
-import {clampTaskTreeWidth, type TerminalRecord} from './types'
+import {clampTaskTreeWidth, type TaskRecord, type TerminalRecord} from './types'
 
 describe('终端状态路由', () => {
   it('只将输出和退出状态应用到对应终端', () => {
@@ -44,6 +47,40 @@ describe('终端状态路由', () => {
     ])
   })
 
+  it('将实时状态事件投影到对应任务和终端，并移除主动关闭终端', () => {
+    const tasks: TaskRecord[] = [{
+      id: 'task-a', title: '任务 A', description: '', status: 'running', createdAt: '2026-07-27T00:00:00Z',
+    }]
+    const terminals: TerminalRecord[] = [{id: 'terminal-a', taskId: 'task-a', state: 'active'}]
+
+    const updated = applyRealtimeStatusEvent(tasks, terminals, {
+      version: 3,
+      taskId: 'task-a',
+      taskStatus: 'unread',
+      terminalId: 'terminal-a',
+      terminalStatus: 'unread',
+    })
+
+    expect(updated.tasks[0].realtimeStatus).toBe('unread')
+    expect(updated.terminals[0].realtimeStatus).toBe('unread')
+
+    const removed = applyRealtimeStatusEvent(updated.tasks, updated.terminals, {
+      version: 4,
+      taskId: 'task-a',
+      taskStatus: 'idle',
+      terminalId: 'terminal-a',
+      terminalRemoved: true,
+    })
+    expect(removed.terminals).toEqual([])
+  })
+
+  it('只在终端标题的值实际变化时上报活动', () => {
+    const terminal: TerminalRecord = {id: 'terminal-a', taskId: 'task-a', state: 'active', title: '旧标题'}
+
+    expect(shouldReportTerminalTitleActivity(terminal, '旧标题')).toBe(false)
+    expect(shouldReportTerminalTitleActivity(terminal, '新标题')).toBe(true)
+  })
+
   it('终端退出后清理其未完成标题的解析状态', () => {
     const parserStates = new Map()
     const terminal = {taskId: 'task-a', terminalId: 'terminal-1'}
@@ -72,6 +109,17 @@ describe('终端状态路由', () => {
       state: 'exited',
     })
     expect(pendingEvents.size).toBe(0)
+  })
+
+  it('合并终端创建前到达的实时状态事件', () => {
+    const pendingEvents = new Map()
+    const terminal: TerminalRecord = {id: 'terminal-1', taskId: 'task-a', state: 'active'}
+
+    bufferPendingRealtimeStatusEvent(pendingEvents, {
+      version: 1, taskId: terminal.taskId, taskStatus: 'unread', terminalId: terminal.id, terminalStatus: 'unread',
+    })
+
+    expect(mergePendingTerminalEvents(pendingEvents, terminal)).toEqual({...terminal, output: '', realtimeStatus: 'unread'})
   })
 
   it('登记已退出的终端，避免后续事件重新成为创建前缓存', () => {

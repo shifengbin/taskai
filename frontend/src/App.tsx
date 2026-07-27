@@ -1,4 +1,4 @@
-import {type Dispatch, type FormEvent, type SetStateAction, useEffect, useMemo, useRef, useState} from 'react'
+import {type Dispatch, type FormEvent, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState} from 'react'
 import {
   Alert,
   AppBar,
@@ -40,12 +40,16 @@ import {api} from './api'
 import {TaskTree} from './components/TaskTree'
 import {TerminalView} from './components/TerminalView'
 import {
+	applyRealtimeStatusToTasks,
+	applyRealtimeStatusToTerminals,
   applyTerminalEvent,
+	bufferPendingRealtimeStatusEvent,
   bufferPendingTerminalEvent,
   clearTaskTerminalTracking,
   mergePendingTerminalEvents,
   parseTerminalEventTitle,
   registerTerminal,
+	shouldReportTerminalTitleActivity,
   terminalEventKey,
   type PendingTerminalEvent,
 } from './state'
@@ -85,7 +89,8 @@ export default function App() {
   const [draftDescription, setDraftDescription] = useState('')
   const [draftColor, setDraftColor] = useState(defaultTaskColor)
   const [settingsDraft, setSettingsDraft] = useState<SettingsRecord>()
-  const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu'>('workspace')
+  const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status'>('workspace')
+  const [statusHelpOpen, setStatusHelpOpen] = useState(false)
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
   const [taskMenuItemEditorTab, setTaskMenuItemEditorTab] = useState<'basic' | 'scripts'>('basic')
@@ -97,6 +102,8 @@ export default function App() {
   const pendingTerminalEvents = useRef(new Map<string, PendingTerminalEvent>())
   const registeredTerminalKeys = useRef(new Set<string>())
   const finishedTerminalTaskIDs = useRef(new Set<string>())
+  const terminalTitleValues = useRef(new Map<string, string>())
+  const latestRealtimeStatusVersion = useRef(0)
 
   useEffect(() => {
     void (async () => {
@@ -121,6 +128,10 @@ export default function App() {
       }
       const title = parseTerminalEventTitle(terminalTitleParserStates.current, event)
       const key = terminalEventKey(event.taskId, event.terminalId)
+      if (title !== undefined && shouldReportTerminalTitleActivity({title: terminalTitleValues.current.get(key)}, title)) {
+        terminalTitleValues.current.set(key, title)
+        void api.reportTerminalTitleActivity(event.taskId, event.terminalId).catch((error) => showError(error, setMessage))
+      }
       if (!registeredTerminalKeys.current.has(key)) {
         bufferPendingTerminalEvent(pendingTerminalEvents.current, event, title)
       }
@@ -135,12 +146,40 @@ export default function App() {
       pendingTerminalEvents.current.clear()
       registeredTerminalKeys.current.clear()
       finishedTerminalTaskIDs.current.clear()
+      terminalTitleValues.current.clear()
     }
   }, [])
 
   useEffect(() => api.onCloseRequested(() => setQuitDialogOpen(true)), [])
 
   useEffect(() => api.onTaskScriptError((message) => setMessage(message)), [])
+
+  useEffect(() => api.onRealtimeStatusError((message) => setMessage(message)), [])
+
+  useEffect(() => {
+    const unsubscribe = api.onRealtimeStatusEvent((event) => {
+      if (event.version <= latestRealtimeStatusVersion.current) {
+        return
+      }
+      latestRealtimeStatusVersion.current = event.version
+      if (event.terminalId && !registeredTerminalKeys.current.has(terminalEventKey(event.taskId, event.terminalId))) {
+        bufferPendingRealtimeStatusEvent(pendingTerminalEvents.current, event)
+      }
+      setTasks((current) => applyRealtimeStatusToTasks(current, event))
+      setTerminals((current) => applyRealtimeStatusToTerminals(current, event))
+    })
+    return () => {
+      unsubscribe()
+      latestRealtimeStatusVersion.current = 0
+    }
+  }, [])
+
+  useEffect(() => {
+    const synchronizeSelection = selectedTaskID && selectedTerminalID
+      ? api.selectTerminal(selectedTaskID, selectedTerminalID)
+      : api.clearSelectedTerminal()
+    void synchronizeSelection.catch((error) => showError(error, setMessage))
+  }, [selectedTaskID, selectedTerminalID])
 
   const colorScheme: ColorScheme = settings?.colorScheme === 'dark' ? 'dark' : 'light'
   const theme = useMemo(() => createAppTheme(colorScheme), [colorScheme])
@@ -271,6 +310,7 @@ export default function App() {
     }
     const merged = mergePendingTerminalEvents(pendingTerminalEvents.current, terminal)
     registerTerminal(registeredTerminalKeys.current, merged)
+    terminalTitleValues.current.set(terminalEventKey(merged.taskId, merged.id), merged.title ?? '')
     setTerminals((current) => [...current, merged])
     return true
   }
@@ -356,6 +396,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   const closeSettingsDialog = () => {
     setSettingsDialogOpen(false)
     setSettingsTab('workspace')
+		setStatusHelpOpen(false)
     closeTaskMenuItemEditor()
   }
 
@@ -434,7 +475,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       colorScheme: current?.colorScheme ?? colorScheme,
       shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
       taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
-      activeTaskStatus: current?.activeTaskStatus ?? settings?.activeTaskStatus ?? activeTaskStatus,
+		activeTaskStatus: current?.activeTaskStatus ?? settings?.activeTaskStatus ?? activeTaskStatus,
+		statusManagementMode: current?.statusManagementMode ?? settings?.statusManagementMode ?? 'title-change',
+		statusManagementHTTPPort: current?.statusManagementHTTPPort ?? settings?.statusManagementHTTPPort ?? 0,
+		httpServiceEnabled: current?.httpServiceEnabled ?? settings?.httpServiceEnabled ?? false,
       ...update,
     }))
   }
@@ -481,6 +525,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
     }
   }
 
+  const statusManagementMode = settingsDraft?.statusManagementMode ?? 'title-change'
+  const httpServiceEnabled = settingsDraft?.httpServiceEnabled ?? false
+  const httpServiceActive = statusManagementMode === 'http' || httpServiceEnabled
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline/>
@@ -499,11 +547,15 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                     ...settings,
                     colorScheme,
                     shellPath: settings.shellPath || detectedShells[0] || '',
-                    taskMenuItems: draftMenuItems,
+						taskMenuItems: draftMenuItems,
+						statusManagementMode: settings.statusManagementMode ?? 'title-change',
+						statusManagementHTTPPort: settings.statusManagementHTTPPort ?? 0,
+						httpServiceEnabled: settings.httpServiceEnabled ?? false,
                   } : undefined)
                   setTaskMenuItemDraft(undefined)
                   setTaskMenuItemEditorMode(undefined)
                   setSettingsTab('workspace')
+					setStatusHelpOpen(false)
                   setTaskMenuItemEditorTab('basic')
                   setScriptHelpAnchor(undefined)
                   setSettingsDialogOpen(true)
@@ -645,7 +697,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         <DialogContent sx={{display: 'grid', gap: 3, pt: '12px !important'}}>
           <Tabs
             value={settingsTab}
-            onChange={(_, value: 'workspace' | 'shell' | 'menu') => setSettingsTab(value)}
+            onChange={(_, value: 'workspace' | 'shell' | 'menu' | 'status') => setSettingsTab(value)}
             aria-label="设置分类"
             variant="scrollable"
             scrollButtons="auto"
@@ -653,6 +705,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <Tab value="workspace" label="工作区与外观"/>
             <Tab value="shell" label="终端 Shell"/>
             <Tab value="menu" label="任务操作"/>
+            <Tab value="status" label="实时状态"/>
           </Tabs>
 
           {settingsTab === 'workspace' && <Box component="section" sx={{display: 'grid', gap: 1.5}}>
@@ -722,10 +775,107 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               ))}
             </Box>
           </Box>}
+
+          {settingsTab === 'status' && <Box component="section" sx={{display: 'grid', gap: 2}}>
+            <Box sx={{display: 'grid', gap: 0.5}}>
+              <Typography variant="subtitle2">状态判定</Typography>
+              <Typography variant="body2" color="text.secondary">状态仅保存在本次应用会话中：终端标题变化会在 1.5 秒内显示为工作中，未选中的终端随后显示为未读。</Typography>
+            </Box>
+            <TextField
+              fullWidth
+              select
+              label="状态管理方式"
+              value={statusManagementMode}
+              onChange={(event) => updateSettingsDraft({statusManagementMode: event.target.value as SettingsRecord['statusManagementMode']})}
+            >
+              <MenuItem value="title-change">根据终端标题变化</MenuItem>
+              <MenuItem value="http">通过 HTTP 接口</MenuItem>
+            </TextField>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={httpServiceActive}
+                  disabled={statusManagementMode === 'http'}
+                  onChange={(event) => updateSettingsDraft({httpServiceEnabled: event.target.checked})}
+                />
+              }
+              label={statusManagementMode === 'http' ? '通过 HTTP 状态管理自动启用本机 HTTP 服务' : '启用本机 HTTP 服务'}
+            />
+            {httpServiceActive && <>
+              <TextField
+                fullWidth
+                required
+                type="number"
+                label="HTTP 端口"
+                helperText="仅监听 127.0.0.1；关闭独立服务且状态不使用 HTTP 时会停止服务。"
+                slotProps={{htmlInput: {min: 1, max: 65535}}}
+                value={settingsDraft?.statusManagementHTTPPort ?? 0}
+                onChange={(event) => updateSettingsDraft({statusManagementHTTPPort: Number(event.target.value)})}
+              />
+              <Box sx={{display: 'flex', justifyContent: 'flex-start'}}>
+                <Button variant="outlined" size="small" onClick={() => setStatusHelpOpen(true)}>查看 HTTP 接口使用说明</Button>
+              </Box>
+            </>}
+          </Box>}
         </DialogContent>
         <DialogActions>
           <Button onClick={closeSettingsDialog}>取消</Button>
           <Button variant="contained" onClick={() => void saveSettings()}>保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={statusHelpOpen} onClose={() => setStatusHelpOpen(false)} aria-labelledby="http-status-help-title" fullWidth maxWidth="md">
+        <DialogTitle id="http-status-help-title" sx={{pb: 1}}>
+          HTTP 状态接口使用说明
+          <Typography component="span" variant="caption" color="text.secondary" aria-hidden="true" sx={{display: 'block', mt: 0.25}}>本机接口参考 · API v1</Typography>
+        </DialogTitle>
+        <DialogContent dividers sx={{display: 'grid', gap: 2, py: 2}}>
+          <HTTPHelpSection title="服务与设置">
+            <Alert severity="info" variant="outlined" sx={{alignItems: 'center'}}>
+              服务仅监听 <code>127.0.0.1:&lt;端口&gt;</code>，无需鉴权，也不会暴露到局域网。
+            </Alert>
+            <Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1}}>
+              <HTTPHelpStep number="1" title="独立启用服务">在“实时状态”中开启“启用本机 HTTP 服务”并设置端口，可单独查询任务和状态。</HTTPHelpStep>
+              <HTTPHelpStep number="2" title="使用 HTTP 管理状态">选择“通过 HTTP 接口”会自动启用服务，并向之后新建的终端注入状态变量。</HTTPHelpStep>
+            </Box>
+          </HTTPHelpSection>
+
+          <HTTPHelpSection title="终端环境变量">
+            <Typography variant="body2" color="text.secondary">新建的普通终端和显示终端的自定义命令始终获得任务与终端 ID；HTTP 状态管理方式下额外获得 API 地址：</Typography>
+            <HTTPCodeBlock>{'TASKAI_TASK_ID=<任务 ID>\nTASKAI_TERMINAL_ID=<终端 ID>\n\n# 仅 HTTP 状态管理方式注入\nTASKAI_STATUS_API=http://127.0.0.1:<端口>/api/v1'}</HTTPCodeBlock>
+            <Typography variant="body2" color="text.secondary">无终端后台命令以及前置、后置脚本仅注入 <code>TASKAI_TASK_ID</code>。</Typography>
+          </HTTPHelpSection>
+
+          <HTTPHelpSection title="查询接口">
+            <HTTPEndpoint method="GET" path="/api/v1/status">查询全部任务和终端的实时状态。</HTTPEndpoint>
+            <HTTPEndpoint method="GET" path="/api/v1/tasks?status=pending|running|completed">按任务生命周期筛选列表；省略 <code>status</code> 时返回全部任务。</HTTPEndpoint>
+            <Typography variant="body2" color="text.secondary">任务列表查询参数：可省略；可选值为 pending、running、completed。</Typography>
+            <HTTPEndpoint method="GET" path="/api/v1/tasks/:taskId">查询单个任务详情，包含标题、描述、生命周期、时间和工作目录。</HTTPEndpoint>
+            <HTTPCodeBlock>{'curl "$TASKAI_STATUS_API/status"\n\ncurl "$TASKAI_STATUS_API/tasks?status=running"\n\ncurl "$TASKAI_STATUS_API/tasks/$TASKAI_TASK_ID"'}</HTTPCodeBlock>
+          </HTTPHelpSection>
+
+          <HTTPHelpSection title="状态更新">
+            <HTTPEndpoint method="PUT" path="/api/v1/tasks/:taskId/status">直接设置任务状态；下一次终端状态更新会重新按终端状态汇总。</HTTPEndpoint>
+            <HTTPEndpoint method="PUT" path="/api/v1/tasks/:taskId/terminals/:terminalId/status">更新指定终端，并自动汇总对应任务的状态。</HTTPEndpoint>
+            <Box sx={{display: 'grid', gap: 0.75}}>
+              <Typography variant="body2" color="text.secondary">两个更新接口都使用以下 JSON 请求体：</Typography>
+              <HTTPCodeBlock>{'{"status":"idle|working|unread|error"}'}</HTTPCodeBlock>
+              <Typography variant="body2" color="text.secondary">状态更新请求体的 status：必填；合法值为 idle、working、unread、error。</Typography>
+              <HTTPCodeBlock>{'curl -X PUT "$TASKAI_STATUS_API/tasks/$TASKAI_TASK_ID/terminals/$TASKAI_TERMINAL_ID/status" \\\n  -H "Content-Type: application/json" \\\n  --data \'{"status":"working"}\''}</HTTPCodeBlock>
+            </Box>
+          </HTTPHelpSection>
+
+          <HTTPHelpSection title="状态与错误规则">
+            <Box sx={{display: 'grid', gap: 1, p: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5, bgcolor: 'action.hover'}}>
+              <Typography variant="body2"><strong>状态值：</strong><code>idle</code> 空闲、<code>working</code> 工作中、<code>unread</code> 未读、<code>error</code> 异常。</Typography>
+              <Typography variant="body2"><strong>汇总优先级：</strong>异常 → 未读 → 工作中 → 空闲。</Typography>
+              <Typography variant="body2"><strong>错误响应：</strong><code>{'{"error":"..."}'}</code>；无效请求为 <code>400</code>，不存在的任务或终端为 <code>404</code>，已结束任务或已关闭终端为 <code>409</code>，错误方法为 <code>405</code>。</Typography>
+              <Typography variant="body2" color="text.secondary">修改端口或切换状态管理方式不会更新已运行终端的环境变量；请新建终端后再使用新配置。</Typography>
+            </Box>
+          </HTTPHelpSection>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStatusHelpOpen(false)}>关闭</Button>
         </DialogActions>
       </Dialog>
 
@@ -871,6 +1021,43 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       </Snackbar>
     </ThemeProvider>
   )
+}
+
+function HTTPHelpSection({title, children}: {title: string; children: ReactNode}) {
+  return (
+    <Box component="section" sx={{display: 'grid', gap: 1}}>
+      <Typography variant="overline" sx={{fontWeight: 800, letterSpacing: 1, lineHeight: 1.3, color: 'primary.main'}}>{title}</Typography>
+      {children}
+    </Box>
+  )
+}
+
+function HTTPHelpStep({number, title, children}: {number: string; title: string; children: ReactNode}) {
+  return (
+    <Box sx={{display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', gap: 1, p: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5}}>
+      <Box sx={{width: 24, height: 24, display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: 'primary.main', color: 'primary.contrastText', fontSize: 12, fontWeight: 800}}>{number}</Box>
+      <Box sx={{display: 'grid', gap: 0.25}}>
+        <Typography variant="body2" sx={{fontWeight: 700}}>{title}</Typography>
+        <Typography variant="body2" color="text.secondary">{children}</Typography>
+      </Box>
+    </Box>
+  )
+}
+
+function HTTPEndpoint({method, path, children}: {method: 'GET' | 'PUT'; path: string; children: ReactNode}) {
+  return (
+    <Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: 'auto minmax(0, 1fr)'}, gap: 1, alignItems: 'start', p: 1.25, border: 1, borderColor: 'divider', borderRadius: 1.5}}>
+      <Chip label={method} size="small" color={method === 'GET' ? 'success' : 'primary'} sx={{fontWeight: 800, width: {xs: 'fit-content', sm: 52}}}/>
+      <Box sx={{display: 'grid', gap: 0.5, minWidth: 0}}>
+        <Typography component="code" variant="body2" sx={{fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontWeight: 700, overflowWrap: 'anywhere'}}>{`${method} ${path}`}</Typography>
+        <Typography variant="body2" color="text.secondary">{children}</Typography>
+      </Box>
+    </Box>
+  )
+}
+
+function HTTPCodeBlock({children}: {children: string}) {
+  return <Box component="pre" sx={{m: 0, p: 1.25, overflowX: 'auto', border: 1, borderColor: 'divider', borderRadius: 1.5, bgcolor: 'action.hover', fontSize: 12, lineHeight: 1.6}}>{children}</Box>
 }
 
 function createAppTheme(colorScheme: ColorScheme) {

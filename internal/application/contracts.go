@@ -38,3 +38,9 @@ type SettingsBinding interface {
 type EventPublisher interface {
 	PublishTerminalEvent(event terminal.Event)
 }
+
+type RealtimeStatusBinding interface {
+	ReportTerminalTitleActivity(taskID, terminalID string) bool
+	SelectTerminal(taskID, terminalID string)
+	ClearSelectedTerminal()
+}

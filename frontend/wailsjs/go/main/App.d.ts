@@ -5,6 +5,8 @@ import {task} from '../models';
 import {application} from '../models';
 import {settings} from '../models';
 
+export function ClearSelectedTerminal():Promise<void>;
+
 export function CloseTerminal(arg1:string,arg2:string):Promise<void>;
 
 export function CreateCommandTerminal(arg1:string,arg2:string,arg3:Array<string>,arg4:number,arg5:number):Promise<terminal.Info>;
@@ -31,11 +33,15 @@ export function PrepareQuit():Promise<void>;
 
 export function ReorderTasks(arg1:task.Status,arg2:Array<string>):Promise<Array<task.Task>>;
 
+export function ReportTerminalTitleActivity(arg1:string,arg2:string):Promise<boolean>;
+
 export function ResizeTerminal(arg1:string,arg2:string,arg3:number,arg4:number):Promise<void>;
 
 export function RunTaskCommand(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<settings.Settings>;
+
+export function SelectTerminal(arg1:string,arg2:string):Promise<void>;
 
 export function StartTask(arg1:string):Promise<task.Task>;
 

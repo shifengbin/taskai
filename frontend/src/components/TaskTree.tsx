@@ -26,7 +26,7 @@ import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
 
-import {defaultTaskColor, defaultTaskMenuItems, terminalDisplayName, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
+import {defaultTaskColor, defaultTaskMenuItems, terminalDisplayName, terminalRealtimeStatus, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
 import {TerminalStatusDot} from './TerminalStatusDot'
 
 interface TaskMenuState {
@@ -334,6 +334,7 @@ export function TaskTree({
                     secondary: {noWrap: true},
                   }}
                 />
+                {task.status === 'running' && !isExpanded && <TerminalStatusDot status={task.realtimeStatus ?? 'idle'}/>}
                 {task.status === 'pending' && (
                   <Tooltip title="执行">
                     <IconButton
@@ -398,7 +399,7 @@ export function TaskTree({
                           </Typography>
                         }
                       />
-                      <TerminalStatusDot state={terminal.state}/>
+                      <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
                       {terminal.state === 'active' && onCloseTerminal && (
                         <Tooltip title="关闭终端">
                           <IconButton

@@ -100,6 +100,9 @@ export namespace settings {
 	    shellPath: string;
 	    taskMenuItems: TaskMenuItem[];
 	    activeTaskStatus: string;
+	    statusManagementMode: string;
+	    statusManagementHTTPPort: number;
+	    httpServiceEnabled: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -113,6 +116,9 @@ export namespace settings {
 	        this.shellPath = source["shellPath"];
 	        this.taskMenuItems = this.convertValues(source["taskMenuItems"], TaskMenuItem);
 	        this.activeTaskStatus = source["activeTaskStatus"];
+	        this.statusManagementMode = source["statusManagementMode"];
+	        this.statusManagementHTTPPort = source["statusManagementHTTPPort"];
+	        this.httpServiceEnabled = source["httpServiceEnabled"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

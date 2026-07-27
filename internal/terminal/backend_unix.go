@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 
 	"github.com/creack/pty"
@@ -38,7 +37,7 @@ func (backend *unixBackend) Start(request StartRequest) (Session, error) {
 		arguments := append([]string{"-ic", `exec "$@"`, request.ShellPath, commandPath}, request.Arguments...)
 		command := exec.Command(request.ShellPath, arguments...)
 		command.Dir = request.Directory
-		command.Env = embeddedTerminalEnvironment()
+		command.Env = embeddedTerminalEnvironment(request.Environment)
 		return startUnixCommand(command, request)
 	}
 	if commandPath == "" {
@@ -52,7 +51,7 @@ func (backend *unixBackend) Start(request StartRequest) (Session, error) {
 	}
 	command := exec.Command(commandPath, request.Arguments...)
 	command.Dir = request.Directory
-	command.Env = embeddedTerminalEnvironment()
+	command.Env = embeddedTerminalEnvironment(request.Environment)
 	return startUnixCommand(command, request)
 }
 
@@ -65,18 +64,7 @@ func startUnixCommand(command *exec.Cmd, request StartRequest) (Session, error) 
 		return nil, fmt.Errorf("启动终端失败: %w", err)
 	}
 
-	return &unixSession{id: newSessionID(), file: file, cmd: command}, nil
-}
-
-func embeddedTerminalEnvironment() []string {
-	environment := os.Environ()
-	for index, entry := range environment {
-		if strings.HasPrefix(entry, "TERM=") {
-			environment[index] = "TERM=xterm-256color"
-			return environment
-		}
-	}
-	return append(environment, "TERM=xterm-256color")
+	return &unixSession{id: sessionID(request.ID), file: file, cmd: command}, nil
 }
 
 func (session *unixSession) ID() string { return session.id }

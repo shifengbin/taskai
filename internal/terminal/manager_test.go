@@ -155,6 +155,92 @@ func TestManagerRunsExitCallbackRegisteredAfterTerminalExit(t *testing.T) {
 	}
 }
 
+func TestManagerAssignsTerminalIDAndEnvironmentBeforeStartingProcess(t *testing.T) {
+	backend := &fakeBackend{}
+	manager := NewManager(backend, func(Event) {})
+
+	created, err := manager.CreateWithEnvironment(
+		"task-a",
+		t.TempDir(),
+		"/bin/sh",
+		[]string{"TASKAI_STATUS_API=http://127.0.0.1:18765/api/v1", "TASKAI_TASK_ID=task-a"},
+		80,
+		24,
+	)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+
+	request := backend.request(created.ID)
+	if request.ID != created.ID {
+		t.Errorf("启动请求终端 ID = %q，期望 %q", request.ID, created.ID)
+	}
+	if !containsEnvironment(request.Environment, "TASKAI_STATUS_API=http://127.0.0.1:18765/api/v1") || !containsEnvironment(request.Environment, "TASKAI_TASK_ID=task-a") {
+		t.Errorf("启动请求环境 = %#v", request.Environment)
+	}
+}
+
+func TestManagerBuildsTerminalEnvironmentAfterAssigningID(t *testing.T) {
+	backend := &fakeBackend{}
+	manager := NewManager(backend, func(Event) {})
+
+	created, err := manager.CreateWithEnvironmentBuilder("task-a", t.TempDir(), "/bin/sh", func(terminalID string) []string {
+		return []string{"TASKAI_TERMINAL_ID=" + terminalID}
+	}, 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	if request := backend.request(created.ID); !containsEnvironment(request.Environment, "TASKAI_TERMINAL_ID="+created.ID) {
+		t.Errorf("按终端 ID 构造的环境 = %#v，期望包含 %q", request.Environment, "TASKAI_TERMINAL_ID="+created.ID)
+	}
+}
+
+func TestManagerPublishesExpectedExitReasonForExplicitClose(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 2)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+
+	if err := manager.Close(created.TaskID, created.ID); err != nil {
+		t.Fatalf("主动关闭终端: %v", err)
+	}
+	for {
+		event := receiveEvent(t, events)
+		if event.Type == "exited" {
+			if event.ExitReason != ExitReasonClosed {
+				t.Errorf("主动关闭退出原因 = %q，期望 %q", event.ExitReason, ExitReasonClosed)
+			}
+			return
+		}
+	}
+}
+
+func TestManagerPublishesUnexpectedExitReasonForNaturalExit(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 2)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+
+	if err := backend.session(created.ID).Close(); err != nil {
+		t.Fatalf("模拟终端自然退出: %v", err)
+	}
+	for {
+		event := receiveEvent(t, events)
+		if event.Type == "exited" {
+			if event.ExitReason != ExitReasonUnexpected {
+				t.Errorf("自然退出原因 = %q，期望 %q", event.ExitReason, ExitReasonUnexpected)
+			}
+			return
+		}
+	}
+}
+
 func receiveEvent(t *testing.T, events <-chan Event) Event {
 	t.Helper()
 	select {
@@ -169,6 +255,7 @@ func receiveEvent(t *testing.T, events <-chan Event) Event {
 type fakeBackend struct {
 	mu       sync.Mutex
 	sessions map[string]*fakeSession
+	requests map[string]StartRequest
 }
 
 func (backend *fakeBackend) Start(request StartRequest) (Session, error) {
@@ -177,9 +264,16 @@ func (backend *fakeBackend) Start(request StartRequest) (Session, error) {
 	if backend.sessions == nil {
 		backend.sessions = make(map[string]*fakeSession)
 	}
-	id := fmt.Sprintf("terminal-%d", len(backend.sessions)+1)
+	if backend.requests == nil {
+		backend.requests = make(map[string]StartRequest)
+	}
+	id := request.ID
+	if id == "" {
+		id = fmt.Sprintf("terminal-%d", len(backend.sessions)+1)
+	}
 	session := newFakeSession(id)
 	backend.sessions[id] = session
+	backend.requests[id] = request
 	return session, nil
 }
 
@@ -187,6 +281,12 @@ func (backend *fakeBackend) session(id string) *fakeSession {
 	backend.mu.Lock()
 	defer backend.mu.Unlock()
 	return backend.sessions[id]
+}
+
+func (backend *fakeBackend) request(id string) StartRequest {
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	return backend.requests[id]
 }
 
 type fakeSession struct {
@@ -245,4 +345,13 @@ func (session *fakeSession) wasClosed() bool {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	return session.closed
+}
+
+func containsEnvironment(environment []string, value string) bool {
+	for _, entry := range environment {
+		if entry == value {
+			return true
+		}
+	}
+	return false
 }

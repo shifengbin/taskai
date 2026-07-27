@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -28,4 +29,34 @@ func newSessionID() string {
 		return hex.EncodeToString(bytes)
 	}
 	return fmt.Sprintf("terminal-%d", time.Now().UnixNano())
+}
+
+func sessionID(requestID string) string {
+	if requestID != "" {
+		return requestID
+	}
+	return newSessionID()
+}
+
+func embeddedTerminalEnvironment(extra []string) []string {
+	environment := append([]string(nil), os.Environ()...)
+	for _, entry := range append(append([]string(nil), extra...), "TERM=xterm-256color") {
+		key, _, found := strings.Cut(entry, "=")
+		if !found || key == "" {
+			continue
+		}
+		prefix := key + "="
+		replaced := false
+		for index, current := range environment {
+			if strings.HasPrefix(current, prefix) {
+				environment[index] = entry
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			environment = append(environment, entry)
+		}
+	}
+	return environment
 }

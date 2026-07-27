@@ -62,6 +62,36 @@ func TestUnixBackendSetsTerminalTypeForEmbeddedXterm(t *testing.T) {
 	}
 }
 
+func TestUnixBackendPassesRequestedEnvironmentToTerminalProcess(t *testing.T) {
+	backend := &unixBackend{shell: "/bin/sh"}
+	session, err := backend.Start(StartRequest{
+		ID:          "terminal-environment",
+		TaskID:      "task-a",
+		Directory:   t.TempDir(),
+		Environment: []string{"TASKAI_STATUS_API=http://127.0.0.1:18765/api/v1", "TASKAI_TERMINAL_ID=terminal-environment"},
+		Columns:     80,
+		Rows:        24,
+	})
+	if err != nil {
+		t.Fatalf("启动 PTY: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.Write([]byte("printf '__STATUS_API__%s__ __TERMINAL_ID__%s__\\n' \"$TASKAI_STATUS_API\" \"$TASKAI_TERMINAL_ID\"\nexit\n")); err != nil {
+		t.Fatalf("写入 shell: %v", err)
+	}
+
+	output, readErr := io.ReadAll(session)
+	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
+		t.Fatalf("读取 PTY 输出: %v", readErr)
+	}
+	if err := session.Wait(); err != nil {
+		t.Fatalf("等待 shell 退出: %v", err)
+	}
+	if !strings.Contains(string(output), "__STATUS_API__http://127.0.0.1:18765/api/v1__ __TERMINAL_ID__terminal-environment__") {
+		t.Fatalf("终端环境变量错误，输出: %q", output)
+	}
+}
+
 func TestUnixBackendUsesShellFromStartRequest(t *testing.T) {
 	shellPath := filepath.Join(t.TempDir(), "configured-shell")
 	if err := os.WriteFile(shellPath, []byte("#!/bin/sh\nprintf '__CONFIGURED_SHELL__\\n'\nread ignored\n"), 0o700); err != nil {

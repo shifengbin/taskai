@@ -4,14 +4,18 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
+	"taskai/internal/realtime"
 	"taskai/internal/settings"
 	"taskai/internal/task"
+	"taskai/internal/terminal"
 )
 
 func TestDefaultDataDirectoryUsesApplicationName(t *testing.T) {
@@ -74,6 +78,368 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	}
 }
 
+func TestAppRegistersRunningTaskAndClearsRealtimeStatusWhenFinished(t *testing.T) {
+	app := newApp(t.TempDir())
+	created, err := app.CreateTask("实时状态任务", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("开始任务: %v", err)
+	}
+	if got := app.realtime.Snapshot(); len(got.Tasks) != 1 || got.Tasks[0].TaskID != started.ID {
+		t.Fatalf("开始任务后的实时状态 = %#v", got)
+	}
+
+	if _, err := app.FinishTask(started.ID); err != nil {
+		t.Fatalf("结束任务: %v", err)
+	}
+	if got := app.realtime.Snapshot(); len(got.Tasks) != 0 {
+		t.Fatalf("结束任务后的实时状态 = %#v，期望清理", got)
+	}
+}
+
+func TestAppMapsTerminalExitReasonsToRealtimeStatus(t *testing.T) {
+	app := newApp(t.TempDir())
+	app.realtime.RegisterTerminal("task-1", "terminal-1")
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "exited", ExitReason: terminal.ExitReasonUnexpected})
+	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusError {
+		t.Fatalf("异常退出终端状态 = %q，期望 %q", got, realtime.StatusError)
+	}
+
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "exited", ExitReason: terminal.ExitReasonClosed})
+	if got := app.realtime.TerminalPresence("task-1", "terminal-1"); got != realtime.TerminalRemoved {
+		t.Fatalf("主动关闭终端状态记录 = %q，期望 %q", got, realtime.TerminalRemoved)
+	}
+}
+
+func TestAppConfiguresHTTPStatusServiceAtomically(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	initialPort := availableLoopbackPort(t)
+	initial, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            t.TempDir(),
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		StatusManagementMode:     settings.StatusManagementModeHTTP,
+		StatusManagementHTTPPort: initialPort,
+	})
+	if err != nil {
+		t.Fatalf("保存 HTTP 状态设置: %v", err)
+	}
+	initialURL := app.statusHTTP.APIURL()
+	if initialURL == "" {
+		t.Fatal("保存 HTTP 状态设置后未启动服务")
+	}
+
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("占用测试端口: %v", err)
+	}
+	defer occupied.Close()
+	failedPort := occupied.Addr().(*net.TCPAddr).Port
+	_, err = app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            initial.WorkspaceRoot,
+		TaskTreeWidth:            initial.TaskTreeWidth,
+		StatusManagementMode:     settings.StatusManagementModeHTTP,
+		StatusManagementHTTPPort: failedPort,
+	})
+	if err == nil {
+		t.Fatal("保存被占用 HTTP 端口 error = nil，期望错误")
+	}
+	if app.statusHTTP.APIURL() != initialURL {
+		t.Errorf("保存失败后的 HTTP 服务 = %q，期望保留 %q", app.statusHTTP.APIURL(), initialURL)
+	}
+	saved, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("读取保存设置: %v", err)
+	}
+	if saved.StatusManagementHTTPPort != initialPort {
+		t.Errorf("保存失败后的 HTTP 端口 = %d，期望 %d", saved.StatusManagementHTTPPort, initialPort)
+	}
+}
+
+func TestAppConfiguresIndependentHTTPServiceAndKeepsStatusHTTPAutomatic(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	port := availableLoopbackPort(t)
+	base := settings.Settings{
+		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth,
+		StatusManagementMode: settings.StatusManagementModeTitleChange, StatusManagementHTTPPort: port,
+	}
+
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot: base.WorkspaceRoot, TaskTreeWidth: base.TaskTreeWidth,
+		StatusManagementMode: base.StatusManagementMode, StatusManagementHTTPPort: base.StatusManagementHTTPPort, HTTPServiceEnabled: true,
+	}); err != nil {
+		t.Fatalf("保存独立 HTTP 服务设置: %v", err)
+	}
+	if app.statusHTTP.APIURL() == "" {
+		t.Fatal("独立 HTTP 服务未启动")
+	}
+
+	if _, err := app.SaveSettings(base); err != nil {
+		t.Fatalf("关闭独立 HTTP 服务: %v", err)
+	}
+	if app.statusHTTP.APIURL() != "" {
+		t.Errorf("关闭独立 HTTP 服务后 API 地址 = %q，期望为空", app.statusHTTP.APIURL())
+	}
+
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot: base.WorkspaceRoot, TaskTreeWidth: base.TaskTreeWidth,
+		StatusManagementMode: settings.StatusManagementModeHTTP, StatusManagementHTTPPort: port, HTTPServiceEnabled: false,
+	}); err != nil {
+		t.Fatalf("保存 HTTP 状态管理设置: %v", err)
+	}
+	if app.statusHTTP.APIURL() == "" {
+		t.Fatal("HTTP 状态管理未自动启动 HTTP 服务")
+	}
+}
+
+func TestAppKeepsHTTPServiceWhenSavingActiveTaskStatus(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	initial := settings.Settings{
+		WorkspaceRoot:            t.TempDir(),
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		ActiveTaskStatus:         settings.TaskStatusPending,
+		StatusManagementMode:     settings.StatusManagementModeHTTP,
+		StatusManagementHTTPPort: availableLoopbackPort(t),
+	}
+	if _, err := app.SaveSettings(initial); err != nil {
+		t.Fatalf("保存 HTTP 状态设置: %v", err)
+	}
+	previousURL := app.statusHTTP.APIURL()
+
+	initial.ActiveTaskStatus = settings.TaskStatusRunning
+	if _, err := app.SaveSettings(initial); err != nil {
+		t.Fatalf("仅保存任务标签时不应重启 HTTP 服务: %v", err)
+	}
+	if app.statusHTTP.APIURL() != previousURL {
+		t.Errorf("保存任务标签后的 API 地址 = %q，期望保持 %q", app.statusHTTP.APIURL(), previousURL)
+	}
+}
+
+func TestAppHTTPServiceListsTasksByStatusAndReturnsTaskDetails(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth,
+		StatusManagementMode: settings.StatusManagementModeTitleChange,
+		HTTPServiceEnabled:   true, StatusManagementHTTPPort: availableLoopbackPort(t),
+	}); err != nil {
+		t.Fatalf("启用任务 HTTP 服务: %v", err)
+	}
+	pending, err := app.CreateTask("待执行任务", "等待执行", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建待执行任务: %v", err)
+	}
+	running, err := app.CreateTask("执行中任务", "正在执行", "#22c55e")
+	if err != nil {
+		t.Fatalf("创建执行中任务: %v", err)
+	}
+	if _, err := app.StartTask(running.ID); err != nil {
+		t.Fatalf("开始执行中任务: %v", err)
+	}
+	completed, err := app.CreateTask("已完成任务", "已经完成", "#f97316")
+	if err != nil {
+		t.Fatalf("创建已完成任务: %v", err)
+	}
+	if _, err := app.StartTask(completed.ID); err != nil {
+		t.Fatalf("开始已完成任务: %v", err)
+	}
+	if _, err := app.FinishTask(completed.ID); err != nil {
+		t.Fatalf("结束已完成任务: %v", err)
+	}
+
+	response, err := http.Get(app.statusHTTP.APIURL() + "/tasks?status=pending")
+	if err != nil {
+		t.Fatalf("查询待执行任务: %v", err)
+	}
+	defer response.Body.Close()
+	var listed []realtime.TaskResource
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatalf("解析待执行任务: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != pending.ID || listed[0].Status != string(task.StatusPending) {
+		t.Fatalf("待执行任务列表 = %#v", listed)
+	}
+
+	response, err = http.Get(app.statusHTTP.APIURL() + "/tasks/" + running.ID)
+	if err != nil {
+		t.Fatalf("查询任务详情: %v", err)
+	}
+	defer response.Body.Close()
+	var detail realtime.TaskResource
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
+		t.Fatalf("解析任务详情: %v", err)
+	}
+	if detail.ID != running.ID || detail.Description != "正在执行" || detail.WorkspacePath == "" {
+		t.Fatalf("执行中任务详情 = %#v", detail)
+	}
+}
+
+func TestAppBuildsTerminalEnvironmentForEveryStatusMode(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	created, err := app.CreateTask("终端环境", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("开始任务: %v", err)
+	}
+	titleChangeEnvironment := app.terminalStatusEnvironment(started.ID, "terminal-1")
+	if !containsEnvironmentValue(titleChangeEnvironment, "TASKAI_TASK_ID="+started.ID) || !containsEnvironmentValue(titleChangeEnvironment, "TASKAI_TERMINAL_ID=terminal-1") {
+		t.Fatalf("标题变化模式终端环境 = %#v，期望包含任务和终端 ID", titleChangeEnvironment)
+	}
+	if containsEnvironmentValue(titleChangeEnvironment, "TASKAI_STATUS_API="+app.statusHTTP.APIURL()) {
+		t.Fatalf("标题变化模式终端环境不应包含 HTTP 地址: %#v", titleChangeEnvironment)
+	}
+
+	port := availableLoopbackPort(t)
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            started.WorkspaceRoot,
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		StatusManagementMode:     settings.StatusManagementModeHTTP,
+		StatusManagementHTTPPort: port,
+	}); err != nil {
+		t.Fatalf("保存 HTTP 状态设置: %v", err)
+	}
+	environment := app.terminalStatusEnvironment(started.ID, "terminal-1")
+	if !containsEnvironmentValue(environment, "TASKAI_TASK_ID="+started.ID) || !containsEnvironmentValue(environment, "TASKAI_TERMINAL_ID=terminal-1") || !containsEnvironmentValue(environment, "TASKAI_STATUS_API="+app.statusHTTP.APIURL()) {
+		t.Fatalf("HTTP 模式终端环境 = %#v", environment)
+	}
+}
+
+func TestAppInjectsTaskIDIntoBackgroundCommandsAndScripts(t *testing.T) {
+	item := settings.TaskMenuItem{
+		ID: "background-command", Kind: settings.TaskMenuItemKindCommand, Name: "后台执行", Command: "main-command",
+		BeforeScript: &settings.TaskScript{Script: "prepare"},
+		AfterScript:  &settings.TaskScript{Script: "cleanup"},
+	}
+	app, started := runningAppWithTaskMenuItem(t, item)
+	mainWaiter := &controlledCommandWaiter{done: make(chan error, 1)}
+	afterStarted := make(chan struct{})
+	var beforeEnvironment, commandEnvironment, afterEnvironment []string
+	app.scriptRunner = func(_ string, _ string, script string, _ []string, _ []byte, environment []string) error {
+		if script != "prepare" {
+			t.Fatalf("前置脚本 = %q，期望 prepare", script)
+		}
+		beforeEnvironment = append([]string(nil), environment...)
+		return nil
+	}
+	app.commandStarter = func(_ string, _ string, _ string, _ []string, environment []string) (commandWaiter, error) {
+		commandEnvironment = append([]string(nil), environment...)
+		return mainWaiter, nil
+	}
+	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte, environment []string) (commandWaiter, error) {
+		if script != "cleanup" {
+			t.Fatalf("后置脚本 = %q，期望 cleanup", script)
+		}
+		afterEnvironment = append([]string(nil), environment...)
+		close(afterStarted)
+		return commandWaiterFunc(func() error { return nil }), nil
+	}
+
+	if _, err := app.ExecuteTaskMenuCommand(started.ID, item.ID, 100, 32); err != nil {
+		t.Fatalf("执行后台命令: %v", err)
+	}
+	assertTaskOnlyEnvironment(t, beforeEnvironment, started.ID)
+	assertTaskOnlyEnvironment(t, commandEnvironment, started.ID)
+	mainWaiter.done <- nil
+	select {
+	case <-afterStarted:
+		assertTaskOnlyEnvironment(t, afterEnvironment, started.ID)
+	case <-time.After(time.Second):
+		t.Fatal("后置脚本未启动")
+	}
+}
+
+func TestAppInjectsHTTPStatusEnvironmentForNormalAndCommandTerminals(t *testing.T) {
+	port := availableLoopbackPort(t)
+	item := settings.TaskMenuItem{
+		ID: "custom-status-command", Kind: settings.TaskMenuItemKindCommand, Name: "状态命令", Command: "status-command", ShowTerminal: true,
+	}
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	backend := &capturingTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            t.TempDir(),
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		TaskMenuItems:            []settings.TaskMenuItem{item},
+		StatusManagementMode:     settings.StatusManagementModeHTTP,
+		StatusManagementHTTPPort: port,
+	}); err != nil {
+		t.Fatalf("保存 HTTP 状态设置: %v", err)
+	}
+	created, err := app.CreateTask("状态环境", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("开始任务: %v", err)
+	}
+
+	normal, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建普通终端: %v", err)
+	}
+	command, err := app.ExecuteTaskMenuCommand(started.ID, item.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建显示终端命令: %v", err)
+	}
+	if command.Terminal == nil {
+		t.Fatal("显示终端命令未返回终端")
+	}
+
+	initialNormalEnvironment := backend.request(normal.ID).Environment
+	assertStatusEnvironment(t, initialNormalEnvironment, app.statusHTTP.APIURL(), started.ID, normal.ID)
+	assertStatusEnvironment(t, backend.request(command.Terminal.ID).Environment, app.statusHTTP.APIURL(), started.ID, command.Terminal.ID)
+	if request := backend.request(command.Terminal.ID); request.Command != "status-command" {
+		t.Fatalf("显示终端命令 = %q，期望 status-command", request.Command)
+	}
+
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            started.WorkspaceRoot,
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		TaskMenuItems:            []settings.TaskMenuItem{item},
+		StatusManagementMode:     settings.StatusManagementModeTitleChange,
+		StatusManagementHTTPPort: port,
+	}); err != nil {
+		t.Fatalf("切换状态管理方式: %v", err)
+	}
+	if got := backend.request(normal.ID).Environment; !reflect.DeepEqual(got, initialNormalEnvironment) {
+		t.Fatalf("切换状态方式后既有进程环境 = %#v，期望保持 %#v", got, initialNormalEnvironment)
+	}
+}
+
+func TestAppRegistersRealtimeTerminalBeforeStartingProcess(t *testing.T) {
+	app := newApp(t.TempDir())
+	backend := &capturingTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+	created, err := app.CreateTask("启动注册", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("开始任务: %v", err)
+	}
+	backend.onStart = func(request terminal.StartRequest) {
+		if got := app.realtime.TerminalPresence(request.TaskID, request.ID); got != realtime.TerminalActive {
+			t.Fatalf("进程启动前的终端状态记录 = %q，期望 %q", got, realtime.TerminalActive)
+		}
+	}
+
+	if _, err := app.CreateTerminal(started.ID, 100, 32); err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+}
+
 func TestAppReordersTasksWithinStatus(t *testing.T) {
 	app := newApp(t.TempDir())
 	first, err := app.CreateTask("第一个待办", "", task.DefaultColor)
@@ -131,12 +497,13 @@ func TestRunTaskCommandUsesRunningTaskWorkspace(t *testing.T) {
 	}
 
 	var directory, shellPath, command string
-	var arguments []string
-	app.commandRunner = func(nextDirectory, nextShellPath, nextCommand string, nextArguments []string) error {
+	var arguments, environment []string
+	app.commandRunner = func(nextDirectory, nextShellPath, nextCommand string, nextArguments, nextEnvironment []string) error {
 		directory = nextDirectory
 		shellPath = nextShellPath
 		command = nextCommand
 		arguments = nextArguments
+		environment = nextEnvironment
 		return nil
 	}
 	if err := app.RunTaskCommand(started.ID, "code", []string{"."}); err != nil {
@@ -145,6 +512,7 @@ func TestRunTaskCommandUsesRunningTaskWorkspace(t *testing.T) {
 	if directory != started.WorkspacePath || shellPath == "" || command != "code" || len(arguments) != 1 || arguments[0] != "." {
 		t.Fatalf("运行任务命令参数 = directory:%q shell:%q command:%q arguments:%#v", directory, shellPath, command, arguments)
 	}
+	assertTaskOnlyEnvironment(t, environment, started.ID)
 }
 
 func TestExecuteTaskMenuCommandRunsScriptsAroundBackgroundCommand(t *testing.T) {
@@ -157,7 +525,7 @@ func TestExecuteTaskMenuCommandRunsScriptsAroundBackgroundCommand(t *testing.T) 
 	events := make(chan string, 3)
 	waiter := &controlledCommandWaiter{done: make(chan error, 1)}
 	var beforeInput []byte
-	app.scriptRunner = func(_ string, _ string, script string, _ []string, input []byte) error {
+	app.scriptRunner = func(_ string, _ string, script string, _ []string, input []byte, _ []string) error {
 		if script != "prepare" {
 			t.Fatalf("前置阶段运行脚本 = %q，期望 prepare", script)
 		}
@@ -165,11 +533,11 @@ func TestExecuteTaskMenuCommandRunsScriptsAroundBackgroundCommand(t *testing.T) 
 		events <- "script:" + script
 		return nil
 	}
-	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte) (commandWaiter, error) {
+	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte, _ []string) (commandWaiter, error) {
 		events <- "script:" + script
 		return commandWaiterFunc(func() error { return nil }), nil
 	}
-	app.commandStarter = func(directory, shellPath, command string, arguments []string) (commandWaiter, error) {
+	app.commandStarter = func(directory, shellPath, command string, arguments []string, _ []string) (commandWaiter, error) {
 		if directory != started.WorkspacePath || shellPath == "" || command != "main-command" || len(arguments) != 2 || arguments[0] != "--first" || arguments[1] != "第二个参数" {
 			t.Fatalf("主命令启动参数 = directory:%q shell:%q command:%q arguments:%#v", directory, shellPath, command, arguments)
 		}
@@ -214,13 +582,13 @@ func TestExecuteTaskMenuCommandStopsAfterFailingBeforeScript(t *testing.T) {
 		AfterScript:  &settings.TaskScript{Script: "cleanup"},
 	}
 	app, started := runningAppWithTaskMenuItem(t, item)
-	app.scriptRunner = func(_ string, _ string, script string, _ []string, _ []byte) error {
+	app.scriptRunner = func(_ string, _ string, script string, _ []string, _ []byte, _ []string) error {
 		if script != "prepare" {
 			t.Fatalf("不应执行脚本 %q", script)
 		}
 		return errors.New("准备失败")
 	}
-	app.commandStarter = func(string, string, string, []string) (commandWaiter, error) {
+	app.commandStarter = func(string, string, string, []string, []string) (commandWaiter, error) {
 		t.Fatal("前置脚本失败后不应启动主命令")
 		return nil, nil
 	}
@@ -238,11 +606,11 @@ func TestExecuteTaskMenuCommandSkipsAfterScriptWhenTaskFinishes(t *testing.T) {
 	app, started := runningAppWithTaskMenuItem(t, item)
 	waiter := &controlledCommandWaiter{done: make(chan error, 1)}
 	scriptCalls := make(chan string, 1)
-	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte) (commandWaiter, error) {
+	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte, _ []string) (commandWaiter, error) {
 		scriptCalls <- script
 		return commandWaiterFunc(func() error { return nil }), nil
 	}
-	app.commandStarter = func(string, string, string, []string) (commandWaiter, error) { return waiter, nil }
+	app.commandStarter = func(string, string, string, []string, []string) (commandWaiter, error) { return waiter, nil }
 
 	if _, err := app.ExecuteTaskMenuCommand(started.ID, item.ID, 100, 32); err != nil {
 		t.Fatalf("执行菜单命令: %v", err)
@@ -267,8 +635,8 @@ func TestFinishTaskWaitsForInProgressAfterScriptStart(t *testing.T) {
 	mainWaiter := &controlledCommandWaiter{done: make(chan error, 1)}
 	scriptStartEntered := make(chan struct{})
 	allowScriptStart := make(chan struct{})
-	app.commandStarter = func(string, string, string, []string) (commandWaiter, error) { return mainWaiter, nil }
-	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte) (commandWaiter, error) {
+	app.commandStarter = func(string, string, string, []string, []string) (commandWaiter, error) { return mainWaiter, nil }
+	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte, _ []string) (commandWaiter, error) {
 		if script != "cleanup" {
 			t.Fatalf("后置阶段运行脚本 = %q，期望 cleanup", script)
 		}
@@ -317,14 +685,14 @@ func TestExecuteTaskMenuCommandReportsFailingAfterScript(t *testing.T) {
 	app, started := runningAppWithTaskMenuItem(t, item)
 	waiter := &controlledCommandWaiter{done: make(chan error, 1)}
 	errorMessages := make(chan string, 1)
-	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte) (commandWaiter, error) {
+	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte, _ []string) (commandWaiter, error) {
 		if script != "cleanup" {
 			t.Fatalf("后置阶段运行脚本 = %q", script)
 		}
 		return commandWaiterFunc(func() error { return errors.New("清理失败") }), nil
 	}
 	app.scriptErrorPublisher = func(_ string, message string) { errorMessages <- message }
-	app.commandStarter = func(string, string, string, []string) (commandWaiter, error) { return waiter, nil }
+	app.commandStarter = func(string, string, string, []string, []string) (commandWaiter, error) { return waiter, nil }
 
 	if _, err := app.ExecuteTaskMenuCommand(started.ID, item.ID, 100, 32); err != nil {
 		t.Fatalf("执行菜单命令: %v", err)
@@ -348,7 +716,7 @@ func TestExecuteTaskMenuCommandRunsAfterScriptWhenTerminalExits(t *testing.T) {
 	}
 	app, started := runningAppWithTaskMenuItem(t, item)
 	scriptCalls := make(chan string, 1)
-	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte) (commandWaiter, error) {
+	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte, _ []string) (commandWaiter, error) {
 		scriptCalls <- script
 		return commandWaiterFunc(func() error { return nil }), nil
 	}
@@ -376,7 +744,7 @@ func TestRunTaskScriptWritesInputToStandardInput(t *testing.T) {
 	t.Setenv("TASKAI_SCRIPT_PROCESS_OUTPUT", outputPath)
 	input := []byte(`{"taskId":"task-a","directory":"/tmp/task-a","command":"codex","arguments":["--full-auto"]}`)
 
-	if err := runTaskScript(t.TempDir(), "", os.Args[0], []string{"-test.run=TestTaskScriptProcessHelper", "--"}, input); err != nil {
+	if err := runTaskScript(t.TempDir(), "", os.Args[0], []string{"-test.run=TestTaskScriptProcessHelper", "--"}, input, nil); err != nil {
 		t.Fatalf("运行脚本: %v", err)
 	}
 	output, err := os.ReadFile(outputPath)
@@ -395,11 +763,11 @@ func TestExecuteTaskMenuCommandKeepsEmptyMainArgumentsAsJSONArray(t *testing.T) 
 	}
 	app, started := runningAppWithTaskMenuItem(t, item)
 	var input []byte
-	app.scriptRunner = func(_ string, _ string, _ string, _ []string, nextInput []byte) error {
+	app.scriptRunner = func(_ string, _ string, _ string, _ []string, nextInput []byte, _ []string) error {
 		input = append([]byte(nil), nextInput...)
 		return nil
 	}
-	app.commandStarter = func(string, string, string, []string) (commandWaiter, error) {
+	app.commandStarter = func(string, string, string, []string, []string) (commandWaiter, error) {
 		return commandWaiterFunc(func() error { return nil }), nil
 	}
 
@@ -425,8 +793,8 @@ func TestExecuteTaskMenuCommandRunsAfterScriptWhenMainCommandFails(t *testing.T)
 	app, started := runningAppWithTaskMenuItem(t, item)
 	waiter := &controlledCommandWaiter{done: make(chan error, 1)}
 	scriptCalls := make(chan string, 1)
-	app.commandStarter = func(string, string, string, []string) (commandWaiter, error) { return waiter, nil }
-	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte) (commandWaiter, error) {
+	app.commandStarter = func(string, string, string, []string, []string) (commandWaiter, error) { return waiter, nil }
+	app.scriptStarter = func(_ string, _ string, script string, _ []string, _ []byte, _ []string) (commandWaiter, error) {
 		scriptCalls <- script
 		return commandWaiterFunc(func() error { return nil }), nil
 	}
@@ -538,6 +906,63 @@ func containsEnvironmentValue(environment []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func assertStatusEnvironment(t *testing.T, environment []string, apiURL, taskID, terminalID string) {
+	t.Helper()
+	if !containsEnvironmentValue(environment, "TASKAI_STATUS_API="+apiURL) ||
+		!containsEnvironmentValue(environment, "TASKAI_TASK_ID="+taskID) ||
+		!containsEnvironmentValue(environment, "TASKAI_TERMINAL_ID="+terminalID) {
+		t.Fatalf("终端环境 = %#v", environment)
+	}
+}
+
+func assertTaskOnlyEnvironment(t *testing.T, environment []string, taskID string) {
+	t.Helper()
+	if !reflect.DeepEqual(environment, []string{"TASKAI_TASK_ID=" + taskID}) {
+		t.Fatalf("任务环境 = %#v，期望仅包含任务 ID", environment)
+	}
+}
+
+type capturingTerminalBackend struct {
+	requests map[string]terminal.StartRequest
+	onStart  func(terminal.StartRequest)
+}
+
+func (backend *capturingTerminalBackend) Start(request terminal.StartRequest) (terminal.Session, error) {
+	if backend.requests == nil {
+		backend.requests = make(map[string]terminal.StartRequest)
+	}
+	backend.requests[request.ID] = request
+	if backend.onStart != nil {
+		backend.onStart(request)
+	}
+	return capturingTerminalSession{id: request.ID}, nil
+}
+
+func (backend *capturingTerminalBackend) request(terminalID string) terminal.StartRequest {
+	return backend.requests[terminalID]
+}
+
+type capturingTerminalSession struct {
+	id string
+}
+
+func (session capturingTerminalSession) ID() string             { return session.id }
+func (capturingTerminalSession) Read([]byte) (int, error)       { return 0, io.EOF }
+func (capturingTerminalSession) Write(data []byte) (int, error) { return len(data), nil }
+func (capturingTerminalSession) Close() error                   { return nil }
+func (capturingTerminalSession) Resize(uint16, uint16) error    { return nil }
+func (capturingTerminalSession) Wait() error                    { return nil }
+
+func availableLoopbackPort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("申请测试端口: %v", err)
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port
 }
 
 func receiveCommandEvent(t *testing.T, events <-chan string) string {

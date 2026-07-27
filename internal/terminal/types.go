@@ -10,13 +10,15 @@ const (
 )
 
 type StartRequest struct {
-	TaskID    string
-	Directory string
-	ShellPath string
-	Command   string
-	Arguments []string
-	Columns   uint16
-	Rows      uint16
+	ID          string
+	TaskID      string
+	Directory   string
+	ShellPath   string
+	Command     string
+	Arguments   []string
+	Environment []string
+	Columns     uint16
+	Rows        uint16
 }
 
 type Session interface {
@@ -31,12 +33,22 @@ type Backend interface {
 }
 
 type Event struct {
-	TaskID     string `json:"taskId"`
-	TerminalID string `json:"terminalId"`
-	Type       string `json:"type"`
-	Data       string `json:"data,omitempty"`
-	ExitCode   *int   `json:"exitCode,omitempty"`
+	TaskID     string     `json:"taskId"`
+	TerminalID string     `json:"terminalId"`
+	Type       string     `json:"type"`
+	Data       string     `json:"data,omitempty"`
+	ExitCode   *int       `json:"exitCode,omitempty"`
+	ExitReason ExitReason `json:"exitReason,omitempty"`
 }
+
+type ExitReason string
+
+const (
+	ExitReasonUnexpected          ExitReason = "unexpected"
+	ExitReasonClosed              ExitReason = "closed"
+	ExitReasonTaskEnded           ExitReason = "task-ended"
+	ExitReasonApplicationShutdown ExitReason = "application-shutdown"
+)
 
 type Info struct {
 	ID     string `json:"id"`

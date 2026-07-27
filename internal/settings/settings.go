@@ -29,6 +29,15 @@ const (
 
 const DefaultActiveTaskStatus = TaskStatusPending
 
+type StatusManagementMode string
+
+const (
+	StatusManagementModeTitleChange StatusManagementMode = "title-change"
+	StatusManagementModeHTTP        StatusManagementMode = "http"
+)
+
+const DefaultStatusManagementMode = StatusManagementModeTitleChange
+
 type TaskMenuItemKind string
 
 const (
@@ -59,22 +68,26 @@ type TaskMenuItem struct {
 }
 
 type Settings struct {
-	WorkspaceRoot    string         `json:"workspaceRoot"`
-	TaskTreeWidth    int            `json:"taskTreeWidth"`
-	ColorScheme      ColorScheme    `json:"colorScheme"`
-	ShellPath        string         `json:"shellPath"`
-	TaskMenuItems    []TaskMenuItem `json:"taskMenuItems"`
-	ActiveTaskStatus TaskStatus     `json:"activeTaskStatus"`
+	WorkspaceRoot            string               `json:"workspaceRoot"`
+	TaskTreeWidth            int                  `json:"taskTreeWidth"`
+	ColorScheme              ColorScheme          `json:"colorScheme"`
+	ShellPath                string               `json:"shellPath"`
+	TaskMenuItems            []TaskMenuItem       `json:"taskMenuItems"`
+	ActiveTaskStatus         TaskStatus           `json:"activeTaskStatus"`
+	StatusManagementMode     StatusManagementMode `json:"statusManagementMode"`
+	StatusManagementHTTPPort int                  `json:"statusManagementHTTPPort"`
+	HTTPServiceEnabled       bool                 `json:"httpServiceEnabled"`
 }
 
 func Default(applicationDataDirectory string) Settings {
 	return Settings{
-		WorkspaceRoot:    filepath.Join(applicationDataDirectory, "workspaces"),
-		TaskTreeWidth:    DefaultTaskTreeWidth,
-		ColorScheme:      DefaultColorScheme,
-		ShellPath:        DefaultShellPath(),
-		TaskMenuItems:    DefaultTaskMenuItems(),
-		ActiveTaskStatus: DefaultActiveTaskStatus,
+		WorkspaceRoot:        filepath.Join(applicationDataDirectory, "workspaces"),
+		TaskTreeWidth:        DefaultTaskTreeWidth,
+		ColorScheme:          DefaultColorScheme,
+		ShellPath:            DefaultShellPath(),
+		TaskMenuItems:        DefaultTaskMenuItems(),
+		ActiveTaskStatus:     DefaultActiveTaskStatus,
+		StatusManagementMode: DefaultStatusManagementMode,
 	}
 }
 
@@ -101,6 +114,18 @@ func Validate(next Settings) (Settings, error) {
 	}
 	if next.ActiveTaskStatus != TaskStatusPending && next.ActiveTaskStatus != TaskStatusRunning && next.ActiveTaskStatus != TaskStatusCompleted {
 		return Settings{}, fmt.Errorf("不支持的当前任务标签: %q", next.ActiveTaskStatus)
+	}
+	if next.StatusManagementMode == "" {
+		next.StatusManagementMode = DefaultStatusManagementMode
+	}
+	if next.StatusManagementMode != StatusManagementModeTitleChange && next.StatusManagementMode != StatusManagementModeHTTP {
+		return Settings{}, fmt.Errorf("不支持的状态管理方式: %q", next.StatusManagementMode)
+	}
+	if next.StatusManagementHTTPPort < 0 || next.StatusManagementHTTPPort > 65535 {
+		return Settings{}, fmt.Errorf("状态管理 HTTP 端口必须在 0 到 65535 之间")
+	}
+	if (next.StatusManagementMode == StatusManagementModeHTTP || next.HTTPServiceEnabled) && next.StatusManagementHTTPPort == 0 {
+		return Settings{}, fmt.Errorf("启用 HTTP 服务需要配置端口")
 	}
 	if strings.TrimSpace(next.ShellPath) == "" {
 		next.ShellPath = DefaultShellPath()

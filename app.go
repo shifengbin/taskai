@@ -17,6 +17,7 @@ import (
 
 	"taskai/internal/application"
 	"taskai/internal/lifecycle"
+	"taskai/internal/realtime"
 	"taskai/internal/settings"
 	"taskai/internal/storage"
 	"taskai/internal/task"
@@ -31,11 +32,13 @@ type App struct {
 	repository           storage.Repository
 	tasks                *lifecycle.Service
 	terminals            *terminal.Manager
+	realtime             *realtime.Service
+	statusHTTP           *realtime.HTTPServer
 	directoryOpener      func(string) error
-	commandRunner        func(string, string, string, []string) error
-	commandStarter       func(string, string, string, []string) (commandWaiter, error)
-	scriptRunner         func(string, string, string, []string, []byte) error
-	scriptStarter        func(string, string, string, []string, []byte) (commandWaiter, error)
+	commandRunner        func(string, string, string, []string, []string) error
+	commandStarter       func(string, string, string, []string, []string) (commandWaiter, error)
+	scriptRunner         func(string, string, string, []string, []byte, []string) error
+	scriptStarter        func(string, string, string, []string, []byte, []string) (commandWaiter, error)
 	scriptErrorPublisher func(string, string)
 	endingTasks          map[string]bool
 }
@@ -75,6 +78,15 @@ func newApp(dataDirectory string) *App {
 		scriptStarter:   startTaskScript,
 		endingTasks:     make(map[string]bool),
 	}
+	app.realtime = realtime.New(realtime.Options{Publish: app.publishRealtimeStatusEvent})
+	app.statusHTTP = realtime.NewHTTPServer(realtime.HTTPServerOptions{
+		Service:     app.realtime,
+		ResolveTask: app.realtimeTaskState,
+		TaskCatalog: realtime.TaskCatalog{
+			List: app.httpTasks,
+			Get:  app.httpTask,
+		},
+	})
 	app.terminals = terminal.NewManager(terminal.NewBackend(), app.publishTerminalEvent)
 	app.tasks = lifecycle.New(repository, app.terminals, time.Now)
 	app.scriptErrorPublisher = app.publishTaskScriptError
@@ -91,11 +103,18 @@ func defaultDataDirectory() string {
 
 func (app *App) startup(ctx context.Context) {
 	app.mu.Lock()
-	defer app.mu.Unlock()
 	app.ctx = ctx
+	app.mu.Unlock()
+	if current, err := app.GetSettings(); err == nil {
+		if err := app.applyStatusSettings(current); err != nil {
+			app.publishRealtimeStatusError(err.Error())
+		}
+	}
+	app.registerRunningRealtimeTasks()
 }
 
 func (app *App) shutdown(context.Context) {
+	_ = app.statusHTTP.Close()
 	_ = app.terminals.CloseAll()
 }
 
@@ -127,7 +146,12 @@ func (app *App) UpdateTask(taskID, title, description, color string) (task.Task,
 }
 
 func (app *App) StartTask(taskID string) (task.Task, error) {
-	return app.tasks.StartTask(taskID)
+	started, err := app.tasks.StartTask(taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	app.realtime.RegisterTask(started.ID)
+	return started, nil
 }
 
 func (app *App) FinishTask(taskID string) (task.Task, error) {
@@ -135,6 +159,9 @@ func (app *App) FinishTask(taskID string) (task.Task, error) {
 	app.endingTasks[taskID] = true
 	app.mu.Unlock()
 	finished, err := app.tasks.FinishTask(taskID)
+	if err == nil {
+		app.realtime.RemoveTask(taskID)
+	}
 	app.mu.Lock()
 	delete(app.endingTasks, taskID)
 	app.mu.Unlock()
@@ -154,7 +181,29 @@ func (app *App) SaveSettings(next settings.Settings) (settings.Settings, error) 
 	if err != nil {
 		return settings.Settings{}, err
 	}
-	return app.repository.SaveSettings(validated)
+	previous, err := app.GetSettings()
+	if err != nil {
+		return settings.Settings{}, err
+	}
+	if statusHTTPSettingsChanged(previous, validated) {
+		if err := app.applyStatusSettings(validated); err != nil {
+			return settings.Settings{}, err
+		}
+	}
+	saved, err := app.repository.SaveSettings(validated)
+	if err != nil {
+		if statusHTTPSettingsChanged(previous, validated) {
+			_ = app.applyStatusSettings(previous)
+		}
+		return settings.Settings{}, err
+	}
+	return saved, nil
+}
+
+func statusHTTPSettingsChanged(previous, current settings.Settings) bool {
+	return previous.HTTPServiceEnabled != current.HTTPServiceEnabled ||
+		previous.StatusManagementMode != current.StatusManagementMode ||
+		previous.StatusManagementHTTPPort != current.StatusManagementHTTPPort
 }
 
 func (app *App) DetectShells() []string {
@@ -166,7 +215,13 @@ func (app *App) CreateTerminal(taskID string, columns, rows uint16) (terminal.In
 	if err != nil {
 		return terminal.Info{}, err
 	}
-	return app.terminals.Create(taskID, running.WorkspacePath, shellPath, columns, rows)
+	environment, unregister := app.terminalStatusEnvironmentBuilder(taskID)
+	created, err := app.terminals.CreateWithEnvironmentBuilder(taskID, running.WorkspacePath, shellPath, environment, columns, rows)
+	if err != nil {
+		unregister()
+		return terminal.Info{}, err
+	}
+	return created, nil
 }
 
 func (app *App) CreateCommandTerminal(taskID, command string, arguments []string, columns, rows uint16) (terminal.Info, error) {
@@ -178,7 +233,13 @@ func (app *App) CreateCommandTerminal(taskID, command string, arguments []string
 	if command == "" {
 		return terminal.Info{}, fmt.Errorf("任务命令不能为空")
 	}
-	return app.terminals.CreateCommand(taskID, running.WorkspacePath, shellPath, command, arguments, columns, rows)
+	environment, unregister := app.terminalStatusEnvironmentBuilder(taskID)
+	created, err := app.terminals.CreateCommandWithEnvironmentBuilder(taskID, running.WorkspacePath, shellPath, command, arguments, environment, columns, rows)
+	if err != nil {
+		unregister()
+		return terminal.Info{}, err
+	}
+	return created, nil
 }
 
 func (app *App) RunTaskCommand(taskID, command string, arguments []string) error {
@@ -190,7 +251,7 @@ func (app *App) RunTaskCommand(taskID, command string, arguments []string) error
 	if command == "" {
 		return fmt.Errorf("任务命令不能为空")
 	}
-	return app.commandRunner(running.WorkspacePath, shellPath, command, append([]string(nil), arguments...))
+	return app.commandRunner(running.WorkspacePath, shellPath, command, append([]string(nil), arguments...), app.taskCommandEnvironment(taskID))
 }
 
 func (app *App) ExecuteTaskMenuCommand(taskID, itemID string, columns, rows uint16) (application.TaskMenuCommandResult, error) {
@@ -202,15 +263,17 @@ func (app *App) ExecuteTaskMenuCommand(taskID, itemID string, columns, rows uint
 		return application.TaskMenuCommandResult{}, fmt.Errorf("执行前置脚本: %w", err)
 	}
 	if item.ShowTerminal {
-		created, err := app.terminals.CreateCommand(taskID, invocation.directory, invocation.shellPath, invocation.command, invocation.arguments, columns, rows)
+		environment, unregister := app.terminalStatusEnvironmentBuilder(taskID)
+		created, err := app.terminals.CreateCommandWithEnvironmentBuilder(taskID, invocation.directory, invocation.shellPath, invocation.command, invocation.arguments, environment, columns, rows)
 		if err != nil {
+			unregister()
 			return application.TaskMenuCommandResult{}, err
 		}
 		afterScript := cloneTaskScript(item.AfterScript)
 		app.terminals.OnExit(taskID, created.ID, func() { app.runAfterScript(invocation, afterScript) })
 		return application.TaskMenuCommandResult{Terminal: &created}, nil
 	}
-	process, err := app.commandStarter(invocation.directory, invocation.shellPath, invocation.command, invocation.arguments)
+	process, err := app.commandStarter(invocation.directory, invocation.shellPath, invocation.command, invocation.arguments, app.taskCommandEnvironment(invocation.taskID))
 	if err != nil {
 		return application.TaskMenuCommandResult{}, err
 	}
@@ -240,6 +303,18 @@ func (app *App) ResizeTerminal(taskID, terminalID string, columns, rows uint16) 
 
 func (app *App) CloseTerminal(taskID, terminalID string) error {
 	return app.terminals.Close(taskID, terminalID)
+}
+
+func (app *App) ReportTerminalTitleActivity(taskID, terminalID string) bool {
+	return app.realtime.ReportTitleActivity(taskID, terminalID)
+}
+
+func (app *App) SelectTerminal(taskID, terminalID string) {
+	app.realtime.SelectTerminal(taskID, terminalID)
+}
+
+func (app *App) ClearSelectedTerminal() {
+	app.realtime.ClearSelection()
 }
 
 func (app *App) HasRunningTasks() bool {
@@ -317,7 +392,7 @@ func (app *App) runTaskScript(invocation taskCommandInvocation, script *settings
 	if err != nil {
 		return err
 	}
-	return app.scriptRunner(invocation.directory, invocation.shellPath, script.Script, append([]string(nil), script.Arguments...), payload)
+	return app.scriptRunner(invocation.directory, invocation.shellPath, script.Script, append([]string(nil), script.Arguments...), payload, app.taskCommandEnvironment(invocation.taskID))
 }
 
 func (app *App) runAfterScript(invocation taskCommandInvocation, script *settings.TaskScript) {
@@ -354,7 +429,7 @@ func (app *App) startTaskScript(invocation taskCommandInvocation, script *settin
 	if err != nil {
 		return nil, err
 	}
-	return app.scriptStarter(invocation.directory, invocation.shellPath, script.Script, append([]string(nil), script.Arguments...), payload)
+	return app.scriptStarter(invocation.directory, invocation.shellPath, script.Script, append([]string(nil), script.Arguments...), payload, app.taskCommandEnvironment(invocation.taskID))
 }
 
 func taskScriptInput(invocation taskCommandInvocation) ([]byte, error) {
@@ -375,11 +450,166 @@ func cloneTaskScript(script *settings.TaskScript) *settings.TaskScript {
 }
 
 func (app *App) publishTerminalEvent(event terminal.Event) {
+	if event.Type == "exited" {
+		if event.ExitReason == terminal.ExitReasonUnexpected {
+			app.realtime.RegisterTerminal(event.TaskID, event.TerminalID)
+			app.realtime.SetTerminalStatus(event.TaskID, event.TerminalID, realtime.StatusError)
+		} else {
+			app.realtime.RemoveTerminal(event.TaskID, event.TerminalID)
+		}
+	}
 	app.mu.RLock()
 	ctx := app.ctx
 	app.mu.RUnlock()
 	if ctx != nil {
 		runtime.EventsEmit(ctx, "task-terminal:event", event)
+	}
+}
+
+func (app *App) publishRealtimeStatusEvent(event realtime.Event) {
+	app.mu.RLock()
+	ctx := app.ctx
+	app.mu.RUnlock()
+	if ctx != nil {
+		runtime.EventsEmit(ctx, "task-realtime-status:event", event)
+	}
+}
+
+func (app *App) publishRealtimeStatusError(message string) {
+	app.mu.RLock()
+	ctx := app.ctx
+	app.mu.RUnlock()
+	if ctx != nil {
+		runtime.EventsEmit(ctx, "task-realtime-status:error", message)
+	}
+}
+
+func (app *App) applyStatusSettings(current settings.Settings) error {
+	shouldRunHTTP := current.HTTPServiceEnabled || current.StatusManagementMode == settings.StatusManagementModeHTTP
+	if shouldRunHTTP {
+		if err := app.statusHTTP.Configure(current.StatusManagementHTTPPort); err != nil {
+			return err
+		}
+	} else if err := app.statusHTTP.Close(); err != nil {
+		return err
+	}
+
+	switch current.StatusManagementMode {
+	case settings.StatusManagementModeHTTP:
+		app.realtime.SetMode(realtime.ModeHTTP)
+	case settings.StatusManagementModeTitleChange:
+		app.realtime.SetMode(realtime.ModeTitleChange)
+	default:
+		return fmt.Errorf("不支持的状态管理方式: %q", current.StatusManagementMode)
+	}
+	return nil
+}
+
+func (app *App) terminalStatusEnvironment(taskID, terminalID string) []string {
+	environment := []string{
+		"TASKAI_TASK_ID=" + taskID,
+		"TASKAI_TERMINAL_ID=" + terminalID,
+	}
+	current, err := app.GetSettings()
+	if err != nil || current.StatusManagementMode != settings.StatusManagementModeHTTP {
+		return environment
+	}
+	apiURL := app.statusHTTP.APIURL()
+	if apiURL == "" {
+		return environment
+	}
+	return append([]string{
+		"TASKAI_STATUS_API=" + apiURL,
+	}, environment...)
+}
+
+func (app *App) taskCommandEnvironment(taskID string) []string {
+	return []string{"TASKAI_TASK_ID=" + taskID}
+}
+
+func (app *App) terminalStatusEnvironmentBuilder(taskID string) (terminal.TerminalEnvironmentBuilder, func()) {
+	registeredTerminalID := ""
+	builder := func(terminalID string) []string {
+		registeredTerminalID = terminalID
+		app.realtime.RegisterTask(taskID)
+		app.realtime.RegisterTerminal(taskID, terminalID)
+		return app.terminalStatusEnvironment(taskID, terminalID)
+	}
+	return builder, func() {
+		if registeredTerminalID != "" {
+			app.realtime.RemoveTerminal(taskID, registeredTerminalID)
+		}
+	}
+}
+
+func (app *App) realtimeTaskState(taskID string) realtime.TaskState {
+	data, err := app.repository.Load()
+	if err != nil {
+		return realtime.TaskStateMissing
+	}
+	for _, current := range data.Tasks {
+		if current.ID != taskID {
+			continue
+		}
+		if current.Status == task.StatusRunning {
+			return realtime.TaskStateRunning
+		}
+		return realtime.TaskStateEnded
+	}
+	return realtime.TaskStateMissing
+}
+
+func (app *App) httpTasks() ([]realtime.TaskResource, error) {
+	data, err := app.repository.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := make([]realtime.TaskResource, 0, len(data.Tasks))
+	for _, current := range data.Tasks {
+		tasks = append(tasks, realtimeTaskResource(current))
+	}
+	return tasks, nil
+}
+
+func (app *App) httpTask(taskID string) (realtime.TaskResource, bool, error) {
+	data, err := app.repository.Load()
+	if err != nil {
+		return realtime.TaskResource{}, false, err
+	}
+
+	for _, current := range data.Tasks {
+		if current.ID == taskID {
+			return realtimeTaskResource(current), true, nil
+		}
+	}
+
+	return realtime.TaskResource{}, false, nil
+}
+
+func realtimeTaskResource(current task.Task) realtime.TaskResource {
+	return realtime.TaskResource{
+		ID:            current.ID,
+		Title:         current.Title,
+		Description:   current.Description,
+		Color:         current.Color,
+		Status:        string(current.Status),
+		CreatedAt:     current.CreatedAt,
+		CompletedAt:   current.CompletedAt,
+		WorkspaceRoot: current.WorkspaceRoot,
+		WorkspacePath: current.WorkspacePath,
+	}
+}
+
+func (app *App) registerRunningRealtimeTasks() {
+	items, err := app.tasks.ListTasks()
+	if err != nil {
+		return
+	}
+	for _, current := range items {
+		if current.Status == task.StatusRunning {
+			app.realtime.RegisterTask(current.ID)
+		}
 	}
 }
 
@@ -416,8 +646,8 @@ func openDirectory(directory string) error {
 	return nil
 }
 
-func runTaskCommand(directory, shellPath, command string, arguments []string) error {
-	process, err := startTaskCommand(directory, shellPath, command, arguments)
+func runTaskCommand(directory, shellPath, command string, arguments, environment []string) error {
+	process, err := startTaskCommand(directory, shellPath, command, arguments, environment)
 	if err != nil {
 		return err
 	}
@@ -425,17 +655,17 @@ func runTaskCommand(directory, shellPath, command string, arguments []string) er
 	return nil
 }
 
-func startTaskCommand(directory, shellPath, command string, arguments []string) (commandWaiter, error) {
+func startTaskCommand(directory, shellPath, command string, arguments, environment []string) (commandWaiter, error) {
 	process := commandProcess(shellPath, command, arguments)
-	configureCommandProcess(process, directory)
+	configureCommandProcess(process, directory, environment)
 	if err := process.Start(); err != nil {
 		return nil, fmt.Errorf("启动任务命令: %w", err)
 	}
 	return process, nil
 }
 
-func runTaskScript(directory, shellPath, script string, arguments []string, input []byte) error {
-	process, err := startTaskScript(directory, shellPath, script, arguments, input)
+func runTaskScript(directory, shellPath, script string, arguments []string, input []byte, environment []string) error {
+	process, err := startTaskScript(directory, shellPath, script, arguments, input, environment)
 	if err != nil {
 		return err
 	}
@@ -445,9 +675,9 @@ func runTaskScript(directory, shellPath, script string, arguments []string, inpu
 	return nil
 }
 
-func startTaskScript(directory, shellPath, script string, arguments []string, input []byte) (commandWaiter, error) {
+func startTaskScript(directory, shellPath, script string, arguments []string, input []byte, environment []string) (commandWaiter, error) {
 	process := commandProcess(shellPath, script, arguments)
-	configureCommandProcess(process, directory)
+	configureCommandProcess(process, directory, environment)
 	process.Stdin = bytes.NewReader(input)
 	if err := process.Start(); err != nil {
 		return nil, fmt.Errorf("启动脚本: %w", err)
@@ -482,11 +712,12 @@ func commandProcessForPlatform(platform, shellPath, command string, arguments []
 	}
 }
 
-func configureCommandProcess(process *exec.Cmd, directory string) {
+func configureCommandProcess(process *exec.Cmd, directory string, environment []string) {
 	process.Dir = directory
 	if process.Env == nil {
 		process.Env = os.Environ()
 	}
+	process.Env = append(process.Env, environment...)
 }
 
 func isPowerShell(shellPath string) bool {

@@ -56,7 +56,7 @@ func (backend *windowsBackend) Start(request StartRequest) (Session, error) {
 		return nil, fmt.Errorf("创建 Windows ConPTY 失败: %w", err)
 	}
 	arguments := append([]string{resolvedCommand}, request.Arguments...)
-	pid, processHandle, err := console.Spawn(resolvedCommand, arguments, &syscall.ProcAttr{Dir: request.Directory})
+	pid, processHandle, err := console.Spawn(resolvedCommand, arguments, &syscall.ProcAttr{Dir: request.Directory, Env: embeddedTerminalEnvironment(request.Environment)})
 	if err != nil {
 		_ = console.Close()
 		return nil, fmt.Errorf("启动 Windows 终端失败: %w", err)
@@ -69,7 +69,7 @@ func (backend *windowsBackend) Start(request StartRequest) (Session, error) {
 	}
 	_ = windows.CloseHandle(windows.Handle(processHandle))
 
-	return &windowsSession{id: newSessionID(), console: console, process: process}, nil
+	return &windowsSession{id: sessionID(request.ID), console: console, process: process}, nil
 }
 
 func (session *windowsSession) ID() string { return session.id }

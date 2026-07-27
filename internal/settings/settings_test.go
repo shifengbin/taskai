@@ -19,6 +19,15 @@ func TestDefaultUsesApplicationDataWorkspaces(t *testing.T) {
 	if settings.TaskTreeWidth != DefaultTaskTreeWidth {
 		t.Errorf("Default() TaskTreeWidth = %d, want %d", settings.TaskTreeWidth, DefaultTaskTreeWidth)
 	}
+	if settings.StatusManagementMode != StatusManagementModeTitleChange {
+		t.Errorf("Default() StatusManagementMode = %q，期望 %q", settings.StatusManagementMode, StatusManagementModeTitleChange)
+	}
+	if settings.StatusManagementHTTPPort != 0 {
+		t.Errorf("Default() StatusManagementHTTPPort = %d，期望 0", settings.StatusManagementHTTPPort)
+	}
+	if settings.HTTPServiceEnabled {
+		t.Error("Default() HTTPServiceEnabled = true，期望 false")
+	}
 }
 
 func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
@@ -51,6 +60,94 @@ func TestValidateDefaultsAndValidatesActiveTaskStatus(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Validate() error = nil, want invalid active task status error")
+	}
+}
+
+func TestValidateDefaultsStatusManagementModeForExistingSettings(t *testing.T) {
+	contents, err := json.Marshal(map[string]any{
+		"workspaceRoot": filepath.Join(t.TempDir(), "workspaces"),
+		"taskTreeWidth": DefaultTaskTreeWidth,
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var next Settings
+	if err := json.Unmarshal(contents, &next); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	validated, err := Validate(next)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if validated.StatusManagementMode != StatusManagementModeTitleChange {
+		t.Errorf("Validate() StatusManagementMode = %q，期望 %q", validated.StatusManagementMode, StatusManagementModeTitleChange)
+	}
+	if validated.HTTPServiceEnabled {
+		t.Error("Validate() HTTPServiceEnabled = true，期望旧设置默认关闭")
+	}
+}
+
+func TestValidateRequiresHTTPPortWhenIndependentHTTPServiceEnabled(t *testing.T) {
+	base := Settings{WorkspaceRoot: t.TempDir(), TaskTreeWidth: DefaultTaskTreeWidth, StatusManagementMode: StatusManagementModeTitleChange}
+
+	if _, err := Validate(Settings{
+		WorkspaceRoot: base.WorkspaceRoot, TaskTreeWidth: base.TaskTreeWidth,
+		StatusManagementMode: StatusManagementModeTitleChange, HTTPServiceEnabled: true,
+	}); err == nil {
+		t.Fatal("Validate() 独立 HTTP 服务未设置端口 error = nil，期望错误")
+	}
+
+	validated, err := Validate(Settings{
+		WorkspaceRoot: base.WorkspaceRoot, TaskTreeWidth: base.TaskTreeWidth,
+		StatusManagementMode: StatusManagementModeTitleChange, HTTPServiceEnabled: true, StatusManagementHTTPPort: 18765,
+	})
+	if err != nil {
+		t.Fatalf("Validate() 独立 HTTP 服务 error = %v", err)
+	}
+	if !validated.HTTPServiceEnabled || validated.StatusManagementHTTPPort != 18765 {
+		t.Fatalf("Validate() 独立 HTTP 服务设置 = %#v", validated)
+	}
+
+	if _, err := Validate(base); err != nil {
+		t.Fatalf("Validate() 未开启独立 HTTP 服务 error = %v", err)
+	}
+}
+
+func TestValidateRequiresHTTPPortOnlyForHTTPStatusManagement(t *testing.T) {
+	base := Settings{WorkspaceRoot: t.TempDir(), TaskTreeWidth: DefaultTaskTreeWidth}
+
+	validated, err := Validate(Settings{
+		WorkspaceRoot:            base.WorkspaceRoot,
+		TaskTreeWidth:            base.TaskTreeWidth,
+		StatusManagementMode:     StatusManagementModeHTTP,
+		StatusManagementHTTPPort: 18765,
+	})
+	if err != nil {
+		t.Fatalf("Validate() HTTP 设置 error = %v", err)
+	}
+	if validated.StatusManagementHTTPPort != 18765 {
+		t.Errorf("Validate() StatusManagementHTTPPort = %d，期望 18765", validated.StatusManagementHTTPPort)
+	}
+
+	for _, port := range []int{0, -1, 65536} {
+		_, err := Validate(Settings{
+			WorkspaceRoot:            base.WorkspaceRoot,
+			TaskTreeWidth:            base.TaskTreeWidth,
+			StatusManagementMode:     StatusManagementModeHTTP,
+			StatusManagementHTTPPort: port,
+		})
+		if err == nil {
+			t.Errorf("Validate() HTTP 端口 %d error = nil，期望错误", port)
+		}
+	}
+
+	validated, err = Validate(base)
+	if err != nil {
+		t.Fatalf("Validate() 标题变化默认设置 error = %v", err)
+	}
+	if validated.StatusManagementMode != StatusManagementModeTitleChange {
+		t.Errorf("Validate() 标题变化默认模式 = %q，期望 %q", validated.StatusManagementMode, StatusManagementModeTitleChange)
 	}
 }
 

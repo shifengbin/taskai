@@ -1,5 +1,7 @@
 export type TaskStatus = 'pending' | 'running' | 'completed'
 export type TerminalState = 'active' | 'exited'
+export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
+export type StatusManagementMode = 'title-change' | 'http'
 export type ColorScheme = 'light' | 'dark'
 export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'command'
 export const defaultTaskColor = '#4f46e5'
@@ -14,6 +16,7 @@ export interface TaskRecord {
   completedAt?: string
   workspaceRoot?: string
   workspacePath?: string
+  realtimeStatus?: RealtimeStatus
 }
 
 export interface TerminalRecord {
@@ -22,6 +25,7 @@ export interface TerminalRecord {
   state: TerminalState
   output?: string
   title?: string
+  realtimeStatus?: RealtimeStatus
 }
 
 export function terminalDisplayName(terminal: Pick<TerminalRecord, 'title'>): string {
@@ -35,6 +39,15 @@ export interface TerminalEvent {
   data?: string
 }
 
+export interface RealtimeStatusEvent {
+  version: number
+  taskId: string
+  taskStatus: RealtimeStatus
+  terminalId?: string
+  terminalStatus?: RealtimeStatus
+  terminalRemoved?: boolean
+}
+
 export interface SettingsRecord {
 	workspaceRoot: string
 	taskTreeWidth: number
@@ -42,6 +55,9 @@ export interface SettingsRecord {
 	shellPath: string
 	taskMenuItems: TaskMenuItem[]
 	activeTaskStatus: TaskStatus
+	statusManagementMode: StatusManagementMode
+	statusManagementHTTPPort: number
+	httpServiceEnabled: boolean
 }
 
 export interface TaskMenuItem {
@@ -79,6 +95,17 @@ export const taskStatusLabel: Record<TaskStatus, string> = {
 export const terminalStatusLabel: Record<TerminalState, string> = {
   active: '运行中',
   exited: '已退出',
+}
+
+export const realtimeStatusLabel: Record<RealtimeStatus, string> = {
+  idle: '空闲',
+  working: '工作中',
+  unread: '未读',
+  error: '异常',
+}
+
+export function terminalRealtimeStatus(terminal: Pick<TerminalRecord, 'realtimeStatus' | 'state'>): RealtimeStatus {
+  return terminal.realtimeStatus ?? (terminal.state === 'exited' ? 'error' : 'idle')
 }
 
 export function clampTaskTreeWidth(width: number, viewportWidth = window.innerWidth): number {

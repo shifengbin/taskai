@@ -3,14 +3,17 @@ import userEvent from '@testing-library/user-event'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const bindings = vi.hoisted(() => ({
+  ClearSelectedTerminal: vi.fn(),
   CreateTask: vi.fn(),
   UpdateTask: vi.fn(),
   ListTasks: vi.fn(),
   ReorderTasks: vi.fn(),
+	ReportTerminalTitleActivity: vi.fn(),
   StartTask: vi.fn(),
   FinishTask: vi.fn(),
   GetSettings: vi.fn(),
   SaveSettings: vi.fn(),
+	SelectTerminal: vi.fn(),
   DetectShells: vi.fn(),
   CreateTerminal: vi.fn(),
   CreateCommandTerminal: vi.fn(),
@@ -61,6 +64,9 @@ describe('App confirmation flows', () => {
     Object.values(bindings).forEach((mock) => mock.mockReset())
     Object.values(runtime).forEach((mock) => mock.mockReset())
     bindings.SaveSettings.mockImplementation(async (next) => next)
+		bindings.ClearSelectedTerminal.mockResolvedValue(undefined)
+		bindings.SelectTerminal.mockResolvedValue(undefined)
+		bindings.ReportTerminalTitleActivity.mockResolvedValue(true)
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
@@ -206,6 +212,9 @@ describe('App confirmation flows', () => {
       shellPath: '/bin/sh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
+		statusManagementMode: 'title-change',
+		statusManagementHTTPPort: 0,
+		httpServiceEnabled: false,
     })
 
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
@@ -232,6 +241,9 @@ describe('App confirmation flows', () => {
       shellPath: '/bin/zsh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
+		statusManagementMode: 'title-change',
+		statusManagementHTTPPort: 0,
+		httpServiceEnabled: false,
     })
   })
 
@@ -255,6 +267,9 @@ describe('App confirmation flows', () => {
       shellPath: '/custom/shell',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
+		statusManagementMode: 'title-change',
+		statusManagementHTTPPort: 0,
+		httpServiceEnabled: false,
     })
   })
 
@@ -396,7 +411,115 @@ describe('App confirmation flows', () => {
     terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: '\x1b]2;正在构建\x07'})
 
     await waitFor(() => expect(screen.getAllByText('正在构建')).toHaveLength(2))
+    expect(bindings.ReportTerminalTitleActivity).toHaveBeenCalledWith('task-1', 'terminal-1')
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: '\x1b]2;正在构建\x07'})
+    await waitFor(() => expect(bindings.ReportTerminalTitleActivity).toHaveBeenCalledTimes(1))
     expect(screen.queryByText('终端 1')).not.toBeInTheDocument()
+  })
+
+  it('接收实时状态事件并在选择终端时通知后端清除未读状态', async () => {
+    const user = userEvent.setup()
+    let realtimeStatusListener: ((event: {version: number, taskId: string, taskStatus: 'unread' | 'working', terminalId: string, terminalStatus: 'unread' | 'working'}) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-realtime-status:event') {
+        realtimeStatusListener = listener
+      }
+    })
+    bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await screen.findByText('终端视图')
+    if (!realtimeStatusListener) {
+      throw new Error('未注册实时状态监听器')
+    }
+
+    realtimeStatusListener({version: 2, taskId: 'task-1', taskStatus: 'unread', terminalId: 'terminal-1', terminalStatus: 'unread'})
+
+    await screen.findByRole('status', {name: '终端状态：未读'})
+    realtimeStatusListener({version: 1, taskId: 'task-1', taskStatus: 'working', terminalId: 'terminal-1', terminalStatus: 'working'})
+    expect(screen.getByRole('status', {name: '终端状态：未读'})).toBeInTheDocument()
+    await user.click(screen.getByText('清理临时文件'))
+    await waitFor(() => expect(bindings.ClearSelectedTerminal).toHaveBeenCalled())
+    const terminalItem = screen.getByText('终端').closest('[role="button"]')
+    if (!terminalItem) {
+      throw new Error('未找到终端条目')
+    }
+    await user.click(terminalItem)
+    await waitFor(() => expect(bindings.SelectTerminal).toHaveBeenLastCalledWith('task-1', 'terminal-1'))
+  })
+
+  it('在设置中配置 HTTP 状态管理并查看接口说明', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '实时状态'}))
+    await user.click(screen.getByLabelText('状态管理方式'))
+    await user.click(screen.getByRole('option', {name: '通过 HTTP 接口'}))
+    expect(screen.getByRole('switch', {name: '通过 HTTP 状态管理自动启用本机 HTTP 服务'})).toBeChecked()
+    expect(screen.getByRole('switch', {name: '通过 HTTP 状态管理自动启用本机 HTTP 服务'})).toBeDisabled()
+    const port = screen.getByRole('spinbutton', {name: 'HTTP 端口'})
+    await user.clear(port)
+    await user.type(port, '38561')
+    await user.click(screen.getByRole('button', {name: '查看 HTTP 接口使用说明'}))
+
+    expect(await screen.findByRole('dialog', {name: 'HTTP 状态接口使用说明'})).toHaveTextContent('TASKAI_STATUS_API')
+    expect(screen.getByText('服务与设置')).toBeInTheDocument()
+    expect(screen.getByText('查询接口')).toBeInTheDocument()
+    expect(screen.getByText('状态更新')).toBeInTheDocument()
+    expect(screen.getByText('GET /api/v1/tasks?status=pending|running|completed')).toBeInTheDocument()
+    expect(screen.getByText('GET /api/v1/tasks/:taskId')).toBeInTheDocument()
+    expect(screen.getByText('PUT /api/v1/tasks/:taskId/status')).toBeInTheDocument()
+    expect(screen.getByText('PUT /api/v1/tasks/:taskId/terminals/:terminalId/status')).toBeInTheDocument()
+    expect(screen.getByText(/任务列表查询参数：可省略.*pending.*running.*completed/)).toBeInTheDocument()
+    expect(screen.getByText(/状态更新请求体的 status：必填.*idle.*working.*unread.*error/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '关闭'}))
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: 'HTTP 状态接口使用说明'})).not.toBeInTheDocument())
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      statusManagementMode: 'http', statusManagementHTTPPort: 38561,
+    })))
+  })
+
+  it('在标题变化模式可独立启用本机 HTTP 服务', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '实时状态'}))
+    const httpService = screen.getByRole('switch', {name: '启用本机 HTTP 服务'})
+    expect(httpService).not.toBeChecked()
+    await user.click(httpService)
+    const port = screen.getByRole('spinbutton', {name: 'HTTP 端口'})
+    await user.clear(port)
+    await user.type(port, '38562')
+    await user.click(screen.getByRole('button', {name: '查看 HTTP 接口使用说明'}))
+    expect(await screen.findByRole('dialog', {name: 'HTTP 状态接口使用说明'})).toBeInTheDocument()
+    await user.click(screen.getByRole('button', {name: '关闭'}))
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: 'HTTP 状态接口使用说明'})).not.toBeInTheDocument())
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      statusManagementMode: 'title-change', statusManagementHTTPPort: 38562, httpServiceEnabled: true,
+    })))
+  })
+
+  it('保存无效 HTTP 状态配置时显示后端错误', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockRejectedValue(new Error('HTTP 状态管理需要配置端口'))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '实时状态'}))
+    await user.click(screen.getByLabelText('状态管理方式'))
+    await user.click(screen.getByRole('option', {name: '通过 HTTP 接口'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(await screen.findByText('HTTP 状态管理需要配置端口')).toBeInTheDocument()
   })
 
   it('终端输出空白 OSC 标题后在树节点和右侧终端栏回退为终端', async () => {

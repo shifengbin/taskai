@@ -111,7 +111,7 @@ describe('TaskTree', () => {
     expect(screen.queryByText('终端 2')).not.toBeInTheDocument()
   })
 
-  it('活跃终端以状态点表示运行状态，不显示状态文字', () => {
+  it('空闲终端以状态点表示状态，不显示状态文字', () => {
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -133,8 +133,32 @@ describe('TaskTree', () => {
     if (!(terminalItem instanceof HTMLElement)) {
       throw new Error('未找到终端条目')
     }
-    expect(within(terminalItem).getByRole('status', {name: '终端状态：运行中'})).toBeInTheDocument()
-    expect(within(terminalItem).queryByText('运行中', {exact: true})).not.toBeInTheDocument()
+    expect(within(terminalItem).getByRole('status', {name: '终端状态：空闲'})).toBeInTheDocument()
+    expect(within(terminalItem).queryByText('空闲', {exact: true})).not.toBeInTheDocument()
+  })
+
+  it('任务收起时显示聚合状态点，展开后仅展示终端状态点', () => {
+    const props = {
+      tasks: [{...runningTask, realtimeStatus: 'unread' as const}],
+      terminals: [],
+      selectedTerminalId: undefined,
+      onSelectTask: vi.fn(),
+      onSelectTerminal: vi.fn(),
+      onCreateTerminal: vi.fn(),
+      onEditTask: vi.fn(),
+      onOpenTaskFolder: vi.fn(),
+      onStartTask: vi.fn(),
+      onFinishTask: vi.fn(),
+      activeStatus: 'running' as const,
+      onChangeStatus: vi.fn(),
+    }
+    const {rerender} = render(<TaskTree {...props} expandedTasks={{[runningTask.id]: false}}/>)
+
+    expect(screen.getByRole('status', {name: '终端状态：未读'})).toHaveAttribute('data-status', 'unread')
+
+    rerender(<TaskTree {...props} expandedTasks={{[runningTask.id]: true}}/>)
+
+    expect(screen.queryByRole('status', {name: '终端状态：未读'})).not.toBeInTheDocument()
   })
 
   it('终端标题在可收缩容器中单行裁剪而不显示省略号', () => {
@@ -274,7 +298,7 @@ describe('TaskTree', () => {
     expect(onChangeStatus).toHaveBeenCalledWith('running')
   })
 
-  it('已退出终端以状态点表示退出状态，不显示状态文字', () => {
+  it('异常退出终端以状态点表示异常状态，不显示状态文字', () => {
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -296,8 +320,8 @@ describe('TaskTree', () => {
     if (!(terminalItem instanceof HTMLElement)) {
       throw new Error('未找到终端条目')
     }
-    expect(within(terminalItem).getByRole('status', {name: '终端状态：已退出'})).toBeInTheDocument()
-    expect(within(terminalItem).queryByText('已退出', {exact: true})).not.toBeInTheDocument()
+    expect(within(terminalItem).getByRole('status', {name: '终端状态：异常'})).toBeInTheDocument()
+    expect(within(terminalItem).queryByText('异常', {exact: true})).not.toBeInTheDocument()
   })
 
   it('悬浮任务条目时显示完整描述', async () => {
