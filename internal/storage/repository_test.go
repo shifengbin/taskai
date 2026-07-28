@@ -61,6 +61,104 @@ func TestRepositoryReturnsDefaultsForMissingDataFile(t *testing.T) {
 	if !reflect.DeepEqual(data.Settings, defaults) {
 		t.Errorf("Load() Settings = %#v, want %#v", data.Settings, defaults)
 	}
+	if data.ExtraInfoTemplates == nil {
+		t.Error("Load() ExtraInfoTemplates = nil, want empty slice")
+	}
+}
+
+func TestRepositoryListsEmptyExtraInfoTemplatesAsJSONArray(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+
+	templates, err := repository.ListExtraInfoTemplates()
+	if err != nil {
+		t.Fatalf("ListExtraInfoTemplates() error = %v", err)
+	}
+	encoded, err := json.Marshal(templates)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if got, want := string(encoded), "[]"; got != want {
+		t.Fatalf("空额外信息模板 JSON = %s，期望 %s", got, want)
+	}
+}
+
+func TestRepositoryManagesExtraInfoCataloguesAndRequiresEmptyBeforeDelete(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	if _, err := repository.SaveExtraInfoCatalogue(" git "); err != nil {
+		t.Fatalf("SaveExtraInfoCatalogue() error = %v", err)
+	}
+	if got, err := repository.ListExtraInfoCatalogues(); err != nil || !reflect.DeepEqual(got, []string{"git"}) {
+		t.Fatalf("ListExtraInfoCatalogues() = %#v, %v，期望 [git], nil", got, err)
+	}
+	template, err := task.NewExtraInfoTemplate("git", "API 仓库", []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}}, nil)
+	if err != nil {
+		t.Fatalf("NewExtraInfoTemplate() error = %v", err)
+	}
+	if _, err := repository.SaveExtraInfoTemplate(template); err != nil {
+		t.Fatalf("SaveExtraInfoTemplate() error = %v", err)
+	}
+	if err := repository.DeleteExtraInfoCatalogue("git"); err == nil {
+		t.Fatal("DeleteExtraInfoCatalogue() error = nil，期望分类仍有信息时失败")
+	}
+	if err := repository.DeleteExtraInfoTemplate(template.ID); err != nil {
+		t.Fatalf("DeleteExtraInfoTemplate() error = %v", err)
+	}
+	if err := repository.DeleteExtraInfoCatalogue("git"); err != nil {
+		t.Fatalf("DeleteExtraInfoCatalogue() error = %v", err)
+	}
+}
+
+func TestRepositoryLoadsOldDataWithEmptyExtraInfoTemplates(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{"tasks":[],"settings":{}}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if data.ExtraInfoTemplates == nil || len(data.ExtraInfoTemplates) != 0 {
+		t.Errorf("Load() ExtraInfoTemplates = %#v, want empty slice", data.ExtraInfoTemplates)
+	}
+}
+
+func TestRepositoryPersistsAndDeletesExtraInfoTemplateWithoutTouchingTasks(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	if _, err := repository.SaveExtraInfoCatalogue("git"); err != nil {
+		t.Fatalf("SaveExtraInfoCatalogue() error = %v", err)
+	}
+	template, err := task.NewExtraInfoTemplate("git", "API 仓库", []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}}, []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}})
+	if err != nil {
+		t.Fatalf("NewExtraInfoTemplate() error = %v", err)
+	}
+	snapshot, err := task.NewExtraInfo(template, map[string]string{"branch": "main"})
+	if err != nil {
+		t.Fatalf("NewExtraInfo() error = %v", err)
+	}
+	data := Data{Tasks: []task.Task{{ID: "task-1", Title: "测试", Color: task.DefaultColor, ExtraInfo: []task.ExtraInfo{snapshot}}}, ExtraInfoCatalogues: []string{"git"}, Settings: settings.Default(t.TempDir())}
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	if _, err := repository.SaveExtraInfoTemplate(template); err != nil {
+		t.Fatalf("SaveExtraInfoTemplate() error = %v", err)
+	}
+	if err := repository.DeleteExtraInfoTemplate(template.ID); err != nil {
+		t.Fatalf("DeleteExtraInfoTemplate() error = %v", err)
+	}
+
+	loaded, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(loaded.ExtraInfoTemplates) != 0 {
+		t.Errorf("Load() ExtraInfoTemplates = %#v, want empty slice", loaded.ExtraInfoTemplates)
+	}
+	if got := loaded.Tasks[0].ExtraInfo; !reflect.DeepEqual(got, []task.ExtraInfo{snapshot}) {
+		t.Errorf("Load() task extra info = %#v, want %#v", got, []task.ExtraInfo{snapshot})
+	}
 }
 
 func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
@@ -76,6 +174,7 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 			Description: "实现邮箱登录表单",
 			Status:      task.StatusRunning,
 			CreatedAt:   createdAt,
+			ExtraInfo:   []task.ExtraInfo{},
 		}},
 		Settings: settings.Settings{
 			WorkspaceRoot: filepath.Join(t.TempDir(), "workspaces"),
@@ -91,7 +190,7 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(got.Tasks) != 1 || got.Tasks[0] != want.Tasks[0] {
+	if len(got.Tasks) != 1 || !reflect.DeepEqual(got.Tasks[0], want.Tasks[0]) {
 		t.Errorf("Load() Tasks = %#v, want %#v", got.Tasks, want.Tasks)
 	}
 	if !reflect.DeepEqual(got.Settings, want.Settings) {

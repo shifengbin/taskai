@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func TestServiceCreatesPendingTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(data.Tasks) != 1 || data.Tasks[0] != created {
+	if len(data.Tasks) != 1 || !reflect.DeepEqual(data.Tasks[0], created) {
 		t.Errorf("CreateTask() persisted Tasks = %#v, want %#v", data.Tasks, created)
 	}
 }
@@ -71,7 +72,7 @@ func TestServiceUpdatesTaskDetailsWithoutChangingLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(data.Tasks) != 1 || data.Tasks[0] != updated {
+	if len(data.Tasks) != 1 || !reflect.DeepEqual(data.Tasks[0], updated) {
 		t.Errorf("UpdateTask() persisted Tasks = %#v, want %#v", data.Tasks, updated)
 	}
 }

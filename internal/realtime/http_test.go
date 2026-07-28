@@ -66,6 +66,7 @@ func TestHTTPServerReturnsJSONErrorsForInvalidRequests(t *testing.T) {
 	assertHTTPStatus(t, http.MethodPut, server.APIURL()+"/tasks/task-ended/status", []byte(`{"status":"idle"}`), http.StatusConflict)
 	assertHTTPStatus(t, http.MethodPut, server.APIURL()+"/tasks/task-running/terminals/missing/status", []byte(`{"status":"idle"}`), http.StatusNotFound)
 	assertHTTPStatus(t, http.MethodPost, server.APIURL()+"/status", nil, http.StatusMethodNotAllowed)
+	assertHTTPStatus(t, http.MethodGet, server.APIURL()+"/status?status=archived", nil, http.StatusBadRequest)
 }
 
 func TestHTTPServerKeepsExistingListenerWhenReconfigureFails(t *testing.T) {
@@ -166,6 +167,44 @@ func TestHTTPServerListsTasksByLifecycleStatusAndReturnsDetails(t *testing.T) {
 	assertHTTPStatus(t, http.MethodGet, server.APIURL()+"/tasks?status=archived", nil, http.StatusBadRequest)
 	assertHTTPStatus(t, http.MethodGet, server.APIURL()+"/tasks/missing", nil, http.StatusNotFound)
 	assertHTTPStatus(t, http.MethodPost, server.APIURL()+"/tasks", nil, http.StatusMethodNotAllowed)
+}
+
+func TestHTTPServerFiltersStatusSnapshotsByLifecycleAndIncludesTaskTitle(t *testing.T) {
+	tasks := []TaskResource{
+		{ID: "task-pending", Title: "待执行", Status: "pending"},
+		{ID: "task-running", Title: "执行中", Status: "running"},
+		{ID: "task-completed", Title: "发布版本", Status: "completed"},
+	}
+	server := startHTTPServerWithCatalog(t, TaskCatalog{
+		List: func() ([]TaskResource, error) { return tasks, nil },
+	})
+
+	response, err := http.Get(server.APIURL() + "/status?status=completed")
+	if err != nil {
+		t.Fatalf("查询已完成任务状态: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("查询已完成任务状态码 = %d，期望 %d", response.StatusCode, http.StatusOK)
+	}
+	var snapshot struct {
+		Tasks []struct {
+			TaskID          string `json:"taskId"`
+			Title           string `json:"title"`
+			LifecycleStatus string `json:"lifecycleStatus"`
+			Status          Status `json:"status"`
+		} `json:"tasks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&snapshot); err != nil {
+		t.Fatalf("解析已完成任务状态: %v", err)
+	}
+	if len(snapshot.Tasks) != 1 {
+		t.Fatalf("已完成任务状态数量 = %d，期望 1：%#v", len(snapshot.Tasks), snapshot)
+	}
+	item := snapshot.Tasks[0]
+	if item.TaskID != "task-completed" || item.Title != "发布版本" || item.LifecycleStatus != "completed" || item.Status != StatusIdle {
+		t.Fatalf("已完成任务状态 = %#v", item)
+	}
 }
 
 func startHTTPServer(t *testing.T, service *Service, resolveTask func(string) TaskState) *HTTPServer {

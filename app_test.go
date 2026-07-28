@@ -279,6 +279,165 @@ func TestAppHTTPServiceListsTasksByStatusAndReturnsTaskDetails(t *testing.T) {
 	}
 }
 
+func TestAppManagesExtraInfoTemplatesThroughBindings(t *testing.T) {
+	app := newApp(t.TempDir())
+	if _, err := app.SaveExtraInfoCatalogue("git"); err != nil {
+		t.Fatalf("保存额外信息分类: %v", err)
+	}
+	catalogues, err := app.ListExtraInfoCatalogues()
+	if err != nil || !reflect.DeepEqual(catalogues, []string{"git"}) {
+		t.Fatalf("额外信息分类列表 = %#v, %v，期望 [git], nil", catalogues, err)
+	}
+	created, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
+		Catalogue: "git", DisplayName: "API 仓库", Fields: []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}},
+		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}},
+	})
+	if err != nil {
+		t.Fatalf("保存额外信息模板: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatal("保存额外信息模板未生成 ID")
+	}
+
+	listed, err := app.ListExtraInfoTemplates()
+	if err != nil {
+		t.Fatalf("列出额外信息模板: %v", err)
+	}
+	if !reflect.DeepEqual(listed, []task.ExtraInfoTemplate{created}) {
+		t.Fatalf("额外信息模板列表 = %#v，期望 %#v", listed, []task.ExtraInfoTemplate{created})
+	}
+	if err := app.DeleteExtraInfoCatalogue("git"); err == nil {
+		t.Fatal("分类仍包含额外信息时删除分类未失败")
+	}
+
+	if err := app.DeleteExtraInfoTemplate(created.ID); err != nil {
+		t.Fatalf("删除额外信息模板: %v", err)
+	}
+	if err := app.DeleteExtraInfoCatalogue("git"); err != nil {
+		t.Fatalf("删除空分类: %v", err)
+	}
+	listed, err = app.ListExtraInfoTemplates()
+	if err != nil {
+		t.Fatalf("删除后列出额外信息模板: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Fatalf("删除后额外信息模板列表 = %#v，期望为空", listed)
+	}
+}
+
+func TestAppCreatesAndUpdatesTaskExtraInfoSnapshots(t *testing.T) {
+	app := newApp(t.TempDir())
+	if _, err := app.SaveExtraInfoCatalogue("git"); err != nil {
+		t.Fatalf("保存额外信息分类: %v", err)
+	}
+	template, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
+		Catalogue: "git", DisplayName: "API 仓库", Fields: []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}},
+		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}},
+	})
+	if err != nil {
+		t.Fatalf("保存额外信息模板: %v", err)
+	}
+	snapshot, err := task.NewExtraInfo(template, map[string]string{"branch": "main"})
+	if err != nil {
+		t.Fatalf("NewExtraInfo() error = %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfo("关联仓库", "", task.DefaultColor, []task.ExtraInfo{snapshot})
+	if err != nil {
+		t.Fatalf("创建带附加信息任务: %v", err)
+	}
+	if !reflect.DeepEqual(created.ExtraInfo, []task.ExtraInfo{snapshot}) {
+		t.Fatalf("创建任务的附加信息 = %#v，期望 %#v", created.ExtraInfo, []task.ExtraInfo{snapshot})
+	}
+
+	updatedSnapshot, err := task.NewExtraInfo(template, map[string]string{"branch": "release/1.0"})
+	if err != nil {
+		t.Fatalf("NewExtraInfo() update error = %v", err)
+	}
+	updated, err := app.UpdateTaskWithExtraInfo(created.ID, "关联仓库", "已更新分支", task.DefaultColor, []task.ExtraInfo{updatedSnapshot})
+	if err != nil {
+		t.Fatalf("更新任务附加信息: %v", err)
+	}
+	if updated.Description != "已更新分支" || updated.ExtraInfo[0].Parameters[0].Value != "release/1.0" {
+		t.Fatalf("更新任务 = %#v", updated)
+	}
+
+	if err := app.DeleteExtraInfoTemplate(template.ID); err != nil {
+		t.Fatalf("删除源模板: %v", err)
+	}
+	loaded, err := app.ListTasks()
+	if err != nil {
+		t.Fatalf("删除模板后列出任务: %v", err)
+	}
+	if !reflect.DeepEqual(loaded[0].ExtraInfo, []task.ExtraInfo{updatedSnapshot}) {
+		t.Fatalf("模板删除影响了任务快照 = %#v", loaded[0].ExtraInfo)
+	}
+}
+
+func TestAppHTTPTaskDetailFlattensExtraInfoByCatalogue(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth,
+		StatusManagementMode: settings.StatusManagementModeTitleChange,
+		HTTPServiceEnabled:   true, StatusManagementHTTPPort: availableLoopbackPort(t),
+	}); err != nil {
+		t.Fatalf("启用任务 HTTP 服务: %v", err)
+	}
+	if _, err := app.SaveExtraInfoCatalogue("git"); err != nil {
+		t.Fatalf("保存额外信息分类: %v", err)
+	}
+	first, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
+		Catalogue: "git", DisplayName: "API 仓库", Fields: []task.ExtraInfoField{
+			{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"},
+			{Key: "remote", DisplayName: "远程名称", Value: "origin"},
+		},
+		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}},
+	})
+	if err != nil {
+		t.Fatalf("保存第一个模板: %v", err)
+	}
+	second, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
+		Catalogue: "git", DisplayName: "Web 仓库", Fields: []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/web.git"}},
+		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: false}},
+	})
+	if err != nil {
+		t.Fatalf("保存第二个模板: %v", err)
+	}
+	firstSnapshot, err := task.NewExtraInfo(first, map[string]string{"branch": "main"})
+	if err != nil {
+		t.Fatalf("创建第一个快照: %v", err)
+	}
+	secondSnapshot, err := task.NewExtraInfo(second, map[string]string{})
+	if err != nil {
+		t.Fatalf("创建第二个快照: %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfo("查询附加信息", "", task.DefaultColor, []task.ExtraInfo{firstSnapshot, secondSnapshot})
+	if err != nil {
+		t.Fatalf("创建带附加信息任务: %v", err)
+	}
+
+	response, err := http.Get(app.statusHTTP.APIURL() + "/tasks/" + created.ID)
+	if err != nil {
+		t.Fatalf("查询任务详情: %v", err)
+	}
+	defer response.Body.Close()
+	var detail struct {
+		ExtraInfo map[string][]map[string]string `json:"extraInfo"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
+		t.Fatalf("解析任务详情: %v", err)
+	}
+	want := map[string][]map[string]string{
+		"git": {
+			{"repository": "git@example.com:team/api.git", "remote": "origin", "branch": "main"},
+			{"repository": "git@example.com:team/web.git", "branch": ""},
+		},
+	}
+	if !reflect.DeepEqual(detail.ExtraInfo, want) {
+		t.Fatalf("任务详情附加信息 = %#v，期望 %#v", detail.ExtraInfo, want)
+	}
+}
+
 func TestAppBuildsTerminalEnvironmentForEveryStatusMode(t *testing.T) {
 	app := newApp(t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })

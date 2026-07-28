@@ -2,6 +2,6 @@
 
 package terminal
 
-func isExpectedTerminalReadError(error) bool {
-	return false
+func isExpectedTerminalReadError(err error) bool {
+	return isExpectedWindowsTerminalReadError(err)
 }

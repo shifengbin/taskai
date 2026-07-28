@@ -145,6 +145,146 @@ export namespace settings {
 
 export namespace task {
 
+	export class ExtraInfoParameter {
+	    key: string;
+	    displayName: string;
+	    required: boolean;
+	    value: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ExtraInfoParameter(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.displayName = source["displayName"];
+	        this.required = source["required"];
+	        this.value = source["value"];
+	    }
+	}
+	export class ExtraInfoField {
+	    key: string;
+	    displayName: string;
+	    value: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ExtraInfoField(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.displayName = source["displayName"];
+	        this.value = source["value"];
+	    }
+	}
+	export class ExtraInfo {
+	    id: string;
+	    catalogue: string;
+	    displayName: string;
+	    fields: ExtraInfoField[];
+	    parameters: ExtraInfoParameter[];
+	    key?: string;
+	    keyDisplayName?: string;
+	    value?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ExtraInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.catalogue = source["catalogue"];
+	        this.displayName = source["displayName"];
+	        this.fields = this.convertValues(source["fields"], ExtraInfoField);
+	        this.parameters = this.convertValues(source["parameters"], ExtraInfoParameter);
+	        this.key = source["key"];
+	        this.keyDisplayName = source["keyDisplayName"];
+	        this.value = source["value"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+
+	export class ExtraInfoParameterDefinition {
+	    key: string;
+	    displayName: string;
+	    required: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new ExtraInfoParameterDefinition(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.displayName = source["displayName"];
+	        this.required = source["required"];
+	    }
+	}
+	export class ExtraInfoTemplate {
+	    id: string;
+	    catalogue: string;
+	    displayName: string;
+	    fields: ExtraInfoField[];
+	    parameters: ExtraInfoParameterDefinition[];
+	    key?: string;
+	    keyDisplayName?: string;
+	    value?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ExtraInfoTemplate(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.catalogue = source["catalogue"];
+	        this.displayName = source["displayName"];
+	        this.fields = this.convertValues(source["fields"], ExtraInfoField);
+	        this.parameters = this.convertValues(source["parameters"], ExtraInfoParameterDefinition);
+	        this.key = source["key"];
+	        this.keyDisplayName = source["keyDisplayName"];
+	        this.value = source["value"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Task {
 	    id: string;
 	    title: string;
@@ -157,6 +297,7 @@ export namespace task {
 	    completedAt?: any;
 	    workspaceRoot?: string;
 	    workspacePath?: string;
+	    extraInfo: ExtraInfo[];
 
 	    static createFrom(source: any = {}) {
 	        return new Task(source);
@@ -173,6 +314,7 @@ export namespace task {
 	        this.completedAt = this.convertValues(source["completedAt"], null);
 	        this.workspaceRoot = source["workspaceRoot"];
 	        this.workspacePath = source["workspacePath"];
+	        this.extraInfo = this.convertValues(source["extraInfo"], ExtraInfo);
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

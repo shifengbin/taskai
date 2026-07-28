@@ -16,7 +16,40 @@ export interface TaskRecord {
   completedAt?: string
   workspaceRoot?: string
   workspacePath?: string
+	extraInfo?: TaskExtraInfo[]
   realtimeStatus?: RealtimeStatus
+}
+
+export interface ExtraInfoParameterDefinition {
+	key: string
+	displayName: string
+	required: boolean
+}
+
+export interface ExtraInfoField {
+	key: string
+	displayName: string
+	value: string
+}
+
+export interface ExtraInfoTemplate {
+	id: string
+	catalogue: string
+	displayName: string
+	fields: ExtraInfoField[]
+	parameters: ExtraInfoParameterDefinition[]
+}
+
+export interface TaskExtraInfoParameter extends ExtraInfoParameterDefinition {
+	value: string
+}
+
+export interface TaskExtraInfo {
+	id: string
+	catalogue: string
+	displayName: string
+	fields: ExtraInfoField[]
+	parameters: TaskExtraInfoParameter[]
 }
 
 export interface TerminalRecord {

@@ -18,8 +18,20 @@ export function CreateTask(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateTask'](arg1, arg2, arg3);
 }
 
+export function CreateTaskWithExtraInfo(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['CreateTaskWithExtraInfo'](arg1, arg2, arg3, arg4);
+}
+
 export function CreateTerminal(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateTerminal'](arg1, arg2, arg3);
+}
+
+export function DeleteExtraInfoCatalogue(arg1) {
+  return window['go']['main']['App']['DeleteExtraInfoCatalogue'](arg1);
+}
+
+export function DeleteExtraInfoTemplate(arg1) {
+  return window['go']['main']['App']['DeleteExtraInfoTemplate'](arg1);
 }
 
 export function DetectShells() {
@@ -40,6 +52,14 @@ export function GetSettings() {
 
 export function HasRunningTasks() {
   return window['go']['main']['App']['HasRunningTasks']();
+}
+
+export function ListExtraInfoCatalogues() {
+  return window['go']['main']['App']['ListExtraInfoCatalogues']();
+}
+
+export function ListExtraInfoTemplates() {
+  return window['go']['main']['App']['ListExtraInfoTemplates']();
 }
 
 export function ListTasks() {
@@ -70,6 +90,14 @@ export function RunTaskCommand(arg1, arg2, arg3) {
   return window['go']['main']['App']['RunTaskCommand'](arg1, arg2, arg3);
 }
 
+export function SaveExtraInfoCatalogue(arg1) {
+  return window['go']['main']['App']['SaveExtraInfoCatalogue'](arg1);
+}
+
+export function SaveExtraInfoTemplate(arg1) {
+  return window['go']['main']['App']['SaveExtraInfoTemplate'](arg1);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
@@ -84,6 +112,10 @@ export function StartTask(arg1) {
 
 export function UpdateTask(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['UpdateTask'](arg1, arg2, arg3, arg4);
+}
+
+export function UpdateTaskWithExtraInfo(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['UpdateTaskWithExtraInfo'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function WriteTerminal(arg1, arg2, arg3) {

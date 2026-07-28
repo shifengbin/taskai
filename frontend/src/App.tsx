@@ -4,6 +4,7 @@ import {
   AppBar,
   Box,
   Button,
+	Checkbox,
   Chip,
   CssBaseline,
   Dialog,
@@ -28,6 +29,7 @@ import {
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
 import ArrowDownwardOutlinedIcon from '@mui/icons-material/ArrowDownwardOutlined'
 import ArrowUpwardOutlinedIcon from '@mui/icons-material/ArrowUpwardOutlined'
+import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import HelpOutlinedIcon from '@mui/icons-material/HelpOutlined'
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined'
@@ -58,10 +60,13 @@ import {
   clampTaskTreeWidth,
   defaultTaskColor,
 	defaultTaskMenuItems,
-  taskStatusLabel,
+	type ExtraInfoField,
+	taskStatusLabel,
   type ColorScheme,
+	type ExtraInfoTemplate,
   type TaskScript,
   type SettingsRecord,
+	type TaskExtraInfo,
   type TaskRecord,
 	type TaskMenuItem,
   type TaskStatus,
@@ -72,7 +77,9 @@ import './App.css'
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [terminals, setTerminals] = useState<TerminalRecord[]>([])
-  const [settings, setSettings] = useState<SettingsRecord>()
+	const [settings, setSettings] = useState<SettingsRecord>()
+	const [extraInfoCatalogues, setExtraInfoCatalogues] = useState<string[]>([])
+	const [extraInfoTemplates, setExtraInfoTemplates] = useState<ExtraInfoTemplate[]>([])
   const [detectedShells, setDetectedShells] = useState<string[]>([])
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [treeWidth, setTreeWidth] = useState(360)
@@ -81,8 +88,12 @@ export default function App() {
   const [activeTaskStatus, setActiveTaskStatus] = useState<TaskStatus>('pending')
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({})
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
+	const [taskExtraInfoDraft, setTaskExtraInfoDraft] = useState<TaskExtraInfo[]>([])
   const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+	const [extraInfoManagerOpen, setExtraInfoManagerOpen] = useState(false)
+	const [extraInfoTemplateDraft, setExtraInfoTemplateDraft] = useState<ExtraInfoTemplate>()
+	const [extraInfoCatalogueDraft, setExtraInfoCatalogueDraft] = useState('')
   const [finishTask, setFinishTask] = useState<TaskRecord>()
   const [quitDialogOpen, setQuitDialogOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -108,11 +119,13 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const [loadedTasks, loadedSettings, loadedShells] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells()])
+		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoCatalogues, loadedExtraInfoTemplates] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoCatalogues(), api.listExtraInfoTemplates()])
         setTasks(loadedTasks)
         setSettings(loadedSettings)
         setActiveTaskStatus(loadedSettings.activeTaskStatus ?? 'pending')
         setDetectedShells(loadedShells)
+		setExtraInfoCatalogues(loadedExtraInfoCatalogues)
+		setExtraInfoTemplates(loadedExtraInfoTemplates)
         const width = clampTaskTreeWidth(loadedSettings.taskTreeWidth)
         currentTreeWidth.current = width
         setTreeWidth(width)
@@ -211,12 +224,14 @@ export default function App() {
     setDraftTitle(task?.title ?? '')
     setDraftDescription(task?.description ?? '')
     setDraftColor(task?.color || defaultTaskColor)
+		setTaskExtraInfoDraft(task?.extraInfo ? cloneTaskExtraInfo(task.extraInfo) : [])
     setTaskDialogOpen(true)
   }
 
   const closeTaskDialog = () => {
     setTaskDialogOpen(false)
     setEditingTask(undefined)
+		setTaskExtraInfoDraft([])
   }
 
   const saveTask = async (event: FormEvent) => {
@@ -225,12 +240,22 @@ export default function App() {
       setMessage('任务标题不能为空')
       return
     }
+		const missingParameter = taskExtraInfoDraft.flatMap((item) => item.parameters).find((parameter) => parameter.required && !parameter.value.trim())
+		if (missingParameter) {
+			setMessage(`参数“${missingParameter.displayName}”不能为空`)
+			return
+		}
     try {
       if (editingTask) {
-        const updated = await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
+			const hasExtraInfo = taskExtraInfoDraft.length > 0 || (editingTask.extraInfo?.length ?? 0) > 0
+			const updated = hasExtraInfo
+				? await api.updateTaskWithExtraInfo(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
+				: await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
         setTasks((current) => replaceTask(current, updated))
       } else {
-        const created = await api.createTask(draftTitle, draftDescription, draftColor)
+			const created = taskExtraInfoDraft.length > 0
+				? await api.createTaskWithExtraInfo(draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
+				: await api.createTask(draftTitle, draftDescription, draftColor)
         setTasks((current) => [...current, created])
         void changeActiveTaskStatus('pending')
         setSelectedTaskID(created.id)
@@ -244,6 +269,87 @@ export default function App() {
       showError(error, setMessage)
     }
   }
+
+	const openExtraInfoManager = async () => {
+		setExtraInfoManagerOpen(true)
+		try {
+			const [catalogues, templates] = await Promise.all([api.listExtraInfoCatalogues(), api.listExtraInfoTemplates()])
+			setExtraInfoCatalogues(catalogues)
+			setExtraInfoTemplates(templates)
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const openExtraInfoTemplateEditor = (template?: ExtraInfoTemplate) => {
+		setExtraInfoTemplateDraft(template ? cloneExtraInfoTemplate(template) : createExtraInfoTemplateDraft(extraInfoCatalogues[0] ?? ''))
+	}
+
+	const updateExtraInfoTemplateDraft = (update: Partial<ExtraInfoTemplate>) => {
+		setExtraInfoTemplateDraft((current) => current ? {...current, ...update} : current)
+	}
+
+	const updateExtraInfoTemplateParameter = (index: number, update: Partial<ExtraInfoTemplate['parameters'][number]>) => {
+		setExtraInfoTemplateDraft((current) => current ? {
+			...current,
+			parameters: current.parameters.map((parameter, parameterIndex) => parameterIndex === index ? {...parameter, ...update} : parameter),
+		} : current)
+	}
+
+	const updateExtraInfoTemplateField = (index: number, update: Partial<ExtraInfoField>) => {
+		setExtraInfoTemplateDraft((current) => current ? {
+			...current,
+			fields: current.fields.map((field, fieldIndex) => fieldIndex === index ? {...field, ...update} : field),
+		} : current)
+	}
+
+	const saveExtraInfoCatalogue = async () => {
+		const name = extraInfoCatalogueDraft.trim()
+		if (!name) {
+			return
+		}
+		try {
+			const saved = await api.saveExtraInfoCatalogue(name)
+			setExtraInfoCatalogues((current) => current.includes(saved) ? current : [...current, saved])
+			setExtraInfoCatalogueDraft('')
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const deleteExtraInfoCatalogue = async (catalogue: string) => {
+		try {
+			await api.deleteExtraInfoCatalogue(catalogue)
+			setExtraInfoCatalogues((current) => current.filter((item) => item !== catalogue))
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const saveExtraInfoTemplate = async () => {
+		if (!extraInfoTemplateDraft) {
+			return
+		}
+		try {
+			const saved = await api.saveExtraInfoTemplate(extraInfoTemplateDraft)
+			setExtraInfoTemplates((current) => {
+				const exists = current.some((template) => template.id === saved.id)
+				return exists ? current.map((template) => template.id === saved.id ? saved : template) : [...current, saved]
+			})
+			setExtraInfoTemplateDraft(undefined)
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const deleteExtraInfoTemplate = async (templateID: string) => {
+		try {
+			await api.deleteExtraInfoTemplate(templateID)
+			setExtraInfoTemplates((current) => current.filter((template) => template.id !== templateID))
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
 
   const startTask = async (taskID: string) => {
     try {
@@ -538,6 +644,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <TaskAltOutlinedIcon color="primary"/>
             <Typography variant="subtitle1" sx={{fontWeight: 800, letterSpacing: 0.3}}>任务工作台</Typography>
             <Box sx={{flex: 1}}/>
+			<Tooltip title="额外信息管理">
+				<IconButton aria-label="额外信息管理" onClick={() => void openExtraInfoManager()}>
+					<FolderOutlinedIcon/>
+				</IconButton>
+			</Tooltip>
             <Tooltip title="设置">
               <IconButton
                 aria-label="设置"
@@ -684,6 +795,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 style={{width: 48, height: 36, padding: 2, border: 'none', background: 'transparent', cursor: 'pointer'}}
               />
             </Box>
+			<TaskExtraInfoEditor
+				catalogues={extraInfoCatalogues}
+				templates={extraInfoTemplates}
+				extraInfo={taskExtraInfoDraft}
+				onChange={setTaskExtraInfoDraft}
+			/>
           </DialogContent>
           <DialogActions>
             <Button onClick={closeTaskDialog}>取消</Button>
@@ -691,6 +808,99 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           </DialogActions>
         </Box>
       </Dialog>
+
+		<Dialog open={extraInfoManagerOpen} onClose={() => setExtraInfoManagerOpen(false)} aria-labelledby="extra-info-manager-title" fullWidth maxWidth="md">
+			<DialogTitle id="extra-info-manager-title">额外信息管理</DialogTitle>
+			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
+				<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2}}>
+					<Typography variant="body2" color="text.secondary">维护任务可选信息；修改或删除模板不会改变已有任务。</Typography>
+					<Button variant="contained" size="small" disabled={extraInfoCatalogues.length === 0} onClick={() => openExtraInfoTemplateEditor()}>新增信息</Button>
+				</Box>
+				<Box sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.25}}>
+					<Typography variant="subtitle2">分类</Typography>
+					<Box sx={{display: 'flex', alignItems: 'flex-start', gap: 1}}>
+						<TextField size="small" label="分类名称" value={extraInfoCatalogueDraft} onChange={(event) => setExtraInfoCatalogueDraft(event.target.value)} sx={{flex: 1}}/>
+						<Button variant="outlined" size="small" disabled={!extraInfoCatalogueDraft.trim()} onClick={() => void saveExtraInfoCatalogue()}>新增分类</Button>
+					</Box>
+					{extraInfoCatalogues.length === 0 ? (
+						<Typography variant="caption" color="text.secondary">先创建分类，才能新增额外信息。</Typography>
+					) : (
+						<Box sx={{display: 'flex', flexWrap: 'wrap', gap: 0.75}}>
+							{extraInfoCatalogues.map((catalogue) => (
+								<Chip
+									key={catalogue}
+									label={catalogue}
+									onDelete={() => void deleteExtraInfoCatalogue(catalogue)}
+									deleteIcon={<DeleteOutlineOutlinedIcon aria-label={`删除分类 ${catalogue}`}/>}
+								/>
+							))}
+						</Box>
+					)}
+				</Box>
+				{extraInfoTemplates.length === 0 ? (
+					<Alert severity="info" variant="outlined">暂无额外信息，可新增 Git 仓库等任务上下文。</Alert>
+				) : (
+					<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
+						{extraInfoTemplates.map((template, index) => (
+								<Box key={template.id} sx={{display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, py: 1.25, borderBottom: index === extraInfoTemplates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+									<Box sx={{minWidth: 0, flex: 1}}>
+										<Typography variant="body2" sx={{fontWeight: 700}} noWrap>{template.displayName}</Typography>
+										<Typography variant="caption" color="text.secondary" noWrap>{template.catalogue} · {template.fields.map((field) => `${field.displayName}：${field.value}`).join(' · ')}</Typography>
+									</Box>
+									<Chip label={`${template.fields.length} 个固定字段 · ${template.parameters.length} 个参数`} size="small" variant="outlined"/>
+								<Button size="small" onClick={() => openExtraInfoTemplateEditor(template)}>编辑</Button>
+								<Button size="small" color="error" onClick={() => void deleteExtraInfoTemplate(template.id)}>删除</Button>
+							</Box>
+						))}
+					</Box>
+				)}
+			</DialogContent>
+			<DialogActions>
+				<Button onClick={() => setExtraInfoManagerOpen(false)}>关闭</Button>
+			</DialogActions>
+		</Dialog>
+
+		<Dialog open={Boolean(extraInfoTemplateDraft)} onClose={() => setExtraInfoTemplateDraft(undefined)} aria-labelledby="extra-info-editor-title" fullWidth maxWidth="sm">
+			<DialogTitle id="extra-info-editor-title">{extraInfoTemplateDraft?.id ? '编辑额外信息' : '新增额外信息'}</DialogTitle>
+			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
+				<TextField required select label="分类" value={extraInfoTemplateDraft?.catalogue ?? ''} onChange={(event) => updateExtraInfoTemplateDraft({catalogue: event.target.value})}>
+					{extraInfoCatalogues.map((catalogue) => <MenuItem key={catalogue} value={catalogue}>{catalogue}</MenuItem>)}
+				</TextField>
+				<TextField required label="信息展示名称" helperText="任务创建时以此名称作为选择项。" value={extraInfoTemplateDraft?.displayName ?? ''} onChange={(event) => updateExtraInfoTemplateDraft({displayName: event.target.value})}/>
+				<Box sx={{display: 'grid', gap: 1}}>
+					<Box sx={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+						<Typography variant="subtitle2">固定字段</Typography>
+						<Button size="small" onClick={() => updateExtraInfoTemplateDraft({fields: [...(extraInfoTemplateDraft?.fields ?? []), {key: '', displayName: '', value: ''}]})}>新增固定字段</Button>
+					</Box>
+					{extraInfoTemplateDraft?.fields.map((field, index) => (
+						<Box key={index} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr 1fr auto'}, alignItems: 'center', gap: 1}}>
+							<TextField required size="small" label={`固定键 ${index + 1}`} value={field.key} onChange={(event) => updateExtraInfoTemplateField(index, {key: event.target.value})}/>
+							<TextField required size="small" label={`固定字段显示名称 ${index + 1}`} value={field.displayName} onChange={(event) => updateExtraInfoTemplateField(index, {displayName: event.target.value})}/>
+							<TextField required size="small" label={`固定值 ${index + 1}`} value={field.value} onChange={(event) => updateExtraInfoTemplateField(index, {value: event.target.value})}/>
+							<IconButton aria-label={`删除固定字段 ${index + 1}`} size="small" color="error" disabled={extraInfoTemplateDraft.fields.length === 1} onClick={() => updateExtraInfoTemplateDraft({fields: extraInfoTemplateDraft.fields.filter((_, fieldIndex) => fieldIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+						</Box>
+					))}
+				</Box>
+				<Box sx={{display: 'grid', gap: 1}}>
+					<Box sx={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+						<Typography variant="subtitle2">动态参数</Typography>
+						<Button size="small" onClick={() => updateExtraInfoTemplateDraft({parameters: [...(extraInfoTemplateDraft?.parameters ?? []), {key: '', displayName: '', required: false}]})}>新增参数</Button>
+					</Box>
+					{extraInfoTemplateDraft?.parameters.map((parameter, index) => (
+						<Box key={index} sx={{display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', alignItems: 'center', gap: 1}}>
+							<TextField required size="small" label={`参数键 ${index + 1}`} value={parameter.key} onChange={(event) => updateExtraInfoTemplateParameter(index, {key: event.target.value})}/>
+							<TextField required size="small" label={`参数显示名称 ${index + 1}`} value={parameter.displayName} onChange={(event) => updateExtraInfoTemplateParameter(index, {displayName: event.target.value})}/>
+							<FormControlLabel control={<Checkbox checked={parameter.required} onChange={(event) => updateExtraInfoTemplateParameter(index, {required: event.target.checked})}/>} label={`参数 ${index + 1} 必填`}/>
+							<IconButton aria-label={`删除参数 ${index + 1}`} size="small" color="error" onClick={() => updateExtraInfoTemplateDraft({parameters: extraInfoTemplateDraft.parameters.filter((_, parameterIndex) => parameterIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+						</Box>
+					))}
+				</Box>
+			</DialogContent>
+			<DialogActions>
+				<Button onClick={() => setExtraInfoTemplateDraft(undefined)}>取消</Button>
+				<Button variant="contained" onClick={() => void saveExtraInfoTemplate()}>保存信息</Button>
+			</DialogActions>
+		</Dialog>
 
       <Dialog open={settingsDialogOpen} onClose={closeSettingsDialog} fullWidth maxWidth="md">
         <DialogTitle>设置</DialogTitle>
@@ -847,12 +1057,17 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           </HTTPHelpSection>
 
           <HTTPHelpSection title="查询接口">
-            <HTTPEndpoint method="GET" path="/api/v1/status">查询全部任务和终端的实时状态。</HTTPEndpoint>
+			<HTTPEndpoint method="GET" path="/api/v1/status?status=pending|running|completed">查询任务和终端的实时状态；可按任务生命周期筛选，条目包含任务名称与生命周期状态。</HTTPEndpoint>
             <HTTPEndpoint method="GET" path="/api/v1/tasks?status=pending|running|completed">按任务生命周期筛选列表；省略 <code>status</code> 时返回全部任务。</HTTPEndpoint>
             <Typography variant="body2" color="text.secondary">任务列表查询参数：可省略；可选值为 pending、running、completed。</Typography>
-            <HTTPEndpoint method="GET" path="/api/v1/tasks/:taskId">查询单个任务详情，包含标题、描述、生命周期、时间和工作目录。</HTTPEndpoint>
+            <HTTPEndpoint method="GET" path="/api/v1/tasks/:taskId">查询单个任务详情，包含标题、描述、生命周期、时间、工作目录和附加信息。</HTTPEndpoint>
             <HTTPCodeBlock>{'curl "$TASKAI_STATUS_API/status"\n\ncurl "$TASKAI_STATUS_API/tasks?status=running"\n\ncurl "$TASKAI_STATUS_API/tasks/$TASKAI_TASK_ID"'}</HTTPCodeBlock>
           </HTTPHelpSection>
+
+			<HTTPHelpSection title="任务附加信息">
+				<Typography variant="body2" color="text.secondary">通过顶部“额外信息管理”维护模板。任务详情的 <code>extraInfo</code> 按目录聚合，并将信息键和值、参数键和值平铺；展示名称不会返回。</Typography>
+				<HTTPCodeBlock>{'{"extraInfo":{"git":[{"repository":"git@example.com:team/api.git","branch":"main"}]}}'}</HTTPCodeBlock>
+			</HTTPHelpSection>
 
           <HTTPHelpSection title="状态更新">
             <HTTPEndpoint method="PUT" path="/api/v1/tasks/:taskId/status">直接设置任务状态；下一次终端状态更新会重新按终端状态汇总。</HTTPEndpoint>
@@ -1090,6 +1305,118 @@ function StartupScreen() {
   )
 }
 
+function TaskExtraInfoEditor({
+	catalogues,
+	templates,
+	extraInfo,
+	onChange,
+}: {
+	catalogues: string[]
+	templates: ExtraInfoTemplate[]
+	extraInfo: TaskExtraInfo[]
+	onChange: Dispatch<SetStateAction<TaskExtraInfo[]>>
+}) {
+	const [selectedCatalogue, setSelectedCatalogue] = useState('')
+	useEffect(() => {
+		setSelectedCatalogue((current) => catalogues.includes(current) ? current : catalogues[0] ?? '')
+	}, [catalogues])
+
+	const templateIDs = new Set(templates.map((template) => template.id))
+	const deletedSnapshots = extraInfo.filter((item) => !templateIDs.has(item.id))
+	const selectedByID = new Map(extraInfo.map((item) => [item.id, item]))
+	const visibleTemplates = templates.filter((template) => template.catalogue === selectedCatalogue)
+
+	const toggleTemplate = (template: ExtraInfoTemplate, selected: boolean) => {
+		onChange((current) => selected
+			? [...current, createTaskExtraInfo(template)]
+			: current.filter((item) => item.id !== template.id),
+		)
+	}
+
+	const updateParameter = (itemID: string, parameterKey: string, value: string) => {
+		onChange((current) => current.map((item) => item.id !== itemID ? item : {
+			...item,
+			parameters: item.parameters.map((parameter) => parameter.key === parameterKey ? {...parameter, value} : parameter),
+		}))
+	}
+
+	return (
+		<Box component="section" sx={{display: 'grid', gap: 1.25, borderTop: 1, borderColor: 'divider', pt: 1.75}}>
+			<Box>
+				<Typography variant="subtitle2">附加信息</Typography>
+				<Typography variant="caption" color="text.secondary">选择分类后勾选信息；任务会保存当前内容和参数值。</Typography>
+			</Box>
+			<Box sx={{display: 'grid', gap: 0.75}}>
+				<Typography variant="caption" color="text.secondary">已选择 {extraInfo.length} 项</Typography>
+				{extraInfo.length > 0 && <Box sx={{display: 'flex', flexWrap: 'wrap', gap: 0.75}}>
+					{extraInfo.map((item) => (
+						<Chip key={item.id} size="small" label={`${item.catalogue} · ${item.displayName}`} onDelete={() => onChange((current) => current.filter((currentItem) => currentItem.id !== item.id))}/>
+					))}
+				</Box>}
+			</Box>
+			{catalogues.length === 0 && deletedSnapshots.length === 0 && (
+				<Typography variant="body2" color="text.secondary">暂无可选额外信息，可通过顶部“额外信息管理”添加。</Typography>
+			)}
+			{catalogues.length > 0 && <>
+				<TextField select size="small" label="选择分类" value={selectedCatalogue} onChange={(event) => setSelectedCatalogue(event.target.value)}>
+					{catalogues.map((catalogue) => <MenuItem key={catalogue} value={catalogue}>{catalogue}</MenuItem>)}
+				</TextField>
+				<Box sx={{display: 'grid', gap: 0.75, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.25}}>
+					{visibleTemplates.length === 0 ? (
+						<Typography variant="body2" color="text.secondary">该分类暂无可选信息。</Typography>
+					) : visibleTemplates.map((template) => {
+						const selected = selectedByID.get(template.id)
+						return (
+							<Box key={template.id} sx={{display: 'grid', gap: selected ? 1 : 0}}>
+								<FormControlLabel
+									control={<Checkbox checked={Boolean(selected)} onChange={(event) => toggleTemplate(template, event.target.checked)}/>}
+									label={selected?.displayName ?? template.displayName}
+								/>
+								{selected && <TaskExtraInfoSnapshotFields item={selected} onChange={updateParameter}/>}
+							</Box>
+						)
+					})}
+				</Box>
+			</>}
+			{deletedSnapshots.map((item) => (
+				<Box key={item.id} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'warning.light', borderRadius: 1, p: 1.25}}>
+					<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
+						<Typography variant="body2" sx={{fontWeight: 700}}>{item.displayName}（已删除）</Typography>
+					</Box>
+					<TaskExtraInfoSnapshotFields item={item} onChange={updateParameter}/>
+				</Box>
+			))}
+		</Box>
+	)
+}
+
+function TaskExtraInfoSnapshotFields({
+	item,
+	onChange,
+}: {
+	item: TaskExtraInfo
+	onChange: (itemID: string, parameterKey: string, value: string) => void
+}) {
+	return (
+		<Box sx={{display: 'grid', gap: 1, pl: 4.5, minWidth: 0}}>
+			{item.fields.map((field) => <Box key={field.key} sx={{display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap'}}>
+				<Typography variant="caption" color="text.secondary">{field.displayName}</Typography>
+				<Typography variant="caption" sx={{fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere'}}>{field.value}</Typography>
+			</Box>)}
+			{item.parameters.map((parameter) => (
+				<TextField
+					key={parameter.key}
+					size="small"
+					label={parameter.displayName}
+					value={parameter.value}
+					required={parameter.required}
+					onChange={(event) => onChange(item.id, parameter.key, event.target.value)}
+				/>
+			))}
+		</Box>
+	)
+}
+
 function TaskDetail({task}: {task?: TaskRecord}) {
   if (!task) {
     return (
@@ -1122,6 +1449,25 @@ function TaskDetail({task}: {task?: TaskRecord}) {
 
 function replaceTask(tasks: TaskRecord[], next: TaskRecord): TaskRecord[] {
   return tasks.map((task) => task.id === next.id ? next : task)
+}
+
+function createExtraInfoTemplateDraft(catalogue: string): ExtraInfoTemplate {
+	return {id: '', catalogue, displayName: '', fields: [{key: '', displayName: '', value: ''}], parameters: []}
+}
+
+function cloneExtraInfoTemplate(template: ExtraInfoTemplate): ExtraInfoTemplate {
+	return {...template, fields: template.fields.map((field) => ({...field})), parameters: template.parameters.map((parameter) => ({...parameter}))}
+}
+
+function createTaskExtraInfo(template: ExtraInfoTemplate): TaskExtraInfo {
+	return {
+		...cloneExtraInfoTemplate(template),
+		parameters: template.parameters.map((parameter) => ({...parameter, value: ''})),
+	}
+}
+
+function cloneTaskExtraInfo(extraInfo: TaskExtraInfo[]): TaskExtraInfo[] {
+	return extraInfo.map((item) => ({...item, fields: item.fields.map((field) => ({...field})), parameters: item.parameters.map((parameter) => ({...parameter}))}))
 }
 
 function cloneTaskMenuItems(items: TaskMenuItem[]): TaskMenuItem[] {

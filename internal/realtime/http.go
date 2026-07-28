@@ -31,15 +31,16 @@ type TaskCatalog struct {
 }
 
 type TaskResource struct {
-	ID            string     `json:"id"`
-	Title         string     `json:"title"`
-	Description   string     `json:"description"`
-	Color         string     `json:"color"`
-	Status        string     `json:"status"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	CompletedAt   *time.Time `json:"completedAt,omitempty"`
-	WorkspaceRoot string     `json:"workspaceRoot,omitempty"`
-	WorkspacePath string     `json:"workspacePath,omitempty"`
+	ID            string                          `json:"id"`
+	Title         string                          `json:"title"`
+	Description   string                          `json:"description"`
+	Color         string                          `json:"color"`
+	Status        string                          `json:"status"`
+	CreatedAt     time.Time                       `json:"createdAt"`
+	CompletedAt   *time.Time                      `json:"completedAt,omitempty"`
+	WorkspaceRoot string                          `json:"workspaceRoot,omitempty"`
+	WorkspacePath string                          `json:"workspacePath,omitempty"`
+	ExtraInfo     *map[string][]map[string]string `json:"extraInfo,omitempty"`
 }
 
 type HTTPServer struct {
@@ -146,7 +147,7 @@ func (server *HTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Re
 			server.writeMethodNotAllowed(writer)
 			return
 		}
-		server.writeJSON(writer, http.StatusOK, server.service.Snapshot())
+		server.listStatus(writer, request)
 		return
 	}
 	if len(parts) == 5 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "tasks" && parts[4] == "status" {
@@ -168,13 +169,55 @@ func (server *HTTPServer) ServeHTTP(writer http.ResponseWriter, request *http.Re
 	server.writeError(writer, http.StatusNotFound, "接口不存在")
 }
 
+func (server *HTTPServer) listStatus(writer http.ResponseWriter, request *http.Request) {
+	status := request.URL.Query().Get("status")
+	if status != "" && !validTaskLifecycleStatus(status) {
+		server.writeError(writer, http.StatusBadRequest, "任务状态筛选无效")
+		return
+	}
+
+	snapshot := server.service.Snapshot()
+	if server.taskCatalog.List == nil {
+		if status != "" {
+			server.writeError(writer, http.StatusInternalServerError, "任务查询不可用")
+			return
+		}
+		server.writeJSON(writer, http.StatusOK, snapshot)
+		return
+	}
+
+	tasks, err := server.taskCatalog.List()
+	if err != nil {
+		server.writeError(writer, http.StatusInternalServerError, "读取任务失败")
+		return
+	}
+	realtimeByTaskID := make(map[string]TaskSnapshot, len(snapshot.Tasks))
+	for _, item := range snapshot.Tasks {
+		realtimeByTaskID[item.TaskID] = item
+	}
+	combined := StatusSnapshot{Tasks: make([]TaskSnapshot, 0, len(tasks))}
+	for _, item := range tasks {
+		if status != "" && item.Status != status {
+			continue
+		}
+		current, found := realtimeByTaskID[item.ID]
+		if !found {
+			current = TaskSnapshot{TaskID: item.ID, Status: StatusIdle, Terminals: []TerminalSnapshot{}}
+		}
+		current.Title = item.Title
+		current.LifecycleStatus = item.Status
+		combined.Tasks = append(combined.Tasks, current)
+	}
+	server.writeJSON(writer, http.StatusOK, combined)
+}
+
 func (server *HTTPServer) listTasks(writer http.ResponseWriter, request *http.Request) {
 	if server.taskCatalog.List == nil {
 		server.writeError(writer, http.StatusInternalServerError, "任务查询不可用")
 		return
 	}
 	status := request.URL.Query().Get("status")
-	if status != "" && status != "pending" && status != "running" && status != "completed" {
+	if status != "" && !validTaskLifecycleStatus(status) {
 		server.writeError(writer, http.StatusBadRequest, "任务状态筛选无效")
 		return
 	}
@@ -194,6 +237,10 @@ func (server *HTTPServer) listTasks(writer http.ResponseWriter, request *http.Re
 		}
 	}
 	server.writeJSON(writer, http.StatusOK, filtered)
+}
+
+func validTaskLifecycleStatus(status string) bool {
+	return status == "pending" || status == "running" || status == "completed"
 }
 
 func (server *HTTPServer) getTask(writer http.ResponseWriter, taskID string) {

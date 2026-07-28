@@ -28,12 +28,20 @@ func New(repository storage.Repository, closer TerminalCloser, now func() time.T
 }
 
 func (service *Service) CreateTask(title, description, color string) (task.Task, error) {
+	return service.CreateTaskWithExtraInfo(title, description, color, nil)
+}
+
+func (service *Service) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
 	}
 
 	created, err := task.NewTask(title, description, color, service.now())
+	if err != nil {
+		return task.Task{}, err
+	}
+	created, err = created.UpdateExtraInfo(extraInfo)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -106,6 +114,30 @@ func (service *Service) UpdateTask(taskID, title, description, color string) (ta
 		return task.Task{}, err
 	}
 	updated, err := data.Tasks[index].UpdateDetails(title, description, color)
+	if err != nil {
+		return task.Task{}, err
+	}
+	data.Tasks[index] = updated
+	if err := service.repository.Save(data); err != nil {
+		return task.Task{}, err
+	}
+	return updated, nil
+}
+
+func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	updated, err := data.Tasks[index].UpdateDetails(title, description, color)
+	if err != nil {
+		return task.Task{}, err
+	}
+	updated, err = updated.UpdateExtraInfo(extraInfo)
 	if err != nil {
 		return task.Task{}, err
 	}

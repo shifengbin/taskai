@@ -5,8 +5,16 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 const bindings = vi.hoisted(() => ({
   ClearSelectedTerminal: vi.fn(),
   CreateTask: vi.fn(),
+	CreateTaskWithExtraInfo: vi.fn(),
   UpdateTask: vi.fn(),
-  ListTasks: vi.fn(),
+	UpdateTaskWithExtraInfo: vi.fn(),
+	ListTasks: vi.fn(),
+	ListExtraInfoCatalogues: vi.fn(),
+	ListExtraInfoTemplates: vi.fn(),
+	SaveExtraInfoCatalogue: vi.fn(),
+	SaveExtraInfoTemplate: vi.fn(),
+	DeleteExtraInfoCatalogue: vi.fn(),
+	DeleteExtraInfoTemplate: vi.fn(),
   ReorderTasks: vi.fn(),
 	ReportTerminalTitleActivity: vi.fn(),
   StartTask: vi.fn(),
@@ -67,6 +75,8 @@ describe('App confirmation flows', () => {
 		bindings.ClearSelectedTerminal.mockResolvedValue(undefined)
 		bindings.SelectTerminal.mockResolvedValue(undefined)
 		bindings.ReportTerminalTitleActivity.mockResolvedValue(true)
+		bindings.ListExtraInfoCatalogues.mockResolvedValue([])
+		bindings.ListExtraInfoTemplates.mockResolvedValue([])
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
@@ -192,6 +202,26 @@ describe('App confirmation flows', () => {
     expect(screen.queryByRole('status', {name: '正在加载任务工作台'})).not.toBeInTheDocument()
   })
 
+  it('额外信息模板接口返回空值时仍可渲染工作台并响应原生关闭请求', async () => {
+    let closeRequested: (() => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'application:close-requested') {
+        closeRequested = listener
+      }
+    })
+    bindings.ListExtraInfoTemplates.mockResolvedValue(null)
+
+    render(<App/>)
+
+    await screen.findByRole('navigation', {name: '任务和终端'})
+    expect(screen.getByRole('button', {name: '额外信息管理'})).toBeInTheDocument()
+    if (!closeRequested) {
+      throw new Error('未注册原生关闭请求监听器')
+    }
+    act(() => closeRequested!())
+    expect(screen.getByRole('dialog', {name: '仍有执行中的任务'})).toBeInTheDocument()
+  })
+
   it('保存颜色模式并在当前会话中保留选择', async () => {
     const user = userEvent.setup()
     bindings.SaveSettings.mockImplementation(async (next) => next)
@@ -287,6 +317,121 @@ describe('App confirmation flows', () => {
 
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
   })
+
+	it('在设置按钮旁管理分类，并以选择方式为多字段信息保存分类', async () => {
+		const user = userEvent.setup()
+		bindings.SaveExtraInfoCatalogue.mockResolvedValue('git')
+		bindings.SaveExtraInfoTemplate.mockResolvedValue({
+			id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [
+				{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'},
+				{key: 'remote', displayName: '远程名称', value: 'origin'},
+			],
+			parameters: [{key: 'branch', displayName: '分支', required: true}],
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		expect(screen.getByRole('dialog', {name: '额外信息管理'})).toBeInTheDocument()
+		await user.type(screen.getByRole('textbox', {name: '分类名称'}), 'git')
+		await user.click(screen.getByRole('button', {name: '新增分类'}))
+		await waitFor(() => expect(bindings.SaveExtraInfoCatalogue).toHaveBeenCalledWith('git'))
+		await waitFor(() => expect(screen.getByRole('button', {name: '新增信息'})).toBeEnabled())
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		expect(screen.getByRole('combobox')).toHaveTextContent('git')
+		await user.type(screen.getByRole('textbox', {name: '信息展示名称'}), 'API 仓库')
+		await user.type(screen.getByRole('textbox', {name: '固定键 1'}), 'repository')
+		await user.type(screen.getByRole('textbox', {name: '固定字段显示名称 1'}), '仓库')
+		await user.type(screen.getByRole('textbox', {name: '固定值 1'}), 'git@example.com:team/api.git')
+		await user.click(screen.getByRole('button', {name: '新增固定字段'}))
+		await user.type(screen.getByRole('textbox', {name: '固定键 2'}), 'remote')
+		await user.type(screen.getByRole('textbox', {name: '固定字段显示名称 2'}), '远程名称')
+		await user.type(screen.getByRole('textbox', {name: '固定值 2'}), 'origin')
+		await user.click(screen.getByRole('button', {name: '新增参数'}))
+		await user.type(screen.getByRole('textbox', {name: '参数键 1'}), 'branch')
+		await user.type(screen.getByRole('textbox', {name: '参数显示名称 1'}), '分支')
+		await user.click(screen.getByRole('checkbox', {name: '参数 1 必填'}))
+		await user.click(screen.getByRole('button', {name: '保存信息'}))
+
+		await waitFor(() => expect(bindings.SaveExtraInfoTemplate).toHaveBeenCalledWith({
+			id: '', catalogue: 'git', displayName: 'API 仓库', fields: [
+				{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'},
+				{key: 'remote', displayName: '远程名称', value: 'origin'},
+			],
+			parameters: [{key: 'branch', displayName: '分支', required: true}],
+		}))
+	})
+
+	it('创建任务时切换分类选择多个信息并保留已选项', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoCatalogues.mockResolvedValue(['git', 'issue'])
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'}],
+			parameters: [{key: 'branch', displayName: '分支', required: true}],
+		}, {
+			id: 'template-2', catalogue: 'issue', displayName: '缺陷单', fields: [{key: 'project', displayName: '项目', value: 'TASK'}], parameters: [],
+		}])
+		bindings.CreateTaskWithExtraInfo.mockResolvedValue({
+			id: 'task-2', title: '关联 API', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			extraInfo: [{
+				id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'}],
+				parameters: [{key: 'branch', displayName: '分支', required: true, value: 'main'}],
+			}, {
+				id: 'template-2', catalogue: 'issue', displayName: '缺陷单', fields: [{key: 'project', displayName: '项目', value: 'TASK'}], parameters: [],
+			}],
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '关联 API')
+		expect(screen.getByText('已选择 0 项')).toBeInTheDocument()
+		await user.click(screen.getByRole('checkbox', {name: 'API 仓库'}))
+		await user.type(screen.getByRole('textbox', {name: '分支'}), 'main')
+		await user.click(screen.getByLabelText('选择分类'))
+		await user.click(screen.getByRole('option', {name: 'issue'}))
+		await user.click(screen.getByRole('checkbox', {name: '缺陷单'}))
+		expect(screen.getByText('git · API 仓库')).toBeInTheDocument()
+		expect(screen.getByText('issue · 缺陷单')).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '创建'}))
+
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('关联 API', '', '#4f46e5', [{
+			id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'}],
+			parameters: [{key: 'branch', displayName: '分支', required: true, value: 'main'}],
+		}, {
+			id: 'template-2', catalogue: 'issue', displayName: '缺陷单', fields: [{key: 'project', displayName: '项目', value: 'TASK'}], parameters: [],
+		}]))
+	})
+
+	it('编辑任务时保留已删除模板快照并允许修改参数', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+			extraInfo: [{
+				id: 'removed-template', catalogue: 'git', displayName: '旧 API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/old-api.git'}],
+				parameters: [{key: 'branch', displayName: '分支', required: true, value: 'main'}],
+			}],
+		}])
+		bindings.UpdateTaskWithExtraInfo.mockResolvedValue({
+			id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+			extraInfo: [{
+				id: 'removed-template', catalogue: 'git', displayName: '旧 API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/old-api.git'}],
+				parameters: [{key: 'branch', displayName: '分支', required: true, value: 'release/1.0'}],
+			}],
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('tab', {name: /执行中/}))
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByText('旧 API 仓库（已删除）')).toBeInTheDocument()
+		const branch = screen.getByRole('textbox', {name: '分支'})
+		await user.clear(branch)
+		await user.type(branch, 'release/1.0')
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.UpdateTaskWithExtraInfo).toHaveBeenCalledWith('task-1', '清理临时文件', '', '#4f46e5', expect.arrayContaining([
+			expect.objectContaining({id: 'removed-template', parameters: [expect.objectContaining({key: 'branch', value: 'release/1.0'})]}),
+		])))
+	})
 
   it('将新建任务按钮放在任务与终端标题栏中', async () => {
     render(<App/>)
@@ -707,7 +852,7 @@ describe('App confirmation flows', () => {
 	expect(await screen.findByText('执行后置脚本: 清理失败')).toBeInTheDocument()
   })
 
-  it('设置中通过独立弹窗配置菜单项并调整系统项顺序', async () => {
+	it('设置中通过独立弹窗配置菜单项并调整系统项顺序', async () => {
     const user = userEvent.setup()
     bindings.SaveSettings.mockImplementation(async (next) => next)
     bindings.GetSettings.mockResolvedValue({
@@ -717,7 +862,7 @@ describe('App confirmation flows', () => {
         {id: 'system.create-terminal', kind: 'create-terminal', name: '新增终端', showTerminal: false},
         {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
       ],
-    })
+	})
     render(<App/>)
 
     await user.click(await screen.findByRole('button', {name: '设置'}))

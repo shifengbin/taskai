@@ -52,9 +52,11 @@ type StatusSnapshot struct {
 }
 
 type TaskSnapshot struct {
-	TaskID    string             `json:"taskId"`
-	Status    Status             `json:"status"`
-	Terminals []TerminalSnapshot `json:"terminals"`
+	TaskID          string             `json:"taskId"`
+	Title           string             `json:"title,omitempty"`
+	LifecycleStatus string             `json:"lifecycleStatus,omitempty"`
+	Status          Status             `json:"status"`
+	Terminals       []TerminalSnapshot `json:"terminals"`
 }
 
 type TerminalSnapshot struct {

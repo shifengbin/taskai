@@ -133,6 +133,10 @@ func (app *App) CreateTask(title, description, color string) (task.Task, error) 
 	return app.tasks.CreateTask(title, description, color)
 }
 
+func (app *App) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
+	return app.tasks.CreateTaskWithExtraInfo(title, description, color, extraInfo)
+}
+
 func (app *App) ListTasks() ([]task.Task, error) {
 	return app.tasks.ListTasks()
 }
@@ -143,6 +147,34 @@ func (app *App) ReorderTasks(status task.Status, taskIDs []string) ([]task.Task,
 
 func (app *App) UpdateTask(taskID, title, description, color string) (task.Task, error) {
 	return app.tasks.UpdateTask(taskID, title, description, color)
+}
+
+func (app *App) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
+	return app.tasks.UpdateTaskWithExtraInfo(taskID, title, description, color, extraInfo)
+}
+
+func (app *App) ListExtraInfoTemplates() ([]task.ExtraInfoTemplate, error) {
+	return app.repository.ListExtraInfoTemplates()
+}
+
+func (app *App) ListExtraInfoCatalogues() ([]string, error) {
+	return app.repository.ListExtraInfoCatalogues()
+}
+
+func (app *App) SaveExtraInfoCatalogue(name string) (string, error) {
+	return app.repository.SaveExtraInfoCatalogue(name)
+}
+
+func (app *App) DeleteExtraInfoCatalogue(name string) error {
+	return app.repository.DeleteExtraInfoCatalogue(name)
+}
+
+func (app *App) SaveExtraInfoTemplate(template task.ExtraInfoTemplate) (task.ExtraInfoTemplate, error) {
+	return app.repository.SaveExtraInfoTemplate(template)
+}
+
+func (app *App) DeleteExtraInfoTemplate(templateID string) error {
+	return app.repository.DeleteExtraInfoTemplate(templateID)
 }
 
 func (app *App) StartTask(taskID string) (task.Task, error) {
@@ -567,7 +599,7 @@ func (app *App) httpTasks() ([]realtime.TaskResource, error) {
 
 	tasks := make([]realtime.TaskResource, 0, len(data.Tasks))
 	for _, current := range data.Tasks {
-		tasks = append(tasks, realtimeTaskResource(current))
+		tasks = append(tasks, realtimeTaskResource(current, false))
 	}
 	return tasks, nil
 }
@@ -580,15 +612,15 @@ func (app *App) httpTask(taskID string) (realtime.TaskResource, bool, error) {
 
 	for _, current := range data.Tasks {
 		if current.ID == taskID {
-			return realtimeTaskResource(current), true, nil
+			return realtimeTaskResource(current, true), true, nil
 		}
 	}
 
 	return realtime.TaskResource{}, false, nil
 }
 
-func realtimeTaskResource(current task.Task) realtime.TaskResource {
-	return realtime.TaskResource{
+func realtimeTaskResource(current task.Task, includeExtraInfo bool) realtime.TaskResource {
+	resource := realtime.TaskResource{
 		ID:            current.ID,
 		Title:         current.Title,
 		Description:   current.Description,
@@ -599,6 +631,26 @@ func realtimeTaskResource(current task.Task) realtime.TaskResource {
 		WorkspaceRoot: current.WorkspaceRoot,
 		WorkspacePath: current.WorkspacePath,
 	}
+	if includeExtraInfo {
+		extraInfo := httpExtraInfo(current.ExtraInfo)
+		resource.ExtraInfo = &extraInfo
+	}
+	return resource
+}
+
+func httpExtraInfo(items []task.ExtraInfo) map[string][]map[string]string {
+	grouped := make(map[string][]map[string]string)
+	for _, item := range items {
+		values := make(map[string]string, len(item.Fields)+len(item.Parameters))
+		for _, field := range item.Fields {
+			values[field.Key] = field.Value
+		}
+		for _, parameter := range item.Parameters {
+			values[parameter.Key] = parameter.Value
+		}
+		grouped[item.Catalogue] = append(grouped[item.Catalogue], values)
+	}
+	return grouped
 }
 
 func (app *App) registerRunningRealtimeTasks() {
