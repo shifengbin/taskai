@@ -66,7 +66,7 @@ func TestRepositoryReturnsDefaultsForMissingDataFile(t *testing.T) {
 	}
 }
 
-func TestRepositoryListsEmptyExtraInfoTemplatesAsJSONArray(t *testing.T) {
+func TestRepositoryListsBuiltInGitTemplateAsJSONArray(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 
 	templates, err := repository.ListExtraInfoTemplates()
@@ -77,34 +77,216 @@ func TestRepositoryListsEmptyExtraInfoTemplatesAsJSONArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
-	if got, want := string(encoded), "[]"; got != want {
-		t.Fatalf("空额外信息模板 JSON = %s，期望 %s", got, want)
+	if got := string(encoded); got == "[]" || len(templates) != 1 || templates[0].Catalogue != "git" {
+		t.Fatalf("内置额外信息模板 JSON = %s，期望包含 Git 模板", got)
 	}
 }
 
-func TestRepositoryManagesExtraInfoCataloguesAndRequiresEmptyBeforeDelete(t *testing.T) {
+func TestRepositorySeedsBuiltInGitTemplate(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
-	if _, err := repository.SaveExtraInfoCatalogue(" git "); err != nil {
-		t.Fatalf("SaveExtraInfoCatalogue() error = %v", err)
+
+	templates, err := repository.ListExtraInfoTemplates()
+	if err != nil {
+		t.Fatalf("ListExtraInfoTemplates() error = %v", err)
 	}
-	if got, err := repository.ListExtraInfoCatalogues(); err != nil || !reflect.DeepEqual(got, []string{"git"}) {
-		t.Fatalf("ListExtraInfoCatalogues() = %#v, %v，期望 [git], nil", got, err)
+	if len(templates) != 1 {
+		t.Fatalf("内置模板数量 = %d，期望 1", len(templates))
 	}
-	template, err := task.NewExtraInfoTemplate("git", "API 仓库", []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}}, nil)
+	gitTemplate := templates[0]
+	if !gitTemplate.BuiltIn || gitTemplate.Catalogue != "git" {
+		t.Fatalf("Git 模板 = %#v", gitTemplate)
+	}
+	if len(gitTemplate.Fields) != 2 || gitTemplate.Fields[0].Key != "name" || gitTemplate.Fields[0].DisplayName != "项目名称" || gitTemplate.Fields[1].Key != "repository" || gitTemplate.Fields[1].DisplayName != "仓库地址" {
+		t.Fatalf("Git 固定字段 = %#v", gitTemplate.Fields)
+	}
+	if len(gitTemplate.Parameters) != 1 || gitTemplate.Parameters[0].Key != "branch" || gitTemplate.Parameters[0].DisplayName != "仓库分支" {
+		t.Fatalf("Git 动态参数 = %#v", gitTemplate.Parameters)
+	}
+}
+
+func TestRepositoryMigratesCurrentTemplateIntoTemplateAndInformation(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [{
+    "id": "task-1",
+    "title": "部署 API",
+    "color": "#4f46e5",
+    "extraInfo": [{
+      "id": "legacy-api",
+      "catalogue": "git",
+      "displayName": "API 服务",
+      "fields": [{"key": "repository", "displayName": "仓库地址", "value": "git@example.com:team/api.git"}],
+      "parameters": [{"key": "branch", "displayName": "分支", "required": true, "value": "main"}]
+    }]
+  }],
+  "extraInfoCatalogues": ["git"],
+  "extraInfoTemplates": [{
+    "id": "legacy-api",
+    "catalogue": "git",
+    "displayName": "API 服务",
+    "fields": [{"key": "repository", "displayName": "仓库地址", "value": "git@example.com:team/api.git"}],
+    "parameters": [{"key": "branch", "displayName": "分支", "required": true}]
+  }],
+  "settings": {}
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(data.ExtraInfos) != 1 {
+		t.Fatalf("迁移后的额外信息数量 = %d，期望 1", len(data.ExtraInfos))
+	}
+	if got := task.ExtraInfoName(data.ExtraInfos[0]); got != "API 服务" {
+		t.Fatalf("迁移信息名称 = %q，期望 %q", got, "API 服务")
+	}
+	if got := extraInfoValue(data.ExtraInfos[0], "repository"); got != "git@example.com:team/api.git" {
+		t.Fatalf("迁移信息仓库地址 = %q", got)
+	}
+	if len(data.ExtraInfoTemplates) != 2 {
+		t.Fatalf("迁移模板数量 = %d，期望 Git 内置模板和一个旧模板", len(data.ExtraInfoTemplates))
+	}
+	if got := data.Tasks[0].ExtraInfo[0].Fields[0].Key; got != "repository" {
+		t.Fatalf("历史任务快照字段 = %q，期望 repository", got)
+	}
+
+	persisted, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !jsonContainsKey(persisted, "extraInfos") {
+		t.Fatalf("迁移后的数据未持久化 extraInfos: %s", persisted)
+	}
+	loadedAgain, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("第二次 Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(loadedAgain.ExtraInfos, data.ExtraInfos) {
+		t.Fatalf("迁移不是幂等的: %#v != %#v", loadedAgain.ExtraInfos, data.ExtraInfos)
+	}
+}
+
+func TestRepositoryMigratesLegacyTemplatesWithDifferentSchemasIntoSeparateCatalogues(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [],
+  "extraInfoTemplates": [
+    {"id":"api","catalogue":"git","displayName":"API","fields":[{"key":"repository","displayName":"仓库地址","value":"git@example.com:team/api.git"}]},
+    {"id":"web","catalogue":"git","displayName":"Web","fields":[{"key":"repository","displayName":"仓库地址","value":"git@example.com:team/web.git"},{"key":"remote","displayName":"远程名称","value":"origin"}]},
+    {"id":"legacy-key","catalogue":"issue","displayName":"缺陷","key":"url","keyDisplayName":"链接","value":"https://example.com/issues/1"}
+  ],
+  "settings": {}
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(data.ExtraInfoTemplates) != 4 || len(data.ExtraInfos) != 3 {
+		t.Fatalf("迁移结果模板/信息数量 = %d/%d，期望 4/3", len(data.ExtraInfoTemplates), len(data.ExtraInfos))
+	}
+	catalogues := make(map[string]bool, len(data.ExtraInfoTemplates))
+	for _, template := range data.ExtraInfoTemplates {
+		catalogues[template.Catalogue] = true
+	}
+	if !catalogues["git"] || !catalogues["git-legacy"] || !catalogues["git-legacy-2"] || !catalogues["issue"] {
+		t.Fatalf("迁移分类 = %#v，期望 Git 内置和不同结构的稳定后缀分类", catalogues)
+	}
+	if got := extraInfoValue(data.ExtraInfos[2], "url"); got != "https://example.com/issues/1" {
+		t.Fatalf("旧单键格式迁移值 = %q", got)
+	}
+}
+
+func extraInfoValue(info task.ExtraInfo, key string) string {
+	for _, field := range info.Fields {
+		if field.Key == key {
+			return field.Value
+		}
+	}
+	return ""
+}
+
+func jsonContainsKey(contents []byte, key string) bool {
+	var decoded map[string]json.RawMessage
+	return json.Unmarshal(contents, &decoded) == nil && decoded[key] != nil
+}
+
+func TestRepositoryRequiresDeletingInformationBeforeTemplate(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	template, err := task.NewExtraInfoTemplate("deployment", "部署", []task.ExtraInfoField{{Key: "environment", DisplayName: "环境", DefaultValue: "test"}}, nil)
 	if err != nil {
 		t.Fatalf("NewExtraInfoTemplate() error = %v", err)
 	}
 	if _, err := repository.SaveExtraInfoTemplate(template); err != nil {
 		t.Fatalf("SaveExtraInfoTemplate() error = %v", err)
 	}
-	if err := repository.DeleteExtraInfoCatalogue("git"); err == nil {
-		t.Fatal("DeleteExtraInfoCatalogue() error = nil，期望分类仍有信息时失败")
+	info, err := task.NewExtraInfo(template, map[string]string{"name": "测试环境"})
+	if err != nil {
+		t.Fatalf("NewExtraInfo() error = %v", err)
+	}
+	if _, err := repository.SaveExtraInfo(info); err != nil {
+		t.Fatalf("SaveExtraInfo() error = %v", err)
+	}
+	if err := repository.DeleteExtraInfoTemplate(template.ID); err == nil {
+		t.Fatal("DeleteExtraInfoTemplate() error = nil，期望信息仍引用模板时失败")
+	}
+	renamed := template
+	renamed.Catalogue = "release"
+	if _, err := repository.SaveExtraInfoTemplate(renamed); err == nil {
+		t.Fatal("SaveExtraInfoTemplate() error = nil，期望引用信息存在时不能修改分类")
+	}
+	if err := repository.DeleteExtraInfo(info.ID); err != nil {
+		t.Fatalf("DeleteExtraInfo() error = %v", err)
 	}
 	if err := repository.DeleteExtraInfoTemplate(template.ID); err != nil {
 		t.Fatalf("DeleteExtraInfoTemplate() error = %v", err)
 	}
-	if err := repository.DeleteExtraInfoCatalogue("git"); err != nil {
-		t.Fatalf("DeleteExtraInfoCatalogue() error = %v", err)
+}
+
+func TestRepositoryPreservesInformationParametersAndLoadsLegacyInformation(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	gitTemplate := task.BuiltInGitTemplate()
+	info, err := repository.SaveExtraInfo(task.ExtraInfo{
+		TemplateID: gitTemplate.ID,
+		Catalogue:  gitTemplate.Catalogue,
+		Fields: []task.ExtraInfoField{
+			{Key: "name", Value: "API 服务"},
+			{Key: "repository", Value: "git@example.com:team/api.git"},
+		},
+		Parameters: []task.ExtraInfoParameter{{Key: "environment", DisplayName: "环境", Required: true, Value: "production"}},
+	})
+	if err != nil {
+		t.Fatalf("SaveExtraInfo() error = %v", err)
+	}
+	if len(info.Parameters) != 1 || info.Parameters[0].Value != "production" {
+		t.Fatalf("SaveExtraInfo() 参数 = %#v", info.Parameters)
+	}
+	loaded, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(loaded.ExtraInfos) != 1 || len(loaded.ExtraInfos[0].Parameters) != 1 || loaded.ExtraInfos[0].Parameters[0].Key != "environment" {
+		t.Fatalf("加载后的信息参数 = %#v", loaded.ExtraInfos)
+	}
+
+	legacyPath := filepath.Join(t.TempDir(), "legacy.json")
+	legacy := []byte(`{"tasks":[],"extraInfoTemplates":[{"id":"builtin-extra-info-template-git","catalogue":"git","fields":[{"key":"name","displayName":"项目名称"},{"key":"repository","displayName":"仓库地址"}],"parameters":[{"key":"branch","displayName":"仓库分支","required":false}],"builtIn":true}],"extraInfos":[{"id":"legacy-info","templateId":"builtin-extra-info-template-git","catalogue":"git","fields":[{"key":"name","displayName":"项目名称","value":"旧服务"},{"key":"repository","displayName":"仓库地址","value":"git@example.com:team/legacy.git"}]}],"settings":{}}`)
+	if err := os.WriteFile(legacyPath, legacy, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	legacyData, err := New(legacyPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() legacy error = %v", err)
+	}
+	if len(legacyData.ExtraInfos) != 1 || legacyData.ExtraInfos[0].Parameters == nil || len(legacyData.ExtraInfos[0].Parameters) != 0 {
+		t.Fatalf("旧信息参数兼容结果 = %#v", legacyData.ExtraInfos)
 	}
 }
 
@@ -119,25 +301,19 @@ func TestRepositoryLoadsOldDataWithEmptyExtraInfoTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if data.ExtraInfoTemplates == nil || len(data.ExtraInfoTemplates) != 0 {
-		t.Errorf("Load() ExtraInfoTemplates = %#v, want empty slice", data.ExtraInfoTemplates)
+	if data.ExtraInfoTemplates == nil || len(data.ExtraInfoTemplates) != 1 || data.ExtraInfoTemplates[0].Catalogue != "git" {
+		t.Errorf("Load() ExtraInfoTemplates = %#v, want built-in Git template", data.ExtraInfoTemplates)
 	}
 }
 
 func TestRepositoryPersistsAndDeletesExtraInfoTemplateWithoutTouchingTasks(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
-	if _, err := repository.SaveExtraInfoCatalogue("git"); err != nil {
-		t.Fatalf("SaveExtraInfoCatalogue() error = %v", err)
-	}
-	template, err := task.NewExtraInfoTemplate("git", "API 仓库", []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}}, []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}})
+	template, err := task.NewExtraInfoTemplate("deployment", "API 部署", []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", DefaultValue: "git@example.com:team/api.git"}}, []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}})
 	if err != nil {
 		t.Fatalf("NewExtraInfoTemplate() error = %v", err)
 	}
-	snapshot, err := task.NewExtraInfo(template, map[string]string{"branch": "main"})
-	if err != nil {
-		t.Fatalf("NewExtraInfo() error = %v", err)
-	}
-	data := Data{Tasks: []task.Task{{ID: "task-1", Title: "测试", Color: task.DefaultColor, ExtraInfo: []task.ExtraInfo{snapshot}}}, ExtraInfoCatalogues: []string{"git"}, Settings: settings.Default(t.TempDir())}
+	snapshot := task.TaskExtraInfo{ID: "snapshot-1", Catalogue: "deployment", DisplayName: "API 仓库", Fields: []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}}, Parameters: []task.ExtraInfoParameter{{Key: "branch", DisplayName: "分支", Required: true, InputType: task.ExtraInfoParameterInputText, Value: "main"}}}
+	data := Data{Tasks: []task.Task{{ID: "task-1", Title: "测试", Color: task.DefaultColor, ExtraInfo: []task.TaskExtraInfo{snapshot}}}, Settings: settings.Default(t.TempDir())}
 	if err := repository.Save(data); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -153,11 +329,11 @@ func TestRepositoryPersistsAndDeletesExtraInfoTemplateWithoutTouchingTasks(t *te
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(loaded.ExtraInfoTemplates) != 0 {
-		t.Errorf("Load() ExtraInfoTemplates = %#v, want empty slice", loaded.ExtraInfoTemplates)
+	if len(loaded.ExtraInfoTemplates) != 1 || loaded.ExtraInfoTemplates[0].Catalogue != "git" {
+		t.Errorf("Load() ExtraInfoTemplates = %#v, want only built-in Git template", loaded.ExtraInfoTemplates)
 	}
-	if got := loaded.Tasks[0].ExtraInfo; !reflect.DeepEqual(got, []task.ExtraInfo{snapshot}) {
-		t.Errorf("Load() task extra info = %#v, want %#v", got, []task.ExtraInfo{snapshot})
+	if got := loaded.Tasks[0].ExtraInfo; !reflect.DeepEqual(got, []task.TaskExtraInfo{snapshot}) {
+		t.Errorf("Load() task extra info = %#v, want %#v", got, []task.TaskExtraInfo{snapshot})
 	}
 }
 
@@ -174,7 +350,7 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 			Description: "实现邮箱登录表单",
 			Status:      task.StatusRunning,
 			CreatedAt:   createdAt,
-			ExtraInfo:   []task.ExtraInfo{},
+			ExtraInfo:   []task.TaskExtraInfo{},
 		}},
 		Settings: settings.Settings{
 			WorkspaceRoot: filepath.Join(t.TempDir(), "workspaces"),

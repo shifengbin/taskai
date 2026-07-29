@@ -281,16 +281,9 @@ func TestAppHTTPServiceListsTasksByStatusAndReturnsTaskDetails(t *testing.T) {
 
 func TestAppManagesExtraInfoTemplatesThroughBindings(t *testing.T) {
 	app := newApp(t.TempDir())
-	if _, err := app.SaveExtraInfoCatalogue("git"); err != nil {
-		t.Fatalf("保存额外信息分类: %v", err)
-	}
-	catalogues, err := app.ListExtraInfoCatalogues()
-	if err != nil || !reflect.DeepEqual(catalogues, []string{"git"}) {
-		t.Fatalf("额外信息分类列表 = %#v, %v，期望 [git], nil", catalogues, err)
-	}
 	created, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
-		Catalogue: "git", DisplayName: "API 仓库", Fields: []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}},
-		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}},
+		Catalogue: "deployment", DisplayName: "部署信息", Fields: []task.ExtraInfoField{{Key: "environment", DisplayName: "环境", DefaultValue: "test"}},
+		Parameters: []task.ExtraInfoParameterDefinition{{Key: "region", DisplayName: "区域", Required: true}},
 	})
 	if err != nil {
 		t.Fatalf("保存额外信息模板: %v", err)
@@ -303,57 +296,52 @@ func TestAppManagesExtraInfoTemplatesThroughBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("列出额外信息模板: %v", err)
 	}
-	if !reflect.DeepEqual(listed, []task.ExtraInfoTemplate{created}) {
-		t.Fatalf("额外信息模板列表 = %#v，期望 %#v", listed, []task.ExtraInfoTemplate{created})
+	if len(listed) != 2 || listed[0].Catalogue != "git" || listed[1].ID != created.ID || listed[1].Fields[0].Key != "name" {
+		t.Fatalf("额外信息模板列表 = %#v，期望内置 Git 和自定义模板", listed)
 	}
-	if err := app.DeleteExtraInfoCatalogue("git"); err == nil {
-		t.Fatal("分类仍包含额外信息时删除分类未失败")
+	if err := app.DeleteExtraInfoTemplate(listed[0].ID); err == nil {
+		t.Fatal("删除内置 Git 模板未失败")
 	}
-
 	if err := app.DeleteExtraInfoTemplate(created.ID); err != nil {
 		t.Fatalf("删除额外信息模板: %v", err)
-	}
-	if err := app.DeleteExtraInfoCatalogue("git"); err != nil {
-		t.Fatalf("删除空分类: %v", err)
 	}
 	listed, err = app.ListExtraInfoTemplates()
 	if err != nil {
 		t.Fatalf("删除后列出额外信息模板: %v", err)
 	}
-	if len(listed) != 0 {
-		t.Fatalf("删除后额外信息模板列表 = %#v，期望为空", listed)
+	if len(listed) != 1 || listed[0].Catalogue != "git" {
+		t.Fatalf("删除后额外信息模板列表 = %#v，期望只保留内置 Git", listed)
 	}
 }
 
 func TestAppCreatesAndUpdatesTaskExtraInfoSnapshots(t *testing.T) {
 	app := newApp(t.TempDir())
-	if _, err := app.SaveExtraInfoCatalogue("git"); err != nil {
-		t.Fatalf("保存额外信息分类: %v", err)
-	}
-	template, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
-		Catalogue: "git", DisplayName: "API 仓库", Fields: []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"}},
-		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}},
+	template := gitTemplateForTest(t, app)
+	info, err := task.NewExtraInfo(template, map[string]string{
+		"name":       "API 服务",
+		"repository": "git@example.com:team/api.git",
 	})
 	if err != nil {
-		t.Fatalf("保存额外信息模板: %v", err)
+		t.Fatalf("创建额外信息: %v", err)
 	}
-	snapshot, err := task.NewExtraInfo(template, map[string]string{"branch": "main"})
+	info, err = app.SaveExtraInfo(info)
 	if err != nil {
-		t.Fatalf("NewExtraInfo() error = %v", err)
+		t.Fatalf("保存额外信息: %v", err)
 	}
-	created, err := app.CreateTaskWithExtraInfo("关联仓库", "", task.DefaultColor, []task.ExtraInfo{snapshot})
+	requested := task.TaskExtraInfo{InformationID: info.ID, Parameters: []task.ExtraInfoParameter{
+		{Key: "branch", DisplayName: "仓库分支", Required: false, Value: "main"},
+		{Key: "tag", DisplayName: "发布标签", Value: "v1.0.0"},
+	}}
+	created, err := app.CreateTaskWithExtraInfo("关联仓库", "", task.DefaultColor, []task.TaskExtraInfo{requested})
 	if err != nil {
 		t.Fatalf("创建带附加信息任务: %v", err)
 	}
-	if !reflect.DeepEqual(created.ExtraInfo, []task.ExtraInfo{snapshot}) {
-		t.Fatalf("创建任务的附加信息 = %#v，期望 %#v", created.ExtraInfo, []task.ExtraInfo{snapshot})
+	if len(created.ExtraInfo) != 1 || created.ExtraInfo[0].InformationID != info.ID || created.ExtraInfo[0].Fields[0].Value != "API 服务" || created.ExtraInfo[0].Fields[1].Value != "git@example.com:team/api.git" {
+		t.Fatalf("创建任务的附加信息 = %#v", created.ExtraInfo)
 	}
-
-	updatedSnapshot, err := task.NewExtraInfo(template, map[string]string{"branch": "release/1.0"})
-	if err != nil {
-		t.Fatalf("NewExtraInfo() update error = %v", err)
-	}
-	updated, err := app.UpdateTaskWithExtraInfo(created.ID, "关联仓库", "已更新分支", task.DefaultColor, []task.ExtraInfo{updatedSnapshot})
+	updatedSnapshot := created.ExtraInfo[0]
+	updatedSnapshot.Parameters[0].Value = "release/1.0"
+	updated, err := app.UpdateTaskWithExtraInfo(created.ID, "关联仓库", "已更新分支", task.DefaultColor, []task.TaskExtraInfo{updatedSnapshot})
 	if err != nil {
 		t.Fatalf("更新任务附加信息: %v", err)
 	}
@@ -361,15 +349,72 @@ func TestAppCreatesAndUpdatesTaskExtraInfoSnapshots(t *testing.T) {
 		t.Fatalf("更新任务 = %#v", updated)
 	}
 
-	if err := app.DeleteExtraInfoTemplate(template.ID); err != nil {
-		t.Fatalf("删除源模板: %v", err)
+	if err := app.DeleteExtraInfo(info.ID); err != nil {
+		t.Fatalf("删除源信息: %v", err)
+	}
+	updatedSnapshot = updated.ExtraInfo[0]
+	updatedSnapshot.Parameters[0].Value = "release/1.1"
+	updated, err = app.UpdateTaskWithExtraInfo(created.ID, "关联仓库", "来源已删除", task.DefaultColor, []task.TaskExtraInfo{updatedSnapshot})
+	if err != nil {
+		t.Fatalf("删除来源后更新任务动态参数: %v", err)
 	}
 	loaded, err := app.ListTasks()
 	if err != nil {
 		t.Fatalf("删除模板后列出任务: %v", err)
 	}
-	if !reflect.DeepEqual(loaded[0].ExtraInfo, []task.ExtraInfo{updatedSnapshot}) {
+	if !reflect.DeepEqual(loaded[0].ExtraInfo, updated.ExtraInfo) {
 		t.Fatalf("模板删除影响了任务快照 = %#v", loaded[0].ExtraInfo)
+	}
+	invalid := updated.ExtraInfo[0]
+	invalid.Fields[1].Value = "git@example.com:tampered/repository.git"
+	if _, err := app.UpdateTaskWithExtraInfo(created.ID, "关联仓库", "", task.DefaultColor, []task.TaskExtraInfo{invalid}); err == nil {
+		t.Fatal("修改任务固定字段未失败")
+	}
+}
+
+func TestAppUsesInformationParametersAsProtectedTaskDefaults(t *testing.T) {
+	app := newApp(t.TempDir())
+	template := gitTemplateForTest(t, app)
+	info, err := app.SaveExtraInfo(task.ExtraInfo{
+		TemplateID: template.ID,
+		Catalogue:  template.Catalogue,
+		Fields: []task.ExtraInfoField{
+			{Key: "name", Value: "API 服务"},
+			{Key: "repository", Value: "git@example.com:team/api.git"},
+		},
+		Parameters: []task.ExtraInfoParameter{{Key: "environment", DisplayName: "环境", Required: true, Value: "production"}},
+	})
+	if err != nil {
+		t.Fatalf("保存包含信息级参数的信息: %v", err)
+	}
+
+	created, err := app.CreateTaskWithExtraInfo("关联 API", "", task.DefaultColor, []task.TaskExtraInfo{{
+		InformationID: info.ID,
+		Parameters: []task.ExtraInfoParameter{
+			{Key: "branch", DisplayName: "仓库分支", Required: false, Value: "main"},
+			{Key: "environment", DisplayName: "环境", Required: true, Value: "staging"},
+			{Key: "tag", DisplayName: "发布标签", Required: false, Value: "v1.2.0"},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("创建带信息级参数的任务: %v", err)
+	}
+	if got := taskParameterValue(created.ExtraInfo[0].Parameters, "environment"); got != "staging" {
+		t.Fatalf("任务信息级参数值 = %q，期望任务填写值 staging", got)
+	}
+	if got := taskParameterValue(created.ExtraInfo[0].Parameters, "tag"); got != "v1.2.0" {
+		t.Fatalf("任务级动态参数值 = %q，期望保留", got)
+	}
+
+	_, err = app.CreateTaskWithExtraInfo("伪造参数", "", task.DefaultColor, []task.TaskExtraInfo{{
+		InformationID: info.ID,
+		Parameters: []task.ExtraInfoParameter{
+			{Key: "branch", DisplayName: "仓库分支", Required: false, Value: "main"},
+			{Key: "environment", DisplayName: "篡改环境", Required: true, Value: "production"},
+		},
+	}})
+	if err == nil {
+		t.Fatal("伪造信息级参数定义未失败")
 	}
 }
 
@@ -383,35 +428,25 @@ func TestAppHTTPTaskDetailFlattensExtraInfoByCatalogue(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("启用任务 HTTP 服务: %v", err)
 	}
-	if _, err := app.SaveExtraInfoCatalogue("git"); err != nil {
-		t.Fatalf("保存额外信息分类: %v", err)
+	template := gitTemplateForTest(t, app)
+	first, err := app.SaveExtraInfo(task.ExtraInfo{TemplateID: template.ID, Catalogue: template.Catalogue, Fields: []task.ExtraInfoField{
+		{Key: "name", Value: "API 服务"},
+		{Key: "repository", Value: "git@example.com:team/api.git"},
+	}})
+	if err != nil {
+		t.Fatalf("保存第一个信息: %v", err)
 	}
-	first, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
-		Catalogue: "git", DisplayName: "API 仓库", Fields: []task.ExtraInfoField{
-			{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/api.git"},
-			{Key: "remote", DisplayName: "远程名称", Value: "origin"},
-		},
-		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}},
+	second, err := app.SaveExtraInfo(task.ExtraInfo{TemplateID: template.ID, Catalogue: template.Catalogue, Fields: []task.ExtraInfoField{
+		{Key: "name", Value: "Web 服务"},
+		{Key: "repository", Value: "git@example.com:team/web.git"},
+	}})
+	if err != nil {
+		t.Fatalf("保存第二个信息: %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfo("查询附加信息", "", task.DefaultColor, []task.TaskExtraInfo{
+		{InformationID: first.ID, Parameters: []task.ExtraInfoParameter{{Key: "branch", DisplayName: "仓库分支", Value: "main"}}},
+		{InformationID: second.ID, Parameters: []task.ExtraInfoParameter{{Key: "branch", DisplayName: "仓库分支", Value: ""}}},
 	})
-	if err != nil {
-		t.Fatalf("保存第一个模板: %v", err)
-	}
-	second, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
-		Catalogue: "git", DisplayName: "Web 仓库", Fields: []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", Value: "git@example.com:team/web.git"}},
-		Parameters: []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: false}},
-	})
-	if err != nil {
-		t.Fatalf("保存第二个模板: %v", err)
-	}
-	firstSnapshot, err := task.NewExtraInfo(first, map[string]string{"branch": "main"})
-	if err != nil {
-		t.Fatalf("创建第一个快照: %v", err)
-	}
-	secondSnapshot, err := task.NewExtraInfo(second, map[string]string{})
-	if err != nil {
-		t.Fatalf("创建第二个快照: %v", err)
-	}
-	created, err := app.CreateTaskWithExtraInfo("查询附加信息", "", task.DefaultColor, []task.ExtraInfo{firstSnapshot, secondSnapshot})
 	if err != nil {
 		t.Fatalf("创建带附加信息任务: %v", err)
 	}
@@ -429,13 +464,201 @@ func TestAppHTTPTaskDetailFlattensExtraInfoByCatalogue(t *testing.T) {
 	}
 	want := map[string][]map[string]string{
 		"git": {
-			{"repository": "git@example.com:team/api.git", "remote": "origin", "branch": "main"},
-			{"repository": "git@example.com:team/web.git", "branch": ""},
+			{"name": "API 服务", "repository": "git@example.com:team/api.git", "branch": "main"},
+			{"name": "Web 服务", "repository": "git@example.com:team/web.git", "branch": ""},
 		},
 	}
 	if !reflect.DeepEqual(detail.ExtraInfo, want) {
 		t.Fatalf("任务详情附加信息 = %#v，期望 %#v", detail.ExtraInfo, want)
 	}
+}
+
+func TestAppHTTPTaskDetailIncludesActiveTerminalDetails(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	backend := &activeTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+	t.Cleanup(func() { _ = app.terminals.CloseAll() })
+	configured, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("读取默认设置: %v", err)
+	}
+	configured.WorkspaceRoot = t.TempDir()
+	configured.HTTPServiceEnabled = true
+	configured.StatusManagementHTTPPort = availableLoopbackPort(t)
+	configured, err = app.SaveSettings(configured)
+	if err != nil {
+		t.Fatalf("启用任务 HTTP 服务: %v", err)
+	}
+	created, err := app.CreateTask("终端详情", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("开始任务: %v", err)
+	}
+	normal, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建普通终端: %v", err)
+	}
+	command, err := app.CreateCommandTerminal(started.ID, "codex", []string{"--full-auto"}, 100, 32)
+	if err != nil {
+		t.Fatalf("创建命令终端: %v", err)
+	}
+	if !app.realtime.SetTerminalStatus(started.ID, normal.ID, realtime.StatusWorking) {
+		t.Fatal("设置普通终端状态失败")
+	}
+	if !app.realtime.SetTerminalStatus(started.ID, command.ID, realtime.StatusIdle) {
+		t.Fatal("设置命令终端状态失败")
+	}
+
+	response, err := http.Get(app.statusHTTP.APIURL() + "/tasks/" + started.ID)
+	if err != nil {
+		t.Fatalf("查询任务详情: %v", err)
+	}
+	defer response.Body.Close()
+	var detail struct {
+		Terminals []struct {
+			ID      string          `json:"id"`
+			Command string          `json:"command"`
+			Status  realtime.Status `json:"status"`
+		} `json:"terminals"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
+		t.Fatalf("解析任务详情: %v", err)
+	}
+	if len(detail.Terminals) != 2 {
+		t.Fatalf("任务详情终端 = %#v，期望两个活动终端", detail.Terminals)
+	}
+	terminalsByID := make(map[string]struct {
+		Command string
+		Status  realtime.Status
+	}, len(detail.Terminals))
+	for _, item := range detail.Terminals {
+		terminalsByID[item.ID] = struct {
+			Command string
+			Status  realtime.Status
+		}{Command: item.Command, Status: item.Status}
+	}
+	if got := terminalsByID[normal.ID]; got.Command != configured.ShellPath || got.Status != realtime.StatusWorking {
+		t.Fatalf("普通终端详情 = %#v，期望命令 %q、状态 working", got, configured.ShellPath)
+	}
+	if got := terminalsByID[command.ID]; got.Command != "codex" || got.Status != realtime.StatusIdle {
+		t.Fatalf("命令终端详情 = %#v，期望命令 codex、状态 idle", got)
+	}
+
+	response, err = http.Get(app.statusHTTP.APIURL() + "/tasks")
+	if err != nil {
+		t.Fatalf("查询任务列表: %v", err)
+	}
+	defer response.Body.Close()
+	var listed []map[string]json.RawMessage
+	if err := json.NewDecoder(response.Body).Decode(&listed); err != nil {
+		t.Fatalf("解析任务列表: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("任务列表 = %#v，期望一个任务", listed)
+	}
+	if _, ok := listed[0]["terminals"]; ok {
+		t.Fatalf("任务列表不应包含 terminals: %#v", listed[0])
+	}
+
+	withoutTerminal, err := app.CreateTask("无终端详情", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建无终端任务: %v", err)
+	}
+	response, err = http.Get(app.statusHTTP.APIURL() + "/tasks/" + withoutTerminal.ID)
+	if err != nil {
+		t.Fatalf("查询无终端任务详情: %v", err)
+	}
+	defer response.Body.Close()
+	var emptyDetail struct {
+		Terminals []json.RawMessage `json:"terminals"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&emptyDetail); err != nil {
+		t.Fatalf("解析无终端任务详情: %v", err)
+	}
+	if emptyDetail.Terminals == nil || len(emptyDetail.Terminals) != 0 {
+		t.Fatalf("无终端任务详情 = %#v，期望 terminals 为空数组", emptyDetail.Terminals)
+	}
+}
+
+func TestAppHTTPTaskDetailReturnsCheckboxParameterAsBoolean(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth,
+		StatusManagementMode: settings.StatusManagementModeTitleChange,
+		HTTPServiceEnabled:   true, StatusManagementHTTPPort: availableLoopbackPort(t),
+	}); err != nil {
+		t.Fatalf("启用任务 HTTP 服务: %v", err)
+	}
+	template := gitTemplateForTest(t, app)
+	info, err := app.SaveExtraInfo(task.ExtraInfo{TemplateID: template.ID, Catalogue: template.Catalogue, Fields: []task.ExtraInfoField{
+		{Key: "name", Value: "部署服务"},
+		{Key: "repository", Value: "git@example.com:team/deploy.git"},
+	}})
+	if err != nil {
+		t.Fatalf("保存 Git 信息: %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfo("查询复选框参数", "", task.DefaultColor, []task.TaskExtraInfo{{
+		InformationID: info.ID,
+		Parameters: []task.ExtraInfoParameter{
+			{Key: "branch", DisplayName: "仓库分支", Value: "main"},
+			{Key: "deploy", DisplayName: "允许部署", InputType: task.ExtraInfoParameterInputCheckbox, Value: "true"},
+			{Key: "reviewed", DisplayName: "已复核", InputType: task.ExtraInfoParameterInputCheckbox, Value: "false"},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("创建带复选框参数的任务: %v", err)
+	}
+
+	response, err := http.Get(app.statusHTTP.APIURL() + "/tasks/" + created.ID)
+	if err != nil {
+		t.Fatalf("查询任务详情: %v", err)
+	}
+	defer response.Body.Close()
+	var detail struct {
+		ExtraInfo map[string][]map[string]any `json:"extraInfo"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
+		t.Fatalf("解析任务详情: %v", err)
+	}
+	values := detail.ExtraInfo["git"][0]
+	if got, ok := values["branch"].(string); !ok || got != "main" {
+		t.Fatalf("文本动态参数 = %#v，期望字符串 main", values["branch"])
+	}
+	if got, ok := values["deploy"].(bool); !ok || !got {
+		t.Fatalf("复选框动态参数 = %#v，期望布尔值 true", values["deploy"])
+	}
+	if got, ok := values["reviewed"].(bool); !ok || got {
+		t.Fatalf("复选框动态参数 = %#v，期望布尔值 false", values["reviewed"])
+	}
+}
+
+func gitTemplateForTest(t *testing.T, app *App) task.ExtraInfoTemplate {
+	t.Helper()
+	templates, err := app.ListExtraInfoTemplates()
+	if err != nil {
+		t.Fatalf("列出 Git 模板: %v", err)
+	}
+	for _, template := range templates {
+		if template.Catalogue == "git" && template.BuiltIn {
+			return template
+		}
+	}
+	t.Fatal("未找到内置 Git 模板")
+	return task.ExtraInfoTemplate{}
+}
+
+func taskParameterValue(parameters []task.ExtraInfoParameter, key string) string {
+	for _, parameter := range parameters {
+		if parameter.Key == key {
+			return parameter.Value
+		}
+	}
+	return ""
 }
 
 func TestAppBuildsTerminalEnvironmentForEveryStatusMode(t *testing.T) {
@@ -1113,6 +1336,31 @@ func (capturingTerminalSession) Write(data []byte) (int, error) { return len(dat
 func (capturingTerminalSession) Close() error                   { return nil }
 func (capturingTerminalSession) Resize(uint16, uint16) error    { return nil }
 func (capturingTerminalSession) Wait() error                    { return nil }
+
+type activeTerminalBackend struct{}
+
+func (activeTerminalBackend) Start(request terminal.StartRequest) (terminal.Session, error) {
+	reader, writer := io.Pipe()
+	return &activeTerminalSession{id: request.ID, reader: reader, writer: writer}, nil
+}
+
+type activeTerminalSession struct {
+	id     string
+	reader *io.PipeReader
+	writer *io.PipeWriter
+}
+
+func (session *activeTerminalSession) ID() string { return session.id }
+func (session *activeTerminalSession) Read(data []byte) (int, error) {
+	return session.reader.Read(data)
+}
+func (session *activeTerminalSession) Write(data []byte) (int, error) { return len(data), nil }
+func (session *activeTerminalSession) Resize(uint16, uint16) error    { return nil }
+func (session *activeTerminalSession) Wait() error                    { return nil }
+func (session *activeTerminalSession) Close() error {
+	_ = session.writer.Close()
+	return session.reader.Close()
+}
 
 func availableLoopbackPort(t *testing.T) int {
 	t.Helper()

@@ -10,10 +10,12 @@ import {
   FinishTask,
 	GetSettings,
 	DeleteExtraInfoCatalogue,
+	DeleteExtraInfo,
 	DeleteExtraInfoTemplate,
   HasRunningTasks,
 	ListTasks,
 	ListExtraInfoCatalogues,
+	ListExtraInfos,
 	ListExtraInfoTemplates,
 	OpenTaskFolder,
   PrepareQuit,
@@ -23,6 +25,7 @@ import {
   RunTaskCommand,
 	SaveSettings,
 	SaveExtraInfoCatalogue,
+	SaveExtraInfo,
 	SaveExtraInfoTemplate,
 	SelectTerminal,
 	StartTask,
@@ -34,17 +37,17 @@ import {settings as settingsModel} from '../wailsjs/go/models'
 import {task as taskModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfoTemplate, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
-	createTaskWithExtraInfo: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => CreateTaskWithExtraInfo(title, description, color, extraInfo.map((item) => taskModel.ExtraInfo.createFrom(item))) as Promise<TaskRecord>,
+	createTaskWithExtraInfo: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => CreateTaskWithExtraInfo(title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item))) as Promise<TaskRecord>,
   updateTask: (taskID: string, title: string, description: string, color: string) => UpdateTask(taskID, title, description, color) as Promise<TaskRecord>,
-	updateTaskWithExtraInfo: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => UpdateTaskWithExtraInfo(taskID, title, description, color, extraInfo.map((item) => taskModel.ExtraInfo.createFrom(item))) as Promise<TaskRecord>,
+	updateTaskWithExtraInfo: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => UpdateTaskWithExtraInfo(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item))) as Promise<TaskRecord>,
   listTasks: () => ListTasks() as Promise<TaskRecord[]>,
 	listExtraInfoTemplates: async () => {
 		const templates = await ListExtraInfoTemplates()
-		return Array.isArray(templates) ? templates as ExtraInfoTemplate[] : []
+		return Array.isArray(templates) ? templates as unknown as ExtraInfoTemplate[] : []
 	},
 	listExtraInfoCatalogues: async () => {
 		const catalogues = await ListExtraInfoCatalogues()
@@ -52,8 +55,14 @@ export const api = {
 	},
 	saveExtraInfoCatalogue: (name: string) => SaveExtraInfoCatalogue(name),
 	deleteExtraInfoCatalogue: (name: string) => DeleteExtraInfoCatalogue(name),
-	saveExtraInfoTemplate: (template: ExtraInfoTemplate) => SaveExtraInfoTemplate(taskModel.ExtraInfoTemplate.createFrom(template)) as Promise<ExtraInfoTemplate>,
+	saveExtraInfoTemplate: (template: ExtraInfoTemplate) => SaveExtraInfoTemplate(taskModel.ExtraInfoTemplate.createFrom(template)) as unknown as Promise<ExtraInfoTemplate>,
 	deleteExtraInfoTemplate: (templateID: string) => DeleteExtraInfoTemplate(templateID),
+	listExtraInfos: async () => {
+		const infos = await ListExtraInfos()
+		return Array.isArray(infos) ? infos as ExtraInfo[] : []
+	},
+	saveExtraInfo: (info: ExtraInfo) => SaveExtraInfo(taskModel.ExtraInfo.createFrom(info)) as unknown as Promise<ExtraInfo>,
+	deleteExtraInfo: (infoID: string) => DeleteExtraInfo(infoID),
 	reorderTasks: (status: TaskRecord['status'], taskIDs: string[]) => ReorderTasks(status, taskIDs) as Promise<TaskRecord[]>,
   startTask: (taskID: string) => StartTask(taskID) as Promise<TaskRecord>,
   finishTask: (taskID: string) => FinishTask(taskID) as Promise<TaskRecord>,

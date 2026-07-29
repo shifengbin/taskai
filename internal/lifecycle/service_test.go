@@ -305,14 +305,14 @@ func TestServiceDoesNotRestartCompletedTask(t *testing.T) {
 	}
 }
 
-func newService(t *testing.T) (*Service, storage.Repository, string) {
+func newService(t *testing.T) (*Service, *storage.Repository, string) {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "workspaces")
 	service, repository := newServiceWithRoot(t, root)
 	return service, repository, root
 }
 
-func newServiceWithRoot(t *testing.T, root string) (*Service, storage.Repository) {
+func newServiceWithRoot(t *testing.T, root string) (*Service, *storage.Repository) {
 	t.Helper()
 	repository := storage.New(filepath.Join(t.TempDir(), "state.json"), settings.Settings{
 		WorkspaceRoot: root,

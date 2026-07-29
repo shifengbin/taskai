@@ -24,30 +24,47 @@ export interface ExtraInfoParameterDefinition {
 	key: string
 	displayName: string
 	required: boolean
+	inputType?: ExtraInfoParameterInputType
 }
+
+export type ExtraInfoParameterInputType = 'text' | 'checkbox'
 
 export interface ExtraInfoField {
 	key: string
 	displayName: string
-	value: string
+	value?: string
+	defaultValue?: string
 }
 
 export interface ExtraInfoTemplate {
 	id: string
 	catalogue: string
-	displayName: string
+	displayName?: string
 	fields: ExtraInfoField[]
 	parameters: ExtraInfoParameterDefinition[]
+	builtIn: boolean
 }
 
-export interface TaskExtraInfoParameter extends ExtraInfoParameterDefinition {
+export interface ExtraInfo {
+	id: string
+	templateId: string
+	catalogue: string
+	fields: ExtraInfoField[]
+	parameters: ExtraInfoParameter[]
+}
+
+export interface ExtraInfoParameter extends ExtraInfoParameterDefinition {
 	value: string
 }
 
+export type TaskExtraInfoParameter = ExtraInfoParameter
+
 export interface TaskExtraInfo {
 	id: string
+	informationId?: string
+	templateId?: string
 	catalogue: string
-	displayName: string
+	displayName?: string
 	fields: ExtraInfoField[]
 	parameters: TaskExtraInfoParameter[]
 }

@@ -55,3 +55,8 @@ type Info struct {
 	TaskID string `json:"taskId"`
 	State  State  `json:"state"`
 }
+
+type ActiveSession struct {
+	ID      string
+	Command string
+}

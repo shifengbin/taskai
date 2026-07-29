@@ -29,7 +29,7 @@ type App struct {
 	ctx        context.Context
 	allowClose bool
 
-	repository           storage.Repository
+	repository           *storage.Repository
 	tasks                *lifecycle.Service
 	terminals            *terminal.Manager
 	realtime             *realtime.Service
@@ -133,7 +133,7 @@ func (app *App) CreateTask(title, description, color string) (task.Task, error) 
 	return app.tasks.CreateTask(title, description, color)
 }
 
-func (app *App) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
+func (app *App) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
 	return app.tasks.CreateTaskWithExtraInfo(title, description, color, extraInfo)
 }
 
@@ -149,7 +149,7 @@ func (app *App) UpdateTask(taskID, title, description, color string) (task.Task,
 	return app.tasks.UpdateTask(taskID, title, description, color)
 }
 
-func (app *App) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
+func (app *App) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
 	return app.tasks.UpdateTaskWithExtraInfo(taskID, title, description, color, extraInfo)
 }
 
@@ -175,6 +175,18 @@ func (app *App) SaveExtraInfoTemplate(template task.ExtraInfoTemplate) (task.Ext
 
 func (app *App) DeleteExtraInfoTemplate(templateID string) error {
 	return app.repository.DeleteExtraInfoTemplate(templateID)
+}
+
+func (app *App) ListExtraInfos() ([]task.ExtraInfo, error) {
+	return app.repository.ListExtraInfos()
+}
+
+func (app *App) SaveExtraInfo(info task.ExtraInfo) (task.ExtraInfo, error) {
+	return app.repository.SaveExtraInfo(info)
+}
+
+func (app *App) DeleteExtraInfo(infoID string) error {
+	return app.repository.DeleteExtraInfo(infoID)
 }
 
 func (app *App) StartTask(taskID string) (task.Task, error) {
@@ -599,7 +611,7 @@ func (app *App) httpTasks() ([]realtime.TaskResource, error) {
 
 	tasks := make([]realtime.TaskResource, 0, len(data.Tasks))
 	for _, current := range data.Tasks {
-		tasks = append(tasks, realtimeTaskResource(current, false))
+		tasks = append(tasks, app.realtimeTaskResource(current, false))
 	}
 	return tasks, nil
 }
@@ -612,14 +624,14 @@ func (app *App) httpTask(taskID string) (realtime.TaskResource, bool, error) {
 
 	for _, current := range data.Tasks {
 		if current.ID == taskID {
-			return realtimeTaskResource(current, true), true, nil
+			return app.realtimeTaskResource(current, true), true, nil
 		}
 	}
 
 	return realtime.TaskResource{}, false, nil
 }
 
-func realtimeTaskResource(current task.Task, includeExtraInfo bool) realtime.TaskResource {
+func (app *App) realtimeTaskResource(current task.Task, includeExtraInfo bool) realtime.TaskResource {
 	resource := realtime.TaskResource{
 		ID:            current.ID,
 		Title:         current.Title,
@@ -634,18 +646,37 @@ func realtimeTaskResource(current task.Task, includeExtraInfo bool) realtime.Tas
 	if includeExtraInfo {
 		extraInfo := httpExtraInfo(current.ExtraInfo)
 		resource.ExtraInfo = &extraInfo
+		terminals := app.httpTerminals(current.ID)
+		resource.Terminals = &terminals
 	}
 	return resource
 }
 
-func httpExtraInfo(items []task.ExtraInfo) map[string][]map[string]string {
-	grouped := make(map[string][]map[string]string)
+func (app *App) httpTerminals(taskID string) []realtime.TerminalResource {
+	sessions := app.terminals.ListActive(taskID)
+	terminals := make([]realtime.TerminalResource, 0, len(sessions))
+	for _, session := range sessions {
+		terminals = append(terminals, realtime.TerminalResource{
+			ID:      session.ID,
+			Command: session.Command,
+			Status:  app.realtime.TerminalStatus(taskID, session.ID),
+		})
+	}
+	return terminals
+}
+
+func httpExtraInfo(items []task.TaskExtraInfo) map[string][]map[string]any {
+	grouped := make(map[string][]map[string]any)
 	for _, item := range items {
-		values := make(map[string]string, len(item.Fields)+len(item.Parameters))
+		values := make(map[string]any, len(item.Fields)+len(item.Parameters))
 		for _, field := range item.Fields {
 			values[field.Key] = field.Value
 		}
 		for _, parameter := range item.Parameters {
+			if task.NormalizeExtraInfoParameterInputType(parameter.InputType) == task.ExtraInfoParameterInputCheckbox {
+				values[parameter.Key] = parameter.Value == "true"
+				continue
+			}
 			values[parameter.Key] = parameter.Value
 		}
 		grouped[item.Catalogue] = append(grouped[item.Catalogue], values)
