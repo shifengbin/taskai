@@ -346,7 +346,7 @@ describe('App confirmation flows', () => {
 		expect(screen.getByRole('button', {name: '删除模板 git'})).toBeDisabled()
 		expect(screen.getAllByRole('button', {name: '新增信息'})).toHaveLength(1)
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
+		expect(screen.getByRole('combobox', {name: '选择模板'})).toHaveTextContent('Git')
 		await user.type(screen.getByRole('textbox', {name: '项目名称'}), 'API 服务')
 		expect(screen.getByRole('textbox', {name: '仓库地址'})).toHaveValue('git@example.com:team/api.git')
 		await user.click(screen.getByRole('button', {name: '保存信息'}))
@@ -359,7 +359,7 @@ describe('App confirmation flows', () => {
 		})))
 	})
 
-	it('收起分类模板时仍可新建模板，并按当前会话预选新增信息模板', async () => {
+	it('收起分类模板时仍可新建模板，并按当前会话预选且切换新增信息模板', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([
 			{id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: false, fields: [{key: 'name', displayName: '项目名称'}], parameters: []},
@@ -386,8 +386,11 @@ describe('App confirmation flows', () => {
 		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增信息'})).not.toBeInTheDocument())
 
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
-		expect(screen.getByRole('textbox', {name: '项目名称'})).toBeInTheDocument()
+		const defaultTemplateSelect = screen.getByRole('combobox', {name: '选择模板'})
+		expect(defaultTemplateSelect).toHaveTextContent('Git')
+		await user.click(defaultTemplateSelect)
+		await user.click(screen.getByRole('option', {name: '缺陷（issue）'}))
+		expect(screen.getByRole('textbox', {name: '名称'})).toBeInTheDocument()
 		await user.click(screen.getByRole('button', {name: '取消'}))
 		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增信息'})).not.toBeInTheDocument())
 
@@ -398,7 +401,7 @@ describe('App confirmation flows', () => {
 		expect(screen.getByRole('combobox', {name: '选择模板'})).toBeInTheDocument()
 	})
 
-	it('仅有一个分类时新增信息直接进入该模板', async () => {
+	it('仅有一个分类时新增信息预选该模板且仍显示选择控件', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([{
 			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
@@ -408,7 +411,7 @@ describe('App confirmation flows', () => {
 
 		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
+		expect(screen.getByRole('combobox', {name: '选择模板'})).toHaveTextContent('Git')
 		expect(screen.getByRole('textbox', {name: '项目名称'})).toBeInTheDocument()
 	})
 
@@ -458,7 +461,7 @@ describe('App confirmation flows', () => {
 		expect(screen.queryByLabelText('参数 1 必填')).not.toBeInTheDocument()
 	})
 
-	it('模板和信息编辑器使用紧凑字段网格与平面参数分隔行', async () => {
+	it('模板和信息编辑器使用清晰字段布局与平面参数分隔行', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([{
 			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
@@ -479,17 +482,19 @@ describe('App confirmation flows', () => {
 		expect(screen.getByRole('textbox', {name: '模板备注'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
 		const templateFixedField = screen.getByTestId('extra-info-template-fixed-field-0')
 		expect(getComputedStyle(templateFixedField).borderTopStyle).toBe('solid')
+		expect(getComputedStyle(templateFixedField).gridTemplateColumns).toBe('minmax(0, 1fr) auto')
 		await user.click(screen.getByRole('button', {name: '新增参数'}))
 		const templateParameter = screen.getByTestId('extra-info-template-parameter-0')
 		expect(getComputedStyle(templateParameter).borderTopStyle).toBe('solid')
+		expect(getComputedStyle(templateParameter).gridTemplateColumns).toBe('minmax(0, 1fr) auto')
 		await user.click(screen.getByRole('button', {name: '取消'}))
 		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增模板'})).not.toBeInTheDocument())
 
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
+		expect(screen.getByRole('combobox', {name: '选择模板'})).toHaveTextContent('Git')
 		const draftFields = screen.getByTestId('extra-info-draft-fields')
 		expect(getComputedStyle(draftFields).display).toBe('grid')
-		expect(getComputedStyle(draftFields).gridTemplateColumns).toBe('repeat(auto-fit, minmax(180px, 1fr))')
+		expect(getComputedStyle(draftFields).gridTemplateColumns).toBe('1fr')
 		expect(screen.getByRole('textbox', {name: '项目名称'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
 		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
 		const draftParameter = screen.getByTestId('extra-info-draft-parameter-0')

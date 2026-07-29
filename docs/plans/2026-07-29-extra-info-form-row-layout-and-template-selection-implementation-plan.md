@@ -2,7 +2,7 @@
 
 > **供 Codex 执行：** 按测试先行方式逐项完成本计划。
 
-**目标：** 让模板字段的删除操作保持同行、信息字段逐行展示，并让新建信息的默认模板始终可切换。
+**目标：** 让模板字段及参数的删除操作保持同行、信息字段逐行展示，并让新建信息的默认模板始终可切换。
 
 **架构：** 仅调整 `App` 内两个表单的局部布局与新增信息的模板选择渲染条件。默认模板解析和保存后的会话状态保持不变；通过 `newExtraInfoTemplateID` 保持下拉框值，切换时复用现有 `selectExtraInfoTemplate` 重新生成草稿。
 
@@ -15,11 +15,13 @@
 **文件：**
 - 修改：`frontend/src/App.test.tsx`
 
-**步骤 1：编写固定字段删除按钮同行测试**
+**步骤 1：编写字段与参数删除按钮同行测试**
 
 ```tsx
 const field = screen.getByTestId('extra-info-template-fixed-field-0')
 expect(getComputedStyle(field).gridTemplateColumns).toBe('minmax(0, 1fr) auto')
+const parameter = screen.getByTestId('extra-info-template-parameter-0')
+expect(getComputedStyle(parameter).gridTemplateColumns).toBe('minmax(0, 1fr) auto')
 ```
 
 **步骤 2：编写信息字段单列测试**
@@ -51,7 +53,7 @@ expect(getComputedStyle(fields).gridTemplateColumns).toBe('1fr')
 <Box data-testid="extra-info-draft-fields" sx={{display: 'grid', gridTemplateColumns: '1fr', gap: 1.5, minWidth: 0}}>
 ```
 
-**步骤 2：将模板固定字段条目改为两列**
+**步骤 2：将模板固定字段和参数条目改为两列**
 
 ```tsx
 <Box sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', gap: 1.25, ...}}>
@@ -60,7 +62,7 @@ expect(getComputedStyle(fields).gridTemplateColumns).toBe('1fr')
 </Box>
 ```
 
-保留删除禁用条件和输入字段的现有行为。
+保留删除禁用条件和输入字段的现有行为，参数的必填控制仍留在左侧内容列中。
 
 ### 任务 3：让新增信息的默认模板始终可切换
 

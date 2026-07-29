@@ -962,10 +962,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		<Dialog open={extraInfoEditorOpen} onClose={closeExtraInfoEditor} aria-labelledby="extra-info-value-editor-title" fullWidth maxWidth="md">
 			<DialogTitle id="extra-info-value-editor-title">{extraInfoDraft?.id ? '编辑信息' : '新增信息'}</DialogTitle>
 			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
-				{!extraInfoDraft ? <TextField select required autoFocus size="small" label="选择模板" value={newExtraInfoTemplateID} onChange={(event) => selectExtraInfoTemplate(event.target.value)}>
+				{!extraInfoDraft || !extraInfoDraft.id ? <TextField select required autoFocus size="small" label="选择模板" value={newExtraInfoTemplateID} onChange={(event) => selectExtraInfoTemplate(event.target.value)}>
 					{extraInfoTemplates.map((template) => <MenuItem key={template.id} value={template.id}>{`${template.displayName || template.catalogue}（${template.catalogue}）`}</MenuItem>)}
 				</TextField> : <Typography variant="caption" color="text.secondary">{extraInfoDraft.catalogue}</Typography>}
-				{extraInfoDraft && <Box data-testid="extra-info-draft-fields" sx={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 1.5, minWidth: 0}}>
+				{extraInfoDraft && <Box data-testid="extra-info-draft-fields" sx={{display: 'grid', gridTemplateColumns: '1fr', gap: 1.5, minWidth: 0}}>
 					{extraInfoDraft.fields.map((field, index) => <TextField key={field.key} required={field.key === 'name'} size="small" label={field.displayName} value={field.value ?? ''} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, fields: current.fields.map((item, fieldIndex) => fieldIndex === index ? {...item, value: event.target.value} : item)} : current)}/>) }
 				</Box>}
 				{extraInfoDraft && <Box sx={{display: 'grid', gap: 1.25, pt: 0.5}}>
@@ -1018,15 +1018,13 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					</Box>
 					{extraInfoTemplateDraft?.fields.map((field, index) => {
 						const protectedField = Boolean(extraInfoTemplateDraft.builtIn && (field.key === 'name' || field.key === 'repository'))
-						return <Box key={index} data-testid={`extra-info-template-fixed-field-${index}`} sx={{display: 'grid', gap: 1.25, minWidth: 0, borderTop: 1, borderColor: 'divider', py: 1.5}}>
+						return <Box key={index} data-testid={`extra-info-template-fixed-field-${index}`} sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', gap: 1.25, minWidth: 0, borderTop: 1, borderColor: 'divider', py: 1.5}}>
 							<Box sx={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 1.25, minWidth: 0}}>
 								<TextField required size="small" label={`固定键 ${index + 1}`} disabled={protectedField} value={field.key} onChange={(event) => updateExtraInfoTemplateField(index, {key: event.target.value})}/>
 								<TextField required size="small" label={`固定字段显示名称 ${index + 1}`} disabled={protectedField} value={field.displayName} onChange={(event) => updateExtraInfoTemplateField(index, {displayName: event.target.value})}/>
 								<TextField size="small" label={`默认值 ${index + 1}`} value={field.defaultValue ?? ''} onChange={(event) => updateExtraInfoTemplateField(index, {defaultValue: event.target.value})}/>
 							</Box>
-							<Box sx={{display: 'flex', justifyContent: 'flex-end'}}>
-								<IconButton aria-label={`删除固定字段 ${index + 1}`} size="small" color="error" disabled={protectedField || extraInfoTemplateDraft.fields.length === 1} onClick={() => updateExtraInfoTemplateDraft({fields: extraInfoTemplateDraft.fields.filter((_, fieldIndex) => fieldIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
-							</Box>
+							<IconButton aria-label={`删除固定字段 ${index + 1}`} size="small" color="error" disabled={protectedField || extraInfoTemplateDraft.fields.length === 1} onClick={() => updateExtraInfoTemplateDraft({fields: extraInfoTemplateDraft.fields.filter((_, fieldIndex) => fieldIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
 						</Box>
 					})}
 				</Box>
@@ -1037,22 +1035,22 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					</Box>
 					{extraInfoTemplateDraft?.parameters.map((parameter, index) => {
 						const protectedParameter = Boolean(extraInfoTemplateDraft.builtIn && parameter.key === 'branch')
-						return <Box key={index} data-testid={`extra-info-template-parameter-${index}`} sx={{display: 'grid', gap: 1.25, minWidth: 0, borderTop: 1, borderColor: 'divider', py: 1.5}}>
-							<Box sx={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 1.25, minWidth: 0}}>
-								<TextField required size="small" label={`参数键 ${index + 1}`} disabled={protectedParameter} value={parameter.key} onChange={(event) => updateExtraInfoTemplateParameter(index, {key: event.target.value})}/>
-								<TextField required size="small" label={`参数显示名称 ${index + 1}`} disabled={protectedParameter} value={parameter.displayName} onChange={(event) => updateExtraInfoTemplateParameter(index, {displayName: event.target.value})}/>
-								<TextField select size="small" label={`参数类型 ${index + 1}`} disabled={protectedParameter} value={extraInfoParameterInputType(parameter)} onChange={(event) => {
-									const inputType = event.target.value as ExtraInfoParameterInputType
-									updateExtraInfoTemplateParameter(index, {inputType, required: inputType === 'checkbox' ? false : parameter.required})
-								}}>
-									<MenuItem value="text">文本</MenuItem>
-									<MenuItem value="checkbox">复选框</MenuItem>
-								</TextField>
-							</Box>
-							<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.25, minWidth: 0}}>
+						return <Box key={index} data-testid={`extra-info-template-parameter-${index}`} sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', gap: 1.25, minWidth: 0, borderTop: 1, borderColor: 'divider', py: 1.5}}>
+							<Box sx={{display: 'grid', gap: 1.25, minWidth: 0}}>
+								<Box sx={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 1.25, minWidth: 0}}>
+									<TextField required size="small" label={`参数键 ${index + 1}`} disabled={protectedParameter} value={parameter.key} onChange={(event) => updateExtraInfoTemplateParameter(index, {key: event.target.value})}/>
+									<TextField required size="small" label={`参数显示名称 ${index + 1}`} disabled={protectedParameter} value={parameter.displayName} onChange={(event) => updateExtraInfoTemplateParameter(index, {displayName: event.target.value})}/>
+									<TextField select size="small" label={`参数类型 ${index + 1}`} disabled={protectedParameter} value={extraInfoParameterInputType(parameter)} onChange={(event) => {
+										const inputType = event.target.value as ExtraInfoParameterInputType
+										updateExtraInfoTemplateParameter(index, {inputType, required: inputType === 'checkbox' ? false : parameter.required})
+									}}>
+										<MenuItem value="text">文本</MenuItem>
+										<MenuItem value="checkbox">复选框</MenuItem>
+									</TextField>
+								</Box>
 								{extraInfoParameterInputType(parameter) !== 'checkbox' && <FormControlLabel sx={{m: 0}} control={<Checkbox checked={parameter.required} onChange={(event) => updateExtraInfoTemplateParameter(index, {required: event.target.checked})}/>} label={`参数 ${index + 1} 必填`}/>}
-								<IconButton aria-label={`删除参数 ${index + 1}`} size="small" color="error" disabled={protectedParameter} onClick={() => updateExtraInfoTemplateDraft({parameters: extraInfoTemplateDraft.parameters.filter((_, parameterIndex) => parameterIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
 							</Box>
+							<IconButton aria-label={`删除参数 ${index + 1}`} size="small" color="error" disabled={protectedParameter} onClick={() => updateExtraInfoTemplateDraft({parameters: extraInfoTemplateDraft.parameters.filter((_, parameterIndex) => parameterIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
 						</Box>
 					})}
 				</Box>
