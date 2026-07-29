@@ -412,6 +412,38 @@ describe('App confirmation flows', () => {
 		expect(screen.getByRole('textbox', {name: '项目名称'})).toBeInTheDocument()
 	})
 
+	it('将新增模板和新增信息放在同一管理操作栏', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		const actions = screen.getByTestId('extra-info-manager-actions')
+		expect(within(actions).getByRole('button', {name: '新增模板'})).toBeInTheDocument()
+		expect(within(actions).getByRole('button', {name: '新增信息'})).toBeEnabled()
+	})
+
+	it('模板和信息编辑弹窗使用中等宽度', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增模板'}))
+		expect(screen.getByRole('dialog', {name: '新增模板'})).toHaveClass('MuiDialog-paperWidthMd')
+		await user.click(screen.getByRole('button', {name: '取消'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增模板'})).not.toBeInTheDocument())
+
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		expect(screen.getByRole('dialog', {name: '新增信息'})).toHaveClass('MuiDialog-paperWidthMd')
+	})
+
 	it('模板动态参数可切换为复选框，且不再设置必填状态', async () => {
 		const user = userEvent.setup()
 		render(<App/>)

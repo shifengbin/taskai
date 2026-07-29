@@ -892,7 +892,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		<Dialog open={extraInfoManagerOpen} onClose={() => setExtraInfoManagerOpen(false)} aria-labelledby="extra-info-manager-title" fullWidth maxWidth="md">
 			<DialogTitle id="extra-info-manager-title">额外信息管理</DialogTitle>
 			<DialogContent data-testid="extra-info-manager-content" sx={{display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, overflowY: 'auto', pt: '12px !important'}}>
-				<Box sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', gap: 1}}>
+				<Box data-testid="extra-info-manager-actions" sx={{display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 1}}>
+					<Button variant="outlined" size="small" onClick={() => openExtraInfoTemplateEditor()}>新增模板</Button>
+					<Button variant="contained" size="small" disabled={extraInfoTemplates.length === 0} onClick={() => openExtraInfoEditor()}>新增信息</Button>
+				</Box>
+				<Box sx={{minWidth: 0}}>
 					<Accordion disableGutters elevation={0} expanded={templateSectionExpanded} onChange={(_, expanded) => setTemplateSectionExpanded(expanded)} sx={{minWidth: 0, border: 1, borderColor: 'divider', borderRadius: '8px !important', overflow: 'hidden', '&:before': {display: 'none'}}}>
 						<AccordionSummary expandIcon={<ExpandMoreOutlinedIcon/>} aria-label="分类模板">
 							<Box sx={{minWidth: 0, pr: 1}}>
@@ -921,14 +925,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 							</Box>
 						</AccordionDetails>
 					</Accordion>
-					<Button variant="contained" size="small" sx={{whiteSpace: 'nowrap'}} onClick={() => openExtraInfoTemplateEditor()}>新增模板</Button>
 				</Box>
-				<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 0.5}}>
-					<Box>
-						<Typography variant="subtitle2">信息</Typography>
-						<Typography variant="caption" color="text.secondary">填写固定字段后保存为可复用信息，任务选择它时会生成独立快照。</Typography>
-					</Box>
-					<Button size="small" variant="outlined" disabled={extraInfoTemplates.length === 0} onClick={() => openExtraInfoEditor()}>新增信息</Button>
+				<Box sx={{mt: 0.5}}>
+					<Typography variant="subtitle2">信息</Typography>
+					<Typography variant="caption" color="text.secondary">填写固定字段后保存为可复用信息，任务选择它时会生成独立快照。</Typography>
 				</Box>
 				<TextField size="small" fullWidth label="搜索信息" placeholder="按名称模糊搜索" value={extraInfoSearch} onChange={(event) => setExtraInfoSearch(event.target.value)}/>
 				{extraInfos.length === 0 ? <Alert severity="info" variant="outlined">暂无信息。选择一个模板后填写固定字段即可添加。</Alert> : (
@@ -959,7 +959,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			<DialogActions><Button onClick={() => setExtraInfoManagerOpen(false)}>关闭</Button></DialogActions>
 		</Dialog>
 
-		<Dialog open={extraInfoEditorOpen} onClose={closeExtraInfoEditor} aria-labelledby="extra-info-value-editor-title" fullWidth maxWidth="sm">
+		<Dialog open={extraInfoEditorOpen} onClose={closeExtraInfoEditor} aria-labelledby="extra-info-value-editor-title" fullWidth maxWidth="md">
 			<DialogTitle id="extra-info-value-editor-title">{extraInfoDraft?.id ? '编辑信息' : '新增信息'}</DialogTitle>
 			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
 				{!extraInfoDraft ? <TextField select required autoFocus size="small" label="选择模板" value={newExtraInfoTemplateID} onChange={(event) => selectExtraInfoTemplate(event.target.value)}>
@@ -1003,7 +1003,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			<DialogActions><Button onClick={closeExtraInfoEditor}>取消</Button><Button variant="contained" disabled={!extraInfoDraft} onClick={() => void saveExtraInfo()}>保存信息</Button></DialogActions>
 		</Dialog>
 
-		<Dialog open={Boolean(extraInfoTemplateDraft)} onClose={() => setExtraInfoTemplateDraft(undefined)} aria-labelledby="extra-info-editor-title" fullWidth maxWidth="sm">
+		<Dialog open={Boolean(extraInfoTemplateDraft)} onClose={() => setExtraInfoTemplateDraft(undefined)} aria-labelledby="extra-info-editor-title" fullWidth maxWidth="md">
 			<DialogTitle id="extra-info-editor-title">{extraInfoTemplateDraft?.id ? '编辑模板' : '新增模板'}</DialogTitle>
 			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
 				{extraInfoTemplateDraft?.builtIn && <Alert severity="info" variant="outlined">Git 内置字段的键和显示名称不可修改；可调整默认值、分支必填状态，并添加新的字段或参数。</Alert>}
