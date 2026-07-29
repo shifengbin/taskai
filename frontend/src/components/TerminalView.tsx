@@ -59,9 +59,13 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
         void ClipboardSetText(selection).catch(() => {})
       }
     })
-    requestAnimationFrame(fit)
+    const animationFrame = requestAnimationFrame(() => {
+      fit()
+      instance.focus()
+    })
 
     return () => {
+      cancelAnimationFrame(animationFrame)
       onData.dispose()
       onSelectionChange.dispose()
       observer.disconnect()

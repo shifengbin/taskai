@@ -5,6 +5,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   cols: number
   rows: number
   getSelection: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
   loadAddon: ReturnType<typeof vi.fn>
   onSelectionChange: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
@@ -14,6 +15,9 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   reset: ReturnType<typeof vi.fn>
   triggerSelectionChange(): void
 }>)
+
+const animationFrameCallbacks = vi.hoisted(() => new Map<number, FrameRequestCallback>())
+const animationFrameID = vi.hoisted(() => ({next: 0}))
 
 const runtime = vi.hoisted(() => ({
   ClipboardGetText: vi.fn(),
@@ -29,6 +33,7 @@ vi.mock('@xterm/xterm', () => ({
     write = vi.fn()
     onData = vi.fn(() => ({dispose: vi.fn()}))
     getSelection = vi.fn(() => '')
+    focus = vi.fn()
     selectionChangeListener: (() => void) | undefined
     onSelectionChange = vi.fn((listener: () => void) => {
       this.selectionChangeListener = listener
@@ -52,9 +57,25 @@ vi.mock('../../wailsjs/runtime/runtime', () => runtime)
 
 import {TerminalView} from './TerminalView'
 
+function runAnimationFrame() {
+  const callbacks = Array.from(animationFrameCallbacks.values())
+  animationFrameCallbacks.clear()
+  callbacks.forEach((callback) => callback(performance.now()))
+}
+
 describe('TerminalView', () => {
   beforeEach(() => {
     terminalInstances.length = 0
+    animationFrameCallbacks.clear()
+    animationFrameID.next = 0
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      const id = ++animationFrameID.next
+      animationFrameCallbacks.set(id, callback)
+      return id
+    }))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn((id: number) => {
+      animationFrameCallbacks.delete(id)
+    }))
     runtime.ClipboardGetText.mockReset()
     runtime.ClipboardGetText.mockResolvedValue('')
     runtime.ClipboardSetText.mockReset()
@@ -63,6 +84,7 @@ describe('TerminalView', () => {
 
   afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
   })
 
   it('右侧终端标题在可收缩容器中单行裁剪而不显示省略号', () => {
@@ -78,6 +100,20 @@ describe('TerminalView', () => {
     const title = screen.getByTestId('terminal-view-title')
     expect(title).toHaveStyle({whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'})
     expect(screen.getByTestId('terminal-view-title-container')).toHaveStyle({flex: '1', minWidth: '0'})
+  })
+
+  it('挂载活动终端后自动聚焦 xterm 输入区', () => {
+    render(
+      <TerminalView
+        terminal={{id: 'terminal-1', taskId: 'task-1', state: 'active'}}
+        onWrite={vi.fn()}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    runAnimationFrame()
+
+    expect(terminalInstances[0].focus).toHaveBeenCalledOnce()
   })
 
   it('选中终端文本后自动写入系统剪贴板', () => {
