@@ -400,7 +400,7 @@ export function TaskTree({
                         }
                       />
                       <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
-                      {terminal.state === 'active' && onCloseTerminal && (
+                      {onCloseTerminal && (
                         <Tooltip title="关闭终端">
                           <IconButton
                             aria-label="关闭终端"

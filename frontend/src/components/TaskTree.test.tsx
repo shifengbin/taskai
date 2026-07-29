@@ -298,7 +298,9 @@ describe('TaskTree', () => {
     expect(onChangeStatus).toHaveBeenCalledWith('running')
   })
 
-  it('异常退出终端以状态点表示异常状态，不显示状态文字', () => {
+  it('异常退出终端以状态点表示异常状态，并允许关闭', async () => {
+    const user = userEvent.setup()
+    const onCloseTerminal = vi.fn()
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -311,6 +313,7 @@ describe('TaskTree', () => {
         onOpenTaskFolder={vi.fn()}
         onStartTask={vi.fn()}
         onFinishTask={vi.fn()}
+        onCloseTerminal={onCloseTerminal}
         activeStatus="running"
         onChangeStatus={vi.fn()}
       />,
@@ -322,6 +325,9 @@ describe('TaskTree', () => {
     }
     expect(within(terminalItem).getByRole('status', {name: '终端状态：异常'})).toBeInTheDocument()
     expect(within(terminalItem).queryByText('异常', {exact: true})).not.toBeInTheDocument()
+
+    await user.click(within(terminalItem).getByRole('button', {name: '关闭终端'}))
+    expect(onCloseTerminal).toHaveBeenCalledWith({...terminal, state: 'exited'})
   })
 
   it('悬浮任务条目时显示完整描述', async () => {
