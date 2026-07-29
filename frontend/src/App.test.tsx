@@ -374,6 +374,45 @@ describe('App confirmation flows', () => {
 		expect(screen.queryByLabelText('参数 1 必填')).not.toBeInTheDocument()
 	})
 
+	it('模板和信息编辑器使用紧凑字段网格与平面参数分隔行', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [
+				{key: 'name', displayName: '项目名称', defaultValue: ''},
+				{key: 'repository', displayName: '仓库地址', defaultValue: 'git@example.com:team/api.git'},
+			],
+			parameters: [{key: 'branch', displayName: '仓库分支', required: true}],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增模板'}))
+		const templateBasicFields = screen.getByTestId('extra-info-template-basic-fields')
+		expect(getComputedStyle(templateBasicFields).display).toBe('grid')
+		expect(screen.getByRole('textbox', {name: '分类'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
+		expect(screen.getByRole('textbox', {name: '模板备注'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
+		const templateFixedField = screen.getByTestId('extra-info-template-fixed-field-0')
+		expect(getComputedStyle(templateFixedField).borderTopStyle).toBe('solid')
+		await user.click(screen.getByRole('button', {name: '新增参数'}))
+		const templateParameter = screen.getByTestId('extra-info-template-parameter-0')
+		expect(getComputedStyle(templateParameter).borderTopStyle).toBe('solid')
+		await user.click(screen.getByRole('button', {name: '取消'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增模板'})).not.toBeInTheDocument())
+
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		const templateSelect = screen.getByRole('combobox', {name: '选择模板'})
+		expect(templateSelect.closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
+		await user.click(templateSelect)
+		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
+		const draftFields = screen.getByTestId('extra-info-draft-fields')
+		expect(getComputedStyle(draftFields).display).toBe('grid')
+		expect(screen.getByRole('textbox', {name: '项目名称'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
+		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
+		const draftParameter = screen.getByTestId('extra-info-draft-parameter-0')
+		expect(getComputedStyle(draftParameter).borderTopStyle).toBe('solid')
+	})
+
 	it('信息级动态参数保存默认值并在任务中作为只读定义带入', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([{
