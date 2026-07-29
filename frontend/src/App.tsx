@@ -914,7 +914,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           >
             <Tab value="workspace" label="工作区与外观"/>
             <Tab value="shell" label="终端 Shell"/>
-            <Tab value="menu" label="任务操作"/>
+            <Tab value="menu" label="菜单管理"/>
             <Tab value="status" label="实时状态"/>
           </Tabs>
 

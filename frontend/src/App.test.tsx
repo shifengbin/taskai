@@ -868,7 +868,7 @@ describe('App confirmation flows', () => {
     await user.click(await screen.findByRole('button', {name: '设置'}))
     expect(screen.getByText('工作区与外观')).toBeInTheDocument()
     expect(screen.getByText('终端 Shell')).toBeInTheDocument()
-    await user.click(screen.getByRole('tab', {name: '任务操作'}))
+    await user.click(screen.getByRole('tab', {name: '菜单管理'}))
     await user.click(screen.getByRole('button', {name: '新增菜单项'}))
 
     const createDialog = screen.getByRole('dialog', {name: '新增菜单项'})
@@ -921,3 +921,13 @@ describe('App confirmation flows', () => {
     })
   })
 })
+
+	it('将任务菜单配置显示为菜单管理', async () => {
+		const user = userEvent.setup()
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		expect(screen.queryByRole('tab', {name: '任务操作'})).not.toBeInTheDocument()
+		await user.click(screen.getByRole('tab', {name: '菜单管理'}))
+		expect(screen.getByText('右键菜单与“任务操作”下拉菜单共用此顺序。系统项仅可调序。')).toBeInTheDocument()
+	})
