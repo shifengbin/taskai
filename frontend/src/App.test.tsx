@@ -322,7 +322,7 @@ describe('App confirmation flows', () => {
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
   })
 
-	it('管理内置 Git 模板，并先选择模板后以默认值创建可复用信息', async () => {
+	it('管理内置 Git 模板，并以默认值创建可复用信息', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([{
 			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
@@ -341,13 +341,12 @@ describe('App confirmation flows', () => {
 		render(<App/>)
 
 		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '分类模板'}))
 		expect(screen.getByText('内置 Git')).toBeInTheDocument()
 		expect(screen.getByRole('button', {name: '删除模板 git'})).toBeDisabled()
 		expect(screen.getAllByRole('button', {name: '新增信息'})).toHaveLength(1)
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		expect(screen.getByRole('combobox', {name: '选择模板'})).toBeInTheDocument()
-		await user.click(screen.getByRole('combobox', {name: '选择模板'}))
-		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
+		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
 		await user.type(screen.getByRole('textbox', {name: '项目名称'}), 'API 服务')
 		expect(screen.getByRole('textbox', {name: '仓库地址'})).toHaveValue('git@example.com:team/api.git')
 		await user.click(screen.getByRole('button', {name: '保存信息'}))
@@ -358,6 +357,59 @@ describe('App confirmation flows', () => {
 				expect.objectContaining({key: 'repository', value: 'git@example.com:team/api.git'}),
 			]),
 		})))
+	})
+
+	it('收起分类模板时仍可新建模板，并按当前会话预选新增信息模板', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([
+			{id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: false, fields: [{key: 'name', displayName: '项目名称'}], parameters: []},
+			{id: 'issue-template', catalogue: 'issue', displayName: '缺陷', builtIn: false, fields: [{key: 'name', displayName: '名称'}], parameters: []},
+			{id: 'incident-template', catalogue: 'incident', displayName: '事件', builtIn: false, fields: [{key: 'name', displayName: '名称'}], parameters: []},
+		])
+		bindings.SaveExtraInfo.mockImplementation(async (draft) => ({...draft, id: 'git-info'}))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		const templateSection = screen.getByRole('button', {name: '分类模板'})
+		expect(templateSection).toHaveAttribute('aria-expanded', 'false')
+		await user.click(screen.getByRole('button', {name: '新增模板'}))
+		expect(screen.getByRole('dialog', {name: '新增模板'})).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '取消'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增模板'})).not.toBeInTheDocument())
+
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		const templateSelect = screen.getByRole('combobox', {name: '选择模板'})
+		await user.click(templateSelect)
+		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
+		await user.type(screen.getByRole('textbox', {name: '项目名称'}), 'API 服务')
+		await user.click(screen.getByRole('button', {name: '保存信息'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增信息'})).not.toBeInTheDocument())
+
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
+		expect(screen.getByRole('textbox', {name: '项目名称'})).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '取消'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增信息'})).not.toBeInTheDocument())
+
+		await user.click(templateSection)
+		await user.click(screen.getByRole('button', {name: '删除模板 git'}))
+		await waitFor(() => expect(screen.queryByRole('button', {name: '删除模板 git'})).not.toBeInTheDocument())
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		expect(screen.getByRole('combobox', {name: '选择模板'})).toBeInTheDocument()
+	})
+
+	it('仅有一个分类时新增信息直接进入该模板', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
+		expect(screen.getByRole('textbox', {name: '项目名称'})).toBeInTheDocument()
 	})
 
 	it('模板动态参数可切换为复选框，且不再设置必填状态', async () => {
@@ -402,10 +454,7 @@ describe('App confirmation flows', () => {
 		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增模板'})).not.toBeInTheDocument())
 
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		const templateSelect = screen.getByRole('combobox', {name: '选择模板'})
-		expect(templateSelect.closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
-		await user.click(templateSelect)
-		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
+		expect(screen.queryByRole('combobox', {name: '选择模板'})).not.toBeInTheDocument()
 		const draftFields = screen.getByTestId('extra-info-draft-fields')
 		expect(getComputedStyle(draftFields).display).toBe('grid')
 		expect(getComputedStyle(draftFields).gridTemplateColumns).toBe('repeat(auto-fit, minmax(180px, 1fr))')
@@ -436,8 +485,6 @@ describe('App confirmation flows', () => {
 
 		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		await user.click(screen.getByRole('combobox', {name: '选择模板'}))
-		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
 		await user.type(screen.getByRole('textbox', {name: '项目名称'}), 'API 服务')
 		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
 		await user.type(screen.getByRole('textbox', {name: '参数键 1'}), 'environment')
@@ -499,6 +546,8 @@ describe('App confirmation flows', () => {
 
 		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
 		const templateSection = screen.getByRole('button', {name: /分类模板/})
+		expect(templateSection).toHaveAttribute('aria-expanded', 'false')
+		await user.click(templateSection)
 		expect(templateSection).toHaveAttribute('aria-expanded', 'true')
 		await user.click(templateSection)
 		expect(templateSection).toHaveAttribute('aria-expanded', 'false')

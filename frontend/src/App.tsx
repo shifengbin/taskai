@@ -102,7 +102,9 @@ export default function App() {
 	const [extraInfoDraft, setExtraInfoDraft] = useState<ExtraInfo>()
 	const [extraInfoEditorOpen, setExtraInfoEditorOpen] = useState(false)
 	const [newExtraInfoTemplateID, setNewExtraInfoTemplateID] = useState('')
+	const [lastCreatedExtraInfoTemplateID, setLastCreatedExtraInfoTemplateID] = useState('')
 	const [extraInfoSearch, setExtraInfoSearch] = useState('')
+	const [templateSectionExpanded, setTemplateSectionExpanded] = useState(false)
 	const [expandedExtraInfoTemplateIDs, setExpandedExtraInfoTemplateIDs] = useState<string[]>([])
   const [finishTask, setFinishTask] = useState<TaskRecord>()
   const [quitDialogOpen, setQuitDialogOpen] = useState(false)
@@ -380,8 +382,11 @@ export default function App() {
 			setExtraInfoDraft(cloneExtraInfo(info))
 			return
 		}
-		setExtraInfoDraft(undefined)
-		setNewExtraInfoTemplateID('')
+		const template = extraInfoTemplates.length === 1
+			? extraInfoTemplates[0]
+			: extraInfoTemplates.find((item) => item.id === lastCreatedExtraInfoTemplateID)
+		setExtraInfoDraft(template ? createExtraInfoDraft(template) : undefined)
+		setNewExtraInfoTemplateID(template?.id ?? '')
 	}
 
 	const selectExtraInfoTemplate = (templateID: string) => {
@@ -397,6 +402,7 @@ export default function App() {
 		if (!extraInfoDraft) {
 			return
 		}
+		const creating = !extraInfoDraft.id
 		if (!extraInfoName(extraInfoDraft).trim()) {
 			setMessage('信息名称不能为空')
 			return
@@ -406,6 +412,9 @@ export default function App() {
 			setExtraInfos((current) => current.some((item) => item.id === saved.id)
 				? current.map((item) => item.id === saved.id ? saved : item)
 				: [...current, saved])
+			if (creating) {
+				setLastCreatedExtraInfoTemplateID(saved.templateId)
+			}
 			closeExtraInfoEditor()
 			setExpandedExtraInfoTemplateIDs((current) => [...new Set([...current, saved.templateId])])
 		} catch (error) {
@@ -883,37 +892,37 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		<Dialog open={extraInfoManagerOpen} onClose={() => setExtraInfoManagerOpen(false)} aria-labelledby="extra-info-manager-title" fullWidth maxWidth="md">
 			<DialogTitle id="extra-info-manager-title">额外信息管理</DialogTitle>
 			<DialogContent data-testid="extra-info-manager-content" sx={{display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, overflowY: 'auto', pt: '12px !important'}}>
-				<Accordion defaultExpanded disableGutters elevation={0} sx={{flexShrink: 0, border: 1, borderColor: 'divider', borderRadius: '8px !important', overflow: 'hidden', '&:before': {display: 'none'}}}>
-					<AccordionSummary expandIcon={<ExpandMoreOutlinedIcon/>} aria-label="分类模板">
-						<Box sx={{minWidth: 0, pr: 1}}>
-							<Typography variant="subtitle2">分类模板</Typography>
-							<Typography variant="caption" color="text.secondary">分类就是可填写的信息模板，定义固定字段、默认值和动态参数。</Typography>
-						</Box>
-					</AccordionSummary>
-					<AccordionDetails sx={{display: 'grid', gap: 1, pt: 0}}>
-						<Box sx={{display: 'flex', justifyContent: 'flex-end'}}>
-							<Button variant="contained" size="small" onClick={() => openExtraInfoTemplateEditor()}>新增模板</Button>
-						</Box>
-						<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
-							{extraInfoTemplates.map((template, index) => (
-								<Box key={template.id} sx={{display: 'grid', gridTemplateColumns: {xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) auto'}, alignItems: 'center', gap: 1.25, px: 1.5, py: 1.25, borderBottom: index === extraInfoTemplates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
-									<Box sx={{display: 'grid', gap: 0.5, minWidth: 0}}>
-										<Box sx={{display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap'}}>
-											<Typography variant="body2" sx={{fontWeight: 700, overflowWrap: 'anywhere'}}>{template.catalogue}</Typography>
-											{template.builtIn && <Chip label="内置 Git" size="small" color="primary" variant="outlined"/>}
+				<Box sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'start', gap: 1}}>
+					<Accordion disableGutters elevation={0} expanded={templateSectionExpanded} onChange={(_, expanded) => setTemplateSectionExpanded(expanded)} sx={{minWidth: 0, border: 1, borderColor: 'divider', borderRadius: '8px !important', overflow: 'hidden', '&:before': {display: 'none'}}}>
+						<AccordionSummary expandIcon={<ExpandMoreOutlinedIcon/>} aria-label="分类模板">
+							<Box sx={{minWidth: 0, pr: 1}}>
+								<Typography variant="subtitle2">分类模板</Typography>
+								<Typography variant="caption" color="text.secondary">分类就是可填写的信息模板，定义固定字段、默认值和动态参数。</Typography>
+							</Box>
+						</AccordionSummary>
+						<AccordionDetails sx={{display: 'grid', gap: 1, pt: 0}}>
+							<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
+								{extraInfoTemplates.map((template, index) => (
+									<Box key={template.id} sx={{display: 'grid', gridTemplateColumns: {xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) auto'}, alignItems: 'center', gap: 1.25, px: 1.5, py: 1.25, borderBottom: index === extraInfoTemplates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+										<Box sx={{display: 'grid', gap: 0.5, minWidth: 0}}>
+											<Box sx={{display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap'}}>
+												<Typography variant="body2" sx={{fontWeight: 700, overflowWrap: 'anywhere'}}>{template.catalogue}</Typography>
+												{template.builtIn && <Chip label="内置 Git" size="small" color="primary" variant="outlined"/>}
+											</Box>
+											<Typography variant="caption" color="text.secondary" sx={{overflowWrap: 'anywhere'}}>{template.fields.map((field) => `${field.displayName}${field.defaultValue ? `：${field.defaultValue}` : ''}`).join(' · ')}</Typography>
 										</Box>
-										<Typography variant="caption" color="text.secondary" sx={{overflowWrap: 'anywhere'}}>{template.fields.map((field) => `${field.displayName}${field.defaultValue ? `：${field.defaultValue}` : ''}`).join(' · ')}</Typography>
+										<Box sx={{display: 'flex', alignItems: 'center', justifyContent: {xs: 'space-between', sm: 'flex-end'}, flexWrap: 'wrap', gap: 0.75, minWidth: 0}}>
+											<Chip label={`${template.fields.length} 固定 · ${template.parameters.length} 参数`} size="small" variant="outlined"/>
+											<Button size="small" onClick={() => openExtraInfoTemplateEditor(template)}>编辑</Button>
+											<Tooltip title={template.builtIn ? '内置 Git 模板不可删除' : '删除模板'}><span><IconButton aria-label={`删除模板 ${template.catalogue}`} size="small" color="error" disabled={template.builtIn} onClick={() => void deleteExtraInfoTemplate(template.id)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></span></Tooltip>
+										</Box>
 									</Box>
-									<Box sx={{display: 'flex', alignItems: 'center', justifyContent: {xs: 'space-between', sm: 'flex-end'}, flexWrap: 'wrap', gap: 0.75, minWidth: 0}}>
-										<Chip label={`${template.fields.length} 固定 · ${template.parameters.length} 参数`} size="small" variant="outlined"/>
-										<Button size="small" onClick={() => openExtraInfoTemplateEditor(template)}>编辑</Button>
-										<Tooltip title={template.builtIn ? '内置 Git 模板不可删除' : '删除模板'}><span><IconButton aria-label={`删除模板 ${template.catalogue}`} size="small" color="error" disabled={template.builtIn} onClick={() => void deleteExtraInfoTemplate(template.id)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></span></Tooltip>
-									</Box>
-								</Box>
-							))}
-						</Box>
-					</AccordionDetails>
-				</Accordion>
+								))}
+							</Box>
+						</AccordionDetails>
+					</Accordion>
+					<Button variant="contained" size="small" sx={{whiteSpace: 'nowrap'}} onClick={() => openExtraInfoTemplateEditor()}>新增模板</Button>
+				</Box>
 				<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 0.5}}>
 					<Box>
 						<Typography variant="subtitle2">信息</Typography>
