@@ -1583,12 +1583,12 @@ function TaskExtraInfoSnapshotFields({
 		...(information?.parameters ?? []).map((parameter) => parameter.key),
 	])
 	return (
-		<Box sx={{display: 'grid', gap: 1, pl: 4.5, minWidth: 0}}>
+		<Box sx={{display: 'grid', gap: 1.25, pl: {xs: 0, sm: 1}, minWidth: 0}}>
 			{item.parameters.map((parameter, parameterIndex) => {
 				const readonly = readonlyParameterKeys.has(parameter.key)
 				const inputType = extraInfoParameterInputType(parameter)
-				return <Box key={`parameter-${parameterIndex}`} sx={{display: 'grid', gap: 1, minWidth: 0}}>
-					{!readonly && <Box sx={{display: 'grid', gridTemplateColumns: {xs: 'minmax(0, 1fr)', sm: 'repeat(3, minmax(0, 1fr))'}, gap: 1, minWidth: 0}}>
+				return <Box key={`parameter-${parameterIndex}`} data-testid={`task-extra-info-parameter-${itemKey}-${parameterIndex}`} sx={{display: 'grid', gap: 1.25, minWidth: 0, borderTop: 1, borderColor: 'divider', py: 1.5}}>
+					{!readonly && <Box data-testid={`task-extra-info-parameter-editor-${itemKey}-${parameterIndex}`} sx={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 1.25, minWidth: 0}}>
 						<TextField size="small" required label="参数键" value={parameter.key} onChange={(event) => onChange(itemKey, parameterIndex, {key: event.target.value})}/>
 						<TextField size="small" required label="显示名称" value={parameter.displayName} onChange={(event) => onChange(itemKey, parameterIndex, {displayName: event.target.value})}/>
 						<TextField select size="small" label="参数类型" value={inputType} onChange={(event) => {
@@ -1599,10 +1599,10 @@ function TaskExtraInfoSnapshotFields({
 							<MenuItem value="checkbox">复选框</MenuItem>
 						</TextField>
 					</Box>}
-					<Box sx={{display: 'flex', alignItems: 'center', gap: 1, minWidth: 0}}>
+					<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.25, minWidth: 0}}>
 						{inputType === 'checkbox'
-							? <FormControlLabel sx={{m: 0, flex: 1, minWidth: 0}} control={<Checkbox checked={parameter.value === 'true'} onChange={(event) => onChange(itemKey, parameterIndex, {value: event.target.checked ? 'true' : 'false'})}/>} label={parameter.displayName || '动态参数'}/>
-							: <TextField sx={{flex: 1}} size="small" label={parameter.displayName || '动态参数'} value={parameter.value} required={parameter.required} onChange={(event) => onChange(itemKey, parameterIndex, {value: event.target.value})}/>
+							? <FormControlLabel sx={{m: 0, flex: '1 1 180px', minWidth: 0}} control={<Checkbox checked={parameter.value === 'true'} onChange={(event) => onChange(itemKey, parameterIndex, {value: event.target.checked ? 'true' : 'false'})}/>} label={parameter.displayName || '动态参数'}/>
+							: <TextField sx={{flex: '1 1 180px'}} size="small" label={parameter.displayName || '动态参数'} value={parameter.value} required={parameter.required} onChange={(event) => onChange(itemKey, parameterIndex, {value: event.target.value})}/>
 						}
 						{!readonly && <IconButton aria-label={`删除动态参数 ${parameter.displayName || parameter.key}`} size="small" color="error" onClick={() => onRemoveParameter(itemKey, parameterIndex)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>}
 					</Box>
