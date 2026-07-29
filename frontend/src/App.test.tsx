@@ -542,6 +542,44 @@ describe('App confirmation flows', () => {
 		expect(screen.queryByRole('textbox', {name: '显示名称'})).not.toBeInTheDocument()
 	})
 
+	it('新建信息只读预览模板动态参数', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([
+			{
+				id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+				fields: [{key: 'name', displayName: '项目名称'}],
+				parameters: [
+					{key: 'branch', displayName: '仓库分支', required: true, inputType: 'text'},
+					{key: 'deploy', displayName: '自动部署', required: false, inputType: 'checkbox'},
+				],
+			},
+			{id: 'issue-template', catalogue: 'issue', displayName: '缺陷', builtIn: false, fields: [{key: 'name', displayName: '名称'}], parameters: []},
+		])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		await user.click(screen.getByRole('combobox', {name: '选择模板'}))
+		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
+
+		const templateParameters = screen.getByTestId('extra-info-template-parameters')
+		const branch = within(templateParameters).getByTestId('extra-info-template-parameter-preview-0')
+		expect(branch).toHaveTextContent('参数键：branch')
+		expect(branch).toHaveTextContent('显示名称：仓库分支')
+		expect(branch).toHaveTextContent('默认值：空')
+		expect(branch).toHaveTextContent('必填')
+		expect(within(branch).queryByRole('textbox')).not.toBeInTheDocument()
+		expect(within(branch).queryByRole('checkbox')).not.toBeInTheDocument()
+		expect(within(branch).queryByRole('button')).not.toBeInTheDocument()
+
+		const deploy = within(templateParameters).getByTestId('extra-info-template-parameter-preview-1')
+		expect(deploy).toHaveTextContent('参数键：deploy')
+		expect(deploy).toHaveTextContent('显示名称：自动部署')
+		expect(deploy).toHaveTextContent('默认值：false')
+		expect(deploy).not.toHaveTextContent('必填')
+		expect(screen.getByRole('button', {name: '新增动态参数'})).toBeInTheDocument()
+	})
+
 	it('按模板折叠信息并按名称搜索', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([{

@@ -714,6 +714,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   const statusManagementMode = settingsDraft?.statusManagementMode ?? 'title-change'
   const httpServiceEnabled = settingsDraft?.httpServiceEnabled ?? false
   const httpServiceActive = statusManagementMode === 'http' || httpServiceEnabled
+	const extraInfoDraftTemplate = extraInfoDraft ? extraInfoTemplates.find((template) => template.id === extraInfoDraft.templateId) : undefined
 
   return (
     <ThemeProvider theme={theme}>
@@ -969,8 +970,21 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					{extraInfoDraft.fields.map((field, index) => <TextField key={field.key} required={field.key === 'name'} size="small" label={field.displayName} value={field.value ?? ''} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, fields: current.fields.map((item, fieldIndex) => fieldIndex === index ? {...item, value: event.target.value} : item)} : current)}/>) }
 				</Box>}
 				{extraInfoDraft && <Box sx={{display: 'grid', gap: 1.25, pt: 0.5}}>
+					<Typography variant="subtitle2">动态参数</Typography>
+					{extraInfoDraftTemplate && extraInfoDraftTemplate.parameters.length > 0 && <Box data-testid="extra-info-template-parameters" sx={{display: 'grid', gap: 1, borderTop: 1, borderColor: 'divider', pt: 1.25}}>
+						<Typography variant="body2" sx={{fontWeight: 700}}>模板参数</Typography>
+						{extraInfoDraftTemplate.parameters.map((parameter, index) => {
+							const inputType = extraInfoParameterInputType(parameter)
+							return <Box key={parameter.key || index} data-testid={`extra-info-template-parameter-preview-${index}`} sx={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 1, minWidth: 0, borderTop: 1, borderColor: 'divider', py: 1.25}}>
+								<Typography variant="body2" sx={{overflowWrap: 'anywhere'}}>参数键：{parameter.key || '未设置'}</Typography>
+								<Typography variant="body2" sx={{overflowWrap: 'anywhere'}}>显示名称：{parameter.displayName || '未设置'}</Typography>
+								<Typography variant="body2">默认值：{inputType === 'checkbox' ? 'false' : '空'}</Typography>
+								{inputType !== 'checkbox' && <Chip label={parameter.required ? '必填' : '非必填'} size="small" variant="outlined" sx={{justifySelf: 'start'}}/>}
+							</Box>
+						})}
+					</Box>}
 					<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
-						<Typography variant="subtitle2">动态参数</Typography>
+						<Typography variant="body2" sx={{fontWeight: 700}}>信息参数</Typography>
 						<Button size="small" onClick={() => setExtraInfoDraft((current) => current ? {...current, parameters: [...(current.parameters ?? []), {key: '', displayName: '', required: false, inputType: 'text', value: ''}]} : current)}>新增动态参数</Button>
 					</Box>
 					<Typography variant="caption" color="text.secondary">这些参数会和模板参数一起带入任务，可在任务中填写值。</Typography>
