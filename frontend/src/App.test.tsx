@@ -608,6 +608,28 @@ describe('App confirmation flows', () => {
 		expect(screen.queryByText('API 服务')).not.toBeInTheDocument()
 	})
 
+	it('隐藏没有信息的分类，但保留搜索无匹配的分类', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
+		}, {
+			id: 'issue-template', catalogue: 'issue', displayName: '缺陷', builtIn: false,
+			fields: [{key: 'name', displayName: '名称'}], parameters: [],
+		}])
+		bindings.ListExtraInfos.mockResolvedValue([{
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [{key: 'name', displayName: '项目名称', value: 'API 服务'}],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		expect(screen.getByRole('button', {name: /Git.*git/})).toBeInTheDocument()
+		expect(screen.queryByRole('button', {name: /缺陷.*issue/})).not.toBeInTheDocument()
+		await user.type(screen.getByRole('textbox', {name: '搜索信息'}), '不存在')
+		expect(screen.getByRole('button', {name: /Git.*git/})).toBeInTheDocument()
+		expect(screen.getByText('未找到匹配的信息。')).toBeInTheDocument()
+	})
+
 	it('分类模板可以整体折叠而不影响信息分组', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([{
@@ -687,12 +709,11 @@ describe('App confirmation flows', () => {
 		const taskParameter = screen.getByTestId('task-extra-info-parameter-api-info-0')
 		expect(getComputedStyle(taskParameter).borderTopStyle).toBe('solid')
 		await user.type(screen.getByRole('textbox', {name: '仓库分支'}), 'main')
-		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
-		const taskParameterEditor = screen.getByTestId('task-extra-info-parameter-editor-api-info-1')
-		expect(getComputedStyle(taskParameterEditor).gridTemplateColumns).toBe('repeat(auto-fit, minmax(150px, 1fr))')
-		await user.type(screen.getByRole('textbox', {name: '参数键'}), 'tag')
-		await user.type(screen.getByRole('textbox', {name: '显示名称'}), '发布标签')
-		await user.type(screen.getByRole('textbox', {name: '发布标签'}), 'v1.2.0')
+		expect(screen.queryByRole('button', {name: '新增动态参数'})).not.toBeInTheDocument()
+		expect(screen.queryByRole('textbox', {name: '参数键'})).not.toBeInTheDocument()
+		expect(screen.queryByRole('textbox', {name: '显示名称'})).not.toBeInTheDocument()
+		expect(screen.queryByRole('combobox', {name: '参数类型'})).not.toBeInTheDocument()
+		expect(screen.queryByRole('button', {name: /删除动态参数/})).not.toBeInTheDocument()
 		await user.click(screen.getByLabelText('选择分类'))
 		await user.click(screen.getByRole('option', {name: 'issue'}))
 		expect(search).toHaveValue('API')
@@ -708,10 +729,7 @@ describe('App confirmation flows', () => {
 		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('关联 API', '', '#4f46e5', expect.arrayContaining([
 			expect.objectContaining({
 				informationId: 'api-info', templateId: 'git-template', catalogue: 'git',
-				parameters: expect.arrayContaining([
-					expect.objectContaining({key: 'branch', value: 'main'}),
-					expect.objectContaining({key: 'tag', displayName: '发布标签', value: 'v1.2.0'}),
-				]),
+				parameters: [expect.objectContaining({key: 'branch', value: 'main'})],
 			}),
 			expect.objectContaining({informationId: 'issue-info', templateId: 'issue-template', catalogue: 'issue'}),
 		])))
@@ -741,21 +759,13 @@ describe('App confirmation flows', () => {
 		const branch = screen.getByRole('checkbox', {name: '仓库分支'})
 		expect(branch).not.toBeChecked()
 		await user.click(branch)
-		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
-		await user.type(screen.getByRole('textbox', {name: '参数键'}), 'notify')
-		await user.type(screen.getByRole('textbox', {name: '显示名称'}), '发送通知')
-		await user.click(screen.getByRole('combobox', {name: '参数类型'}))
-		await user.click(screen.getByRole('option', {name: '复选框'}))
-		const notify = screen.getByRole('checkbox', {name: '发送通知'})
-		expect(notify).not.toBeChecked()
-		await user.click(notify)
+		expect(screen.queryByRole('button', {name: '新增动态参数'})).not.toBeInTheDocument()
 		await user.click(screen.getByRole('button', {name: '创建'}))
 
 		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('发布 API', '', '#4f46e5', expect.arrayContaining([
 			expect.objectContaining({
 				parameters: expect.arrayContaining([
 					expect.objectContaining({key: 'branch', inputType: 'checkbox', required: false, value: 'true'}),
-					expect.objectContaining({key: 'notify', inputType: 'checkbox', required: false, value: 'true'}),
 				]),
 			}),
 		])))
