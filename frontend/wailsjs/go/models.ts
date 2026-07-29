@@ -149,6 +149,7 @@ export namespace task {
 	    key: string;
 	    displayName: string;
 	    required: boolean;
+	    inputType: string;
 	    value: string;
 
 	    static createFrom(source: any = {}) {
@@ -160,13 +161,15 @@ export namespace task {
 	        this.key = source["key"];
 	        this.displayName = source["displayName"];
 	        this.required = source["required"];
+	        this.inputType = source["inputType"];
 	        this.value = source["value"];
 	    }
 	}
 	export class ExtraInfoField {
 	    key: string;
 	    displayName: string;
-	    value: string;
+	    value?: string;
+	    defaultValue?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoField(source);
@@ -177,17 +180,15 @@ export namespace task {
 	        this.key = source["key"];
 	        this.displayName = source["displayName"];
 	        this.value = source["value"];
+	        this.defaultValue = source["defaultValue"];
 	    }
 	}
 	export class ExtraInfo {
 	    id: string;
+	    templateId: string;
 	    catalogue: string;
-	    displayName: string;
 	    fields: ExtraInfoField[];
 	    parameters: ExtraInfoParameter[];
-	    key?: string;
-	    keyDisplayName?: string;
-	    value?: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfo(source);
@@ -196,13 +197,10 @@ export namespace task {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.templateId = source["templateId"];
 	        this.catalogue = source["catalogue"];
-	        this.displayName = source["displayName"];
 	        this.fields = this.convertValues(source["fields"], ExtraInfoField);
 	        this.parameters = this.convertValues(source["parameters"], ExtraInfoParameter);
-	        this.key = source["key"];
-	        this.keyDisplayName = source["keyDisplayName"];
-	        this.value = source["value"];
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -229,6 +227,7 @@ export namespace task {
 	    key: string;
 	    displayName: string;
 	    required: boolean;
+	    inputType: string;
 
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoParameterDefinition(source);
@@ -239,14 +238,16 @@ export namespace task {
 	        this.key = source["key"];
 	        this.displayName = source["displayName"];
 	        this.required = source["required"];
+	        this.inputType = source["inputType"];
 	    }
 	}
 	export class ExtraInfoTemplate {
 	    id: string;
 	    catalogue: string;
-	    displayName: string;
 	    fields: ExtraInfoField[];
 	    parameters: ExtraInfoParameterDefinition[];
+	    builtIn: boolean;
+	    displayName?: string;
 	    key?: string;
 	    keyDisplayName?: string;
 	    value?: string;
@@ -259,9 +260,58 @@ export namespace task {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.catalogue = source["catalogue"];
-	        this.displayName = source["displayName"];
 	        this.fields = this.convertValues(source["fields"], ExtraInfoField);
 	        this.parameters = this.convertValues(source["parameters"], ExtraInfoParameterDefinition);
+	        this.builtIn = source["builtIn"];
+	        this.displayName = source["displayName"];
+	        this.key = source["key"];
+	        this.keyDisplayName = source["keyDisplayName"];
+	        this.value = source["value"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TaskExtraInfo {
+	    id: string;
+	    informationId?: string;
+	    templateId?: string;
+	    catalogue: string;
+	    displayName?: string;
+	    fields: ExtraInfoField[];
+	    parameters: ExtraInfoParameter[];
+	    key?: string;
+	    keyDisplayName?: string;
+	    value?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new TaskExtraInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.informationId = source["informationId"];
+	        this.templateId = source["templateId"];
+	        this.catalogue = source["catalogue"];
+	        this.displayName = source["displayName"];
+	        this.fields = this.convertValues(source["fields"], ExtraInfoField);
+	        this.parameters = this.convertValues(source["parameters"], ExtraInfoParameter);
 	        this.key = source["key"];
 	        this.keyDisplayName = source["keyDisplayName"];
 	        this.value = source["value"];
@@ -297,7 +347,7 @@ export namespace task {
 	    completedAt?: any;
 	    workspaceRoot?: string;
 	    workspacePath?: string;
-	    extraInfo: ExtraInfo[];
+	    extraInfo: TaskExtraInfo[];
 
 	    static createFrom(source: any = {}) {
 	        return new Task(source);
@@ -314,7 +364,7 @@ export namespace task {
 	        this.completedAt = this.convertValues(source["completedAt"], null);
 	        this.workspaceRoot = source["workspaceRoot"];
 	        this.workspacePath = source["workspacePath"];
-	        this.extraInfo = this.convertValues(source["extraInfo"], ExtraInfo);
+	        this.extraInfo = this.convertValues(source["extraInfo"], TaskExtraInfo);
 	    }
 
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

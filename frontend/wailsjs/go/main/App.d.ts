@@ -13,9 +13,11 @@ export function CreateCommandTerminal(arg1:string,arg2:string,arg3:Array<string>
 
 export function CreateTask(arg1:string,arg2:string,arg3:string):Promise<task.Task>;
 
-export function CreateTaskWithExtraInfo(arg1:string,arg2:string,arg3:string,arg4:Array<task.ExtraInfo>):Promise<task.Task>;
+export function CreateTaskWithExtraInfo(arg1:string,arg2:string,arg3:string,arg4:Array<task.TaskExtraInfo>):Promise<task.Task>;
 
 export function CreateTerminal(arg1:string,arg2:number,arg3:number):Promise<terminal.Info>;
+
+export function DeleteExtraInfo(arg1:string):Promise<void>;
 
 export function DeleteExtraInfoCatalogue(arg1:string):Promise<void>;
 
@@ -35,6 +37,8 @@ export function ListExtraInfoCatalogues():Promise<Array<string>>;
 
 export function ListExtraInfoTemplates():Promise<Array<task.ExtraInfoTemplate>>;
 
+export function ListExtraInfos():Promise<Array<task.ExtraInfo>>;
+
 export function ListTasks():Promise<Array<task.Task>>;
 
 export function OpenTaskFolder(arg1:string):Promise<void>;
@@ -49,6 +53,8 @@ export function ResizeTerminal(arg1:string,arg2:string,arg3:number,arg4:number):
 
 export function RunTaskCommand(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;
 
+export function SaveExtraInfo(arg1:task.ExtraInfo):Promise<task.ExtraInfo>;
+
 export function SaveExtraInfoCatalogue(arg1:string):Promise<string>;
 
 export function SaveExtraInfoTemplate(arg1:task.ExtraInfoTemplate):Promise<task.ExtraInfoTemplate>;
@@ -61,6 +67,6 @@ export function StartTask(arg1:string):Promise<task.Task>;
 
 export function UpdateTask(arg1:string,arg2:string,arg3:string,arg4:string):Promise<task.Task>;
 
-export function UpdateTaskWithExtraInfo(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<task.ExtraInfo>):Promise<task.Task>;
+export function UpdateTaskWithExtraInfo(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<task.TaskExtraInfo>):Promise<task.Task>;
 
 export function WriteTerminal(arg1:string,arg2:string,arg3:string):Promise<void>;

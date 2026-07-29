@@ -5,118 +5,339 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"taskai/internal/settings"
 	"taskai/internal/task"
 )
 
+// Data is the complete persisted application state.
 type Data struct {
 	Tasks               []task.Task              `json:"tasks"`
-	ExtraInfoCatalogues []string                 `json:"extraInfoCatalogues"`
 	ExtraInfoTemplates  []task.ExtraInfoTemplate `json:"extraInfoTemplates"`
+	ExtraInfos          []task.ExtraInfo         `json:"extraInfos"`
+	ExtraInfoCatalogues []string                 `json:"extraInfoCatalogues,omitempty"`
 	Settings            settings.Settings        `json:"settings"`
 }
 
+// Repository persists all application state in one JSON document.
 type Repository struct {
-	path     string
-	defaults settings.Settings
+	path            string
+	defaultSettings settings.Settings
 }
 
-func New(path string, defaults settings.Settings) Repository {
-	return Repository{path: path, defaults: defaults}
+func New(path string, defaultSettings settings.Settings) *Repository {
+	return &Repository{path: path, defaultSettings: defaultSettings}
 }
 
-func (repository Repository) Load() (Data, error) {
+func (repository *Repository) Load() (Data, error) {
 	contents, err := os.ReadFile(repository.path)
 	if os.IsNotExist(err) {
-		return Data{Tasks: []task.Task{}, ExtraInfoCatalogues: []string{}, ExtraInfoTemplates: []task.ExtraInfoTemplate{}, Settings: repository.defaults}, nil
+		data := defaultData(repository.defaultSettings)
+		if err := repository.Save(data); err != nil {
+			return Data{}, err
+		}
+		return data, nil
 	}
 	if err != nil {
-		return Data{}, fmt.Errorf("读取本地数据失败: %w", err)
+		return Data{}, fmt.Errorf("read data file: %w", err)
 	}
 
 	var data Data
 	if err := json.Unmarshal(contents, &data); err != nil {
-		return Data{}, fmt.Errorf("解析本地数据失败: %w", err)
+		return Data{}, fmt.Errorf("decode data file: %w", err)
 	}
+
+	normalized, changed, err := normalizeData(data)
+	if err != nil {
+		return Data{}, err
+	}
+	if changed {
+		if err := repository.Save(normalized); err != nil {
+			return Data{}, err
+		}
+	}
+	return normalized, nil
+}
+
+func defaultData(defaultSettings settings.Settings) Data {
+	return Data{
+		Tasks:               []task.Task{},
+		ExtraInfoTemplates:  []task.ExtraInfoTemplate{task.BuiltInGitTemplate()},
+		ExtraInfos:          []task.ExtraInfo{},
+		ExtraInfoCatalogues: []string{"git"},
+		Settings:            defaultSettings,
+	}
+}
+
+func normalizeData(data Data) (Data, bool, error) {
+	changed := false
 	if data.Tasks == nil {
 		data.Tasks = []task.Task{}
+		changed = true
+	}
+	if data.ExtraInfoTemplates == nil {
+		data.ExtraInfoTemplates = []task.ExtraInfoTemplate{}
+		changed = true
+	}
+	if data.ExtraInfos == nil {
+		migratedTemplates, migratedInfos, err := migrateLegacyTemplates(data.ExtraInfoTemplates)
+		if err != nil {
+			return Data{}, false, err
+		}
+		data.ExtraInfoTemplates = migratedTemplates
+		data.ExtraInfos = migratedInfos
+		changed = true
+	} else {
+		for index := range data.ExtraInfoTemplates {
+			normalized, err := task.NormalizeExtraInfoTemplate(data.ExtraInfoTemplates[index])
+			if err != nil {
+				return Data{}, false, fmt.Errorf("normalize extra info template: %w", err)
+			}
+			if !sameJSON(data.ExtraInfoTemplates[index], normalized) {
+				changed = true
+			}
+			data.ExtraInfoTemplates[index] = normalized
+		}
+		for index := range data.ExtraInfos {
+			normalized, err := task.NormalizeExtraInfo(data.ExtraInfos[index])
+			if err != nil {
+				return Data{}, false, fmt.Errorf("normalize extra info: %w", err)
+			}
+			if !sameJSON(data.ExtraInfos[index], normalized) {
+				changed = true
+			}
+			data.ExtraInfos[index] = normalized
+		}
+	}
+
+	if ensureBuiltInGitTemplate(&data.ExtraInfoTemplates) {
+		changed = true
+	}
+	templates, err := task.ValidateExtraInfoTemplates(data.ExtraInfoTemplates)
+	if err != nil {
+		return Data{}, false, fmt.Errorf("validate extra info templates: %w", err)
+	}
+	if !sameJSON(data.ExtraInfoTemplates, templates) {
+		changed = true
+	}
+	data.ExtraInfoTemplates = templates
+	infos, err := task.ValidateExtraInfos(data.ExtraInfos)
+	if err != nil {
+		return Data{}, false, fmt.Errorf("validate extra infos: %w", err)
+	}
+	if !sameJSON(data.ExtraInfos, infos) {
+		changed = true
+	}
+	data.ExtraInfos = infos
+	for index := range data.Tasks {
+		if data.Tasks[index].ExtraInfo == nil {
+			data.Tasks[index].ExtraInfo = []task.TaskExtraInfo{}
+			changed = true
+		}
+		for extraInfoIndex := range data.Tasks[index].ExtraInfo {
+			normalized, err := task.NormalizeTaskExtraInfo(data.Tasks[index].ExtraInfo[extraInfoIndex])
+			if err != nil {
+				return Data{}, false, fmt.Errorf("normalize task extra info: %w", err)
+			}
+			if !sameJSON(data.Tasks[index].ExtraInfo[extraInfoIndex], normalized) {
+				changed = true
+			}
+			data.Tasks[index].ExtraInfo[extraInfoIndex] = normalized
+		}
+		normalized, err := data.Tasks[index].UpdateExtraInfo(data.Tasks[index].ExtraInfo)
+		if err != nil {
+			return Data{}, false, fmt.Errorf("validate task extra info: %w", err)
+		}
+		data.Tasks[index] = normalized
+	}
+
+	catalogues := collectTemplateCatalogues(data.ExtraInfoTemplates)
+	if !sameJSON(data.ExtraInfoCatalogues, catalogues) {
+		data.ExtraInfoCatalogues = catalogues
+		changed = true
+	}
+	return data, changed, nil
+}
+
+func ensureBuiltInGitTemplate(templates *[]task.ExtraInfoTemplate) bool {
+	for index := range *templates {
+		if (*templates)[index].BuiltIn && (*templates)[index].Catalogue == "git" {
+			return false
+		}
+	}
+	for index := range *templates {
+		if (*templates)[index].Catalogue == "git" {
+			(*templates)[index].Catalogue = nextCatalogue("git-legacy", *templates)
+			return true
+		}
+	}
+	*templates = append(*templates, task.BuiltInGitTemplate())
+	return true
+}
+
+func migrateLegacyTemplates(legacy []task.ExtraInfoTemplate) ([]task.ExtraInfoTemplate, []task.ExtraInfo, error) {
+	templates := []task.ExtraInfoTemplate{task.BuiltInGitTemplate()}
+	infos := make([]task.ExtraInfo, 0, len(legacy))
+	templateBySchema := map[string]task.ExtraInfoTemplate{}
+
+	for index, legacyTemplate := range legacy {
+		catalogue := legacyTemplate.Catalogue
+		if catalogue == "" {
+			catalogue = "legacy"
+		}
+		if catalogue == "git" {
+			catalogue = "git-legacy"
+		}
+		candidate := legacyTemplate
+		candidate.ID = migratedID("template", legacyTemplate.ID, index)
+		candidate.Catalogue = catalogue
+		candidate.BuiltIn = false
+		normalized, err := task.NormalizeExtraInfoTemplate(candidate)
+		if err != nil {
+			return nil, nil, fmt.Errorf("migrate legacy template %d: %w", index, err)
+		}
+		signature := templateSignature(normalized)
+		template, exists := templateBySchema[signature]
+		if !exists {
+			normalized.ID = migratedID("template", legacyTemplate.ID, index)
+			normalized.Catalogue = nextCatalogue(normalized.Catalogue, templates)
+			template = normalized
+			templates = append(templates, template)
+			templateBySchema[signature] = template
+		}
+
+		values := make(map[string]string, len(legacyTemplate.Fields)+1)
+		for _, field := range legacyTemplate.Fields {
+			values[field.Key] = field.Value
+			if values[field.Key] == "" {
+				values[field.Key] = field.DefaultValue
+			}
+		}
+		if legacyTemplate.Key != "" {
+			values[legacyTemplate.Key] = legacyTemplate.Value
+		}
+		if displayName := strings.TrimSpace(legacyTemplate.DisplayName); displayName != "" {
+			values["name"] = displayName
+		}
+		if values["name"] == "" {
+			values["name"] = fmt.Sprintf("迁移信息 %d", index+1)
+		}
+		info, err := task.NewExtraInfo(template, values)
+		if err != nil {
+			return nil, nil, fmt.Errorf("migrate legacy information %d: %w", index, err)
+		}
+		info.ID = migratedID("information", legacyTemplate.ID, index)
+		infos = append(infos, info)
+	}
+	return templates, infos, nil
+}
+
+func migratedID(kind, legacyID string, index int) string {
+	if strings.TrimSpace(legacyID) != "" {
+		return "migrated-" + kind + "-" + legacyID
+	}
+	return fmt.Sprintf("migrated-%s-%d", kind, index+1)
+}
+
+func templateSignature(template task.ExtraInfoTemplate) string {
+	copy := template
+	copy.ID = ""
+	copy.Catalogue = ""
+	copy.BuiltIn = false
+	copy.DisplayName = ""
+	for index := range copy.Fields {
+		copy.Fields[index].DefaultValue = ""
+		copy.Fields[index].Value = ""
+	}
+	contents, _ := json.Marshal(copy)
+	return string(contents)
+}
+
+func nextCatalogue(base string, templates []task.ExtraInfoTemplate) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "custom"
+	}
+	for suffix := 1; ; suffix++ {
+		candidate := base
+		if suffix > 1 {
+			candidate = fmt.Sprintf("%s-%d", base, suffix)
+		}
+		found := false
+		for _, template := range templates {
+			if template.Catalogue == candidate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return candidate
+		}
+	}
+}
+
+func collectTemplateCatalogues(templates []task.ExtraInfoTemplate) []string {
+	catalogues := make([]string, 0, len(templates))
+	for _, template := range templates {
+		catalogues = append(catalogues, template.Catalogue)
+	}
+	sort.Strings(catalogues)
+	return catalogues
+}
+
+func sameJSON(left, right any) bool {
+	leftContents, _ := json.Marshal(left)
+	rightContents, _ := json.Marshal(right)
+	return string(leftContents) == string(rightContents)
+}
+
+func (repository *Repository) Save(data Data) error {
+	normalized, _, err := normalizeDataForSave(data)
+	if err != nil {
+		return err
+	}
+	contents, err := json.MarshalIndent(normalized, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode data file: %w", err)
+	}
+	contents = append(contents, '\n')
+
+	directory := filepath.Dir(repository.path)
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return fmt.Errorf("create data directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(directory, ".taskai-*.json")
+	if err != nil {
+		return fmt.Errorf("create temporary data file: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if _, err := temporary.Write(contents); err != nil {
+		temporary.Close()
+		return fmt.Errorf("write temporary data file: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close temporary data file: %w", err)
+	}
+	if err := os.Rename(temporaryPath, repository.path); err != nil {
+		return fmt.Errorf("replace data file: %w", err)
+	}
+	return nil
+}
+
+func normalizeDataForSave(data Data) (Data, bool, error) {
+	if data.ExtraInfos == nil {
+		data.ExtraInfos = []task.ExtraInfo{}
 	}
 	if data.ExtraInfoTemplates == nil {
 		data.ExtraInfoTemplates = []task.ExtraInfoTemplate{}
 	}
-	for index, current := range data.ExtraInfoTemplates {
-		normalized, normalizeErr := task.NormalizeExtraInfoTemplate(current)
-		if normalizeErr != nil {
-			return Data{}, fmt.Errorf("规范化额外信息模板失败: %w", normalizeErr)
-		}
-		data.ExtraInfoTemplates[index] = normalized
-	}
-	if data.ExtraInfoCatalogues == nil {
-		data.ExtraInfoCatalogues = make([]string, 0, len(data.ExtraInfoTemplates))
-		for _, template := range data.ExtraInfoTemplates {
-			data.ExtraInfoCatalogues = append(data.ExtraInfoCatalogues, template.Catalogue)
-		}
-	}
-	var catalogueErr error
-	data.ExtraInfoCatalogues, catalogueErr = normalizeCatalogues(data.ExtraInfoCatalogues)
-	if catalogueErr != nil {
-		return Data{}, catalogueErr
-	}
-	for index := range data.Tasks {
-		if data.Tasks[index].ExtraInfo == nil {
-			data.Tasks[index].ExtraInfo = []task.ExtraInfo{}
-			continue
-		}
-		normalized, normalizeErr := task.NormalizeExtraInfo(data.Tasks[index].ExtraInfo)
-		if normalizeErr != nil {
-			return Data{}, fmt.Errorf("规范化任务附加信息失败: %w", normalizeErr)
-		}
-		data.Tasks[index].ExtraInfo = normalized
-	}
-
-	return data, nil
+	return normalizeData(data)
 }
 
-func (repository Repository) Save(data Data) error {
-	directory := filepath.Dir(repository.path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return fmt.Errorf("创建数据目录失败: %w", err)
-	}
-
-	temporaryFile, err := os.CreateTemp(directory, ".taskai-*.json")
-	if err != nil {
-		return fmt.Errorf("创建临时数据文件失败: %w", err)
-	}
-	temporaryPath := temporaryFile.Name()
-	defer os.Remove(temporaryPath)
-
-	encoder := json.NewEncoder(temporaryFile)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(data); err != nil {
-		temporaryFile.Close()
-		return fmt.Errorf("写入临时数据文件失败: %w", err)
-	}
-	if err := temporaryFile.Chmod(0o600); err != nil {
-		temporaryFile.Close()
-		return fmt.Errorf("设置临时数据文件权限失败: %w", err)
-	}
-	if err := temporaryFile.Sync(); err != nil {
-		temporaryFile.Close()
-		return fmt.Errorf("同步临时数据文件失败: %w", err)
-	}
-	if err := temporaryFile.Close(); err != nil {
-		return fmt.Errorf("关闭临时数据文件失败: %w", err)
-	}
-	if err := os.Rename(temporaryPath, repository.path); err != nil {
-		return fmt.Errorf("替换本地数据文件失败: %w", err)
-	}
-
-	return nil
-}
-
-func (repository Repository) SaveSettings(next settings.Settings) (settings.Settings, error) {
+func (repository *Repository) SaveSettings(next settings.Settings) (settings.Settings, error) {
 	data, err := repository.Load()
 	if err != nil {
 		return settings.Settings{}, err
@@ -125,152 +346,208 @@ func (repository Repository) SaveSettings(next settings.Settings) (settings.Sett
 	if err := repository.Save(data); err != nil {
 		return settings.Settings{}, err
 	}
-
 	return next, nil
 }
 
-func (repository Repository) ListExtraInfoTemplates() ([]task.ExtraInfoTemplate, error) {
+func (repository *Repository) ListExtraInfoTemplates() ([]task.ExtraInfoTemplate, error) {
 	data, err := repository.Load()
 	if err != nil {
 		return nil, err
 	}
-	return append([]task.ExtraInfoTemplate{}, data.ExtraInfoTemplates...), nil
+	return data.ExtraInfoTemplates, nil
 }
 
-func (repository Repository) ListExtraInfoCatalogues() ([]string, error) {
+func (repository *Repository) ListExtraInfos() ([]task.ExtraInfo, error) {
 	data, err := repository.Load()
 	if err != nil {
 		return nil, err
 	}
-	return append([]string{}, data.ExtraInfoCatalogues...), nil
+	return data.ExtraInfos, nil
 }
 
-func (repository Repository) SaveExtraInfoCatalogue(name string) (string, error) {
+func (repository *Repository) SaveExtraInfoTemplate(next task.ExtraInfoTemplate) (task.ExtraInfoTemplate, error) {
 	data, err := repository.Load()
 	if err != nil {
-		return "", err
+		return task.ExtraInfoTemplate{}, err
 	}
-	normalized := strings.TrimSpace(name)
-	if normalized == "" {
-		return "", fmt.Errorf("分类名称不能为空")
-	}
-	for _, current := range data.ExtraInfoCatalogues {
-		if current == normalized {
-			return "", fmt.Errorf("额外信息分类已存在: %q", normalized)
+
+	index := -1
+	for candidateIndex, candidate := range data.ExtraInfoTemplates {
+		if candidate.ID == next.ID && next.ID != "" {
+			index = candidateIndex
+			if candidate.BuiltIn {
+				next.BuiltIn = true
+			}
+			break
 		}
 	}
-	data.ExtraInfoCatalogues = append(data.ExtraInfoCatalogues, normalized)
-	if err := repository.Save(data); err != nil {
-		return "", err
+	if next.ID == "" {
+		created, err := task.NewExtraInfoTemplate(next.Catalogue, next.DisplayName, next.Fields, next.Parameters)
+		if err != nil {
+			return task.ExtraInfoTemplate{}, err
+		}
+		next = created
+	} else {
+		normalized, err := task.NormalizeExtraInfoTemplate(next)
+		if err != nil {
+			return task.ExtraInfoTemplate{}, err
+		}
+		next = normalized
 	}
-	return normalized, nil
+
+	if index >= 0 {
+		for _, info := range data.ExtraInfos {
+			if info.TemplateID == next.ID {
+				if info.Catalogue != next.Catalogue {
+					return task.ExtraInfoTemplate{}, fmt.Errorf("template category cannot change while information %q still uses it", info.ID)
+				}
+				if err := ensureInformationFieldsRemain(info, next); err != nil {
+					return task.ExtraInfoTemplate{}, err
+				}
+			}
+		}
+		data.ExtraInfoTemplates[index] = next
+	} else {
+		data.ExtraInfoTemplates = append(data.ExtraInfoTemplates, next)
+	}
+	if _, err := task.ValidateExtraInfoTemplates(data.ExtraInfoTemplates); err != nil {
+		return task.ExtraInfoTemplate{}, err
+	}
+	data.ExtraInfoCatalogues = collectTemplateCatalogues(data.ExtraInfoTemplates)
+	if err := repository.Save(data); err != nil {
+		return task.ExtraInfoTemplate{}, err
+	}
+	return next, nil
 }
 
-func (repository Repository) DeleteExtraInfoCatalogue(name string) error {
+func ensureInformationFieldsRemain(info task.ExtraInfo, template task.ExtraInfoTemplate) error {
+	keys := make(map[string]struct{}, len(template.Fields))
+	for _, field := range template.Fields {
+		keys[field.Key] = struct{}{}
+	}
+	for _, field := range info.Fields {
+		if _, exists := keys[field.Key]; !exists {
+			return fmt.Errorf("template field %q is used by information %q and cannot be removed", field.Key, info.ID)
+		}
+	}
+	return nil
+}
+
+func (repository *Repository) DeleteExtraInfoTemplate(id string) error {
 	data, err := repository.Load()
 	if err != nil {
 		return err
 	}
-	normalized := strings.TrimSpace(name)
 	index := -1
-	for candidateIndex, current := range data.ExtraInfoCatalogues {
-		if current == normalized {
+	for candidateIndex, candidate := range data.ExtraInfoTemplates {
+		if candidate.ID == id {
+			if candidate.BuiltIn {
+				return fmt.Errorf("built-in extra info template cannot be deleted")
+			}
 			index = candidateIndex
 			break
 		}
 	}
-	if index == -1 {
-		return fmt.Errorf("额外信息分类不存在")
+	if index < 0 {
+		return fmt.Errorf("extra info template %q does not exist", id)
 	}
-	for _, template := range data.ExtraInfoTemplates {
-		if template.Catalogue == normalized {
-			return fmt.Errorf("分类 %q 仍包含额外信息，请先删除分类中的全部信息", normalized)
+	for _, info := range data.ExtraInfos {
+		if info.TemplateID == id {
+			return fmt.Errorf("extra info template %q is still used by information %q", id, info.ID)
 		}
 	}
-	data.ExtraInfoCatalogues = append(data.ExtraInfoCatalogues[:index], data.ExtraInfoCatalogues[index+1:]...)
+	data.ExtraInfoTemplates = append(data.ExtraInfoTemplates[:index], data.ExtraInfoTemplates[index+1:]...)
+	data.ExtraInfoCatalogues = collectTemplateCatalogues(data.ExtraInfoTemplates)
 	return repository.Save(data)
 }
 
-func (repository Repository) SaveExtraInfoTemplate(next task.ExtraInfoTemplate) (task.ExtraInfoTemplate, error) {
+func (repository *Repository) SaveExtraInfo(next task.ExtraInfo) (task.ExtraInfo, error) {
 	data, err := repository.Load()
 	if err != nil {
-		return task.ExtraInfoTemplate{}, err
+		return task.ExtraInfo{}, err
 	}
-	if next.ID == "" {
-		if len(next.Fields) == 0 && (next.Key != "" || next.KeyDisplayName != "" || next.Value != "") {
-			next.Fields = []task.ExtraInfoField{{Key: next.Key, DisplayName: next.KeyDisplayName, Value: next.Value}}
-		}
-		next, err = task.NewExtraInfoTemplate(next.Catalogue, next.DisplayName, next.Fields, next.Parameters)
-	} else {
-		next, err = task.NormalizeExtraInfoTemplate(next)
-	}
-	if err != nil {
-		return task.ExtraInfoTemplate{}, err
-	}
-	if !containsCatalogue(data.ExtraInfoCatalogues, next.Catalogue) {
-		return task.ExtraInfoTemplate{}, fmt.Errorf("额外信息模板必须选择已创建的分类: %q", next.Catalogue)
-	}
-
-	updated := false
-	templates := append([]task.ExtraInfoTemplate(nil), data.ExtraInfoTemplates...)
-	for index, current := range templates {
-		if current.ID == next.ID {
-			templates[index] = next
-			updated = true
+	var template task.ExtraInfoTemplate
+	for _, candidate := range data.ExtraInfoTemplates {
+		if candidate.ID == next.TemplateID {
+			template = candidate
 			break
 		}
 	}
-	if !updated {
-		templates = append(templates, next)
+	if template.ID == "" {
+		return task.ExtraInfo{}, fmt.Errorf("extra info template %q does not exist", next.TemplateID)
 	}
-	templates, err = task.ValidateExtraInfoTemplates(templates)
+	values := make(map[string]string, len(next.Fields))
+	for _, field := range next.Fields {
+		values[field.Key] = field.Value
+	}
+	normalized, err := task.NewExtraInfoWithParameters(template, values, next.Parameters)
 	if err != nil {
-		return task.ExtraInfoTemplate{}, err
+		return task.ExtraInfo{}, err
 	}
-	data.ExtraInfoTemplates = templates
+	if next.ID != "" {
+		normalized.ID = next.ID
+	}
+	for index, candidate := range data.ExtraInfos {
+		if candidate.ID == normalized.ID {
+			data.ExtraInfos[index] = normalized
+			if err := repository.Save(data); err != nil {
+				return task.ExtraInfo{}, err
+			}
+			return normalized, nil
+		}
+	}
+	data.ExtraInfos = append(data.ExtraInfos, normalized)
 	if err := repository.Save(data); err != nil {
-		return task.ExtraInfoTemplate{}, err
-	}
-	return next, nil
-}
-
-func containsCatalogue(catalogues []string, target string) bool {
-	for _, catalogue := range catalogues {
-		if catalogue == target {
-			return true
-		}
-	}
-	return false
-}
-
-func normalizeCatalogues(catalogues []string) ([]string, error) {
-	normalized := make([]string, 0, len(catalogues))
-	seen := make(map[string]bool, len(catalogues))
-	for _, catalogue := range catalogues {
-		catalogue = strings.TrimSpace(catalogue)
-		if catalogue == "" {
-			return nil, fmt.Errorf("分类名称不能为空")
-		}
-		if seen[catalogue] {
-			continue
-		}
-		seen[catalogue] = true
-		normalized = append(normalized, catalogue)
+		return task.ExtraInfo{}, err
 	}
 	return normalized, nil
 }
 
-func (repository Repository) DeleteExtraInfoTemplate(templateID string) error {
+func (repository *Repository) DeleteExtraInfo(id string) error {
 	data, err := repository.Load()
 	if err != nil {
 		return err
 	}
-	for index, current := range data.ExtraInfoTemplates {
-		if current.ID != templateID {
-			continue
+	for index, candidate := range data.ExtraInfos {
+		if candidate.ID == id {
+			data.ExtraInfos = append(data.ExtraInfos[:index], data.ExtraInfos[index+1:]...)
+			return repository.Save(data)
 		}
-		data.ExtraInfoTemplates = append(data.ExtraInfoTemplates[:index], data.ExtraInfoTemplates[index+1:]...)
-		return repository.Save(data)
 	}
-	return fmt.Errorf("额外信息模板不存在")
+	return fmt.Errorf("extra info %q does not exist", id)
+}
+
+// ListExtraInfoCatalogues is retained for callers that still consume catalogue names.
+func (repository *Repository) ListExtraInfoCatalogues() ([]string, error) {
+	data, err := repository.Load()
+	if err != nil {
+		return nil, err
+	}
+	return data.ExtraInfoCatalogues, nil
+}
+
+// SaveExtraInfoCatalogue creates a minimal custom template for legacy callers.
+func (repository *Repository) SaveExtraInfoCatalogue(catalogue string) (string, error) {
+	created, err := task.NewExtraInfoTemplate(catalogue, "", nil, nil)
+	if err != nil {
+		return "", err
+	}
+	saved, err := repository.SaveExtraInfoTemplate(created)
+	if err != nil {
+		return "", err
+	}
+	return saved.Catalogue, nil
+}
+
+func (repository *Repository) DeleteExtraInfoCatalogue(catalogue string) error {
+	data, err := repository.Load()
+	if err != nil {
+		return err
+	}
+	for _, template := range data.ExtraInfoTemplates {
+		if template.Catalogue == catalogue {
+			return repository.DeleteExtraInfoTemplate(template.ID)
+		}
+	}
+	return fmt.Errorf("extra info catalogue %q does not exist", catalogue)
 }

@@ -26,6 +26,10 @@ export function CreateTerminal(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateTerminal'](arg1, arg2, arg3);
 }
 
+export function DeleteExtraInfo(arg1) {
+  return window['go']['main']['App']['DeleteExtraInfo'](arg1);
+}
+
 export function DeleteExtraInfoCatalogue(arg1) {
   return window['go']['main']['App']['DeleteExtraInfoCatalogue'](arg1);
 }
@@ -62,6 +66,10 @@ export function ListExtraInfoTemplates() {
   return window['go']['main']['App']['ListExtraInfoTemplates']();
 }
 
+export function ListExtraInfos() {
+  return window['go']['main']['App']['ListExtraInfos']();
+}
+
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
@@ -88,6 +96,10 @@ export function ResizeTerminal(arg1, arg2, arg3, arg4) {
 
 export function RunTaskCommand(arg1, arg2, arg3) {
   return window['go']['main']['App']['RunTaskCommand'](arg1, arg2, arg3);
+}
+
+export function SaveExtraInfo(arg1) {
+  return window['go']['main']['App']['SaveExtraInfo'](arg1);
 }
 
 export function SaveExtraInfoCatalogue(arg1) {

@@ -18,12 +18,12 @@ type TerminalReopener interface {
 }
 
 type Service struct {
-	repository storage.Repository
+	repository *storage.Repository
 	closer     TerminalCloser
 	now        func() time.Time
 }
 
-func New(repository storage.Repository, closer TerminalCloser, now func() time.Time) *Service {
+func New(repository *storage.Repository, closer TerminalCloser, now func() time.Time) *Service {
 	return &Service{repository: repository, closer: closer, now: now}
 }
 
@@ -31,7 +31,7 @@ func (service *Service) CreateTask(title, description, color string) (task.Task,
 	return service.CreateTaskWithExtraInfo(title, description, color, nil)
 }
 
-func (service *Service) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
+func (service *Service) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -41,7 +41,11 @@ func (service *Service) CreateTaskWithExtraInfo(title, description, color string
 	if err != nil {
 		return task.Task{}, err
 	}
-	created, err = created.UpdateExtraInfo(extraInfo)
+	snapshots, err := buildTaskExtraInfoSnapshots(data, nil, extraInfo)
+	if err != nil {
+		return task.Task{}, err
+	}
+	created, err = created.UpdateExtraInfo(snapshots)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -124,7 +128,7 @@ func (service *Service) UpdateTask(taskID, title, description, color string) (ta
 	return updated, nil
 }
 
-func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.ExtraInfo) (task.Task, error) {
+func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -137,7 +141,11 @@ func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, colo
 	if err != nil {
 		return task.Task{}, err
 	}
-	updated, err = updated.UpdateExtraInfo(extraInfo)
+	snapshots, err := buildTaskExtraInfoSnapshots(data, data.Tasks[index].ExtraInfo, extraInfo)
+	if err != nil {
+		return task.Task{}, err
+	}
+	updated, err = updated.UpdateExtraInfo(snapshots)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -146,6 +154,179 @@ func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, colo
 		return task.Task{}, err
 	}
 	return updated, nil
+}
+
+func buildTaskExtraInfoSnapshots(data storage.Data, existing, requested []task.TaskExtraInfo) ([]task.TaskExtraInfo, error) {
+	existingByID := make(map[string]task.TaskExtraInfo, len(existing))
+	existingByInformationID := make(map[string]task.TaskExtraInfo, len(existing))
+	for _, current := range existing {
+		existingByID[current.ID] = current
+		if current.InformationID != "" {
+			existingByInformationID[current.InformationID] = current
+		}
+	}
+
+	infos := make(map[string]task.ExtraInfo, len(data.ExtraInfos))
+	for _, info := range data.ExtraInfos {
+		infos[info.ID] = info
+	}
+	templates := make(map[string]task.ExtraInfoTemplate, len(data.ExtraInfoTemplates))
+	for _, template := range data.ExtraInfoTemplates {
+		templates[template.ID] = template
+	}
+
+	snapshots := make([]task.TaskExtraInfo, 0, len(requested))
+	for _, item := range requested {
+		if previous, ok := existingByID[item.ID]; ok {
+			updated, err := updateExistingTaskExtraInfo(previous, item)
+			if err != nil {
+				return nil, err
+			}
+			snapshots = append(snapshots, updated)
+			continue
+		}
+		if previous, ok := existingByInformationID[item.InformationID]; ok {
+			updated, err := updateExistingTaskExtraInfo(previous, item)
+			if err != nil {
+				return nil, err
+			}
+			snapshots = append(snapshots, updated)
+			continue
+		}
+
+		information, ok := infos[item.InformationID]
+		if !ok {
+			return nil, fmt.Errorf("额外信息 %q 不存在，无法创建任务快照", item.InformationID)
+		}
+		template, ok := templates[information.TemplateID]
+		if !ok {
+			return nil, fmt.Errorf("额外信息 %q 的模板不存在", item.InformationID)
+		}
+		values, additional, err := splitTaskParameterValues(information, template, item.Parameters)
+		if err != nil {
+			return nil, err
+		}
+		snapshot, err := task.NewTaskExtraInfo(information, template, values, additional)
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return task.ValidateTaskExtraInfo(snapshots)
+}
+
+func updateExistingTaskExtraInfo(previous, requested task.TaskExtraInfo) (task.TaskExtraInfo, error) {
+	normalizedPrevious, err := task.NormalizeTaskExtraInfo(previous)
+	if err != nil {
+		return task.TaskExtraInfo{}, err
+	}
+	normalizedRequested, err := task.NormalizeTaskExtraInfo(requested)
+	if err != nil {
+		return task.TaskExtraInfo{}, err
+	}
+	if normalizedRequested.InformationID != "" && normalizedRequested.InformationID != normalizedPrevious.InformationID {
+		return task.TaskExtraInfo{}, fmt.Errorf("任务固定信息来源不可修改")
+	}
+	if normalizedRequested.TemplateID != "" && normalizedRequested.TemplateID != normalizedPrevious.TemplateID {
+		return task.TaskExtraInfo{}, fmt.Errorf("任务固定信息来源不可修改")
+	}
+	if !sameFields(normalizedPrevious.Fields, normalizedRequested.Fields) {
+		return task.TaskExtraInfo{}, fmt.Errorf("任务固定字段不可修改")
+	}
+
+	values := make(map[string]string, len(normalizedRequested.Parameters))
+	requestedByKey := make(map[string]task.ExtraInfoParameter, len(normalizedRequested.Parameters))
+	for _, parameter := range normalizedRequested.Parameters {
+		requestedByKey[parameter.Key] = parameter
+	}
+	parameters := make([]task.ExtraInfoParameter, 0, len(normalizedRequested.Parameters))
+	for _, parameter := range normalizedPrevious.Parameters {
+		requestedParameter, ok := requestedByKey[parameter.Key]
+		if !ok {
+			return task.TaskExtraInfo{}, fmt.Errorf("任务动态参数 %q 不可删除", parameter.DisplayName)
+		}
+		if requestedParameter.DisplayName != parameter.DisplayName || requestedParameter.Required != parameter.Required || task.NormalizeExtraInfoParameterInputType(requestedParameter.InputType) != task.NormalizeExtraInfoParameterInputType(parameter.InputType) {
+			return task.TaskExtraInfo{}, fmt.Errorf("任务动态参数定义不可修改: %s", parameter.DisplayName)
+		}
+		values[parameter.Key] = requestedParameter.Value
+		delete(requestedByKey, parameter.Key)
+	}
+	for _, parameter := range normalizedPrevious.Parameters {
+		parameters = append(parameters, task.ExtraInfoParameter{
+			Key:         parameter.Key,
+			DisplayName: parameter.DisplayName,
+			Required:    parameter.Required,
+			InputType:   parameter.InputType,
+			Value:       values[parameter.Key],
+		})
+	}
+	for _, parameter := range normalizedRequested.Parameters {
+		if additional, ok := requestedByKey[parameter.Key]; ok {
+			parameters = append(parameters, additional)
+		}
+	}
+	normalizedPrevious.Parameters = parameters
+	return task.NormalizeTaskExtraInfo(normalizedPrevious)
+}
+
+func splitTaskParameterValues(information task.ExtraInfo, template task.ExtraInfoTemplate, parameters []task.ExtraInfoParameter) (map[string]string, []task.ExtraInfoParameter, error) {
+	definitions := make(map[string]task.ExtraInfoParameterDefinition, len(template.Parameters))
+	for _, definition := range template.Parameters {
+		definitions[definition.Key] = definition
+	}
+	informationDefinitions := make(map[string]task.ExtraInfoParameter, len(information.Parameters))
+	for _, definition := range information.Parameters {
+		informationDefinitions[definition.Key] = definition
+	}
+	values := make(map[string]string, len(definitions))
+	additional := make([]task.ExtraInfoParameter, 0)
+	seen := make(map[string]bool, len(parameters))
+	for _, parameter := range parameters {
+		if seen[parameter.Key] {
+			return nil, nil, fmt.Errorf("任务动态参数键重复: %q", parameter.Key)
+		}
+		seen[parameter.Key] = true
+		if definition, ok := definitions[parameter.Key]; ok {
+			if parameter.DisplayName != "" && parameter.DisplayName != definition.DisplayName {
+				return nil, nil, fmt.Errorf("模板动态参数定义不可修改: %s", definition.DisplayName)
+			}
+			if parameter.Required != definition.Required {
+				return nil, nil, fmt.Errorf("模板动态参数定义不可修改: %s", definition.DisplayName)
+			}
+			if task.NormalizeExtraInfoParameterInputType(parameter.InputType) != task.NormalizeExtraInfoParameterInputType(definition.InputType) {
+				return nil, nil, fmt.Errorf("模板动态参数定义不可修改: %s", definition.DisplayName)
+			}
+			values[parameter.Key] = parameter.Value
+			continue
+		}
+		if definition, ok := informationDefinitions[parameter.Key]; ok {
+			if parameter.DisplayName != "" && parameter.DisplayName != definition.DisplayName {
+				return nil, nil, fmt.Errorf("信息动态参数定义不可修改: %s", definition.DisplayName)
+			}
+			if parameter.Required != definition.Required {
+				return nil, nil, fmt.Errorf("信息动态参数定义不可修改: %s", definition.DisplayName)
+			}
+			if task.NormalizeExtraInfoParameterInputType(parameter.InputType) != task.NormalizeExtraInfoParameterInputType(definition.InputType) {
+				return nil, nil, fmt.Errorf("信息动态参数定义不可修改: %s", definition.DisplayName)
+			}
+			values[parameter.Key] = parameter.Value
+			continue
+		}
+		additional = append(additional, parameter)
+	}
+	return values, additional, nil
+}
+
+func sameFields(left, right []task.ExtraInfoField) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index].Key != right[index].Key || left[index].DisplayName != right[index].DisplayName || left[index].Value != right[index].Value {
+			return false
+		}
+	}
+	return true
 }
 
 func (service *Service) StartTask(taskID string) (task.Task, error) {

@@ -1,5 +1,8 @@
 import {type Dispatch, type FormEvent, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState} from 'react'
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   AppBar,
   Box,
@@ -30,6 +33,7 @@ import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
 import ArrowDownwardOutlinedIcon from '@mui/icons-material/ArrowDownwardOutlined'
 import ArrowUpwardOutlinedIcon from '@mui/icons-material/ArrowUpwardOutlined'
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined'
+import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import HelpOutlinedIcon from '@mui/icons-material/HelpOutlined'
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined'
@@ -60,7 +64,9 @@ import {
   clampTaskTreeWidth,
   defaultTaskColor,
 	defaultTaskMenuItems,
+	type ExtraInfo,
 	type ExtraInfoField,
+	type ExtraInfoParameterInputType,
 	taskStatusLabel,
   type ColorScheme,
 	type ExtraInfoTemplate,
@@ -78,8 +84,8 @@ export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [terminals, setTerminals] = useState<TerminalRecord[]>([])
 	const [settings, setSettings] = useState<SettingsRecord>()
-	const [extraInfoCatalogues, setExtraInfoCatalogues] = useState<string[]>([])
 	const [extraInfoTemplates, setExtraInfoTemplates] = useState<ExtraInfoTemplate[]>([])
+	const [extraInfos, setExtraInfos] = useState<ExtraInfo[]>([])
   const [detectedShells, setDetectedShells] = useState<string[]>([])
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [treeWidth, setTreeWidth] = useState(360)
@@ -93,7 +99,11 @@ export default function App() {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
 	const [extraInfoManagerOpen, setExtraInfoManagerOpen] = useState(false)
 	const [extraInfoTemplateDraft, setExtraInfoTemplateDraft] = useState<ExtraInfoTemplate>()
-	const [extraInfoCatalogueDraft, setExtraInfoCatalogueDraft] = useState('')
+	const [extraInfoDraft, setExtraInfoDraft] = useState<ExtraInfo>()
+	const [extraInfoEditorOpen, setExtraInfoEditorOpen] = useState(false)
+	const [newExtraInfoTemplateID, setNewExtraInfoTemplateID] = useState('')
+	const [extraInfoSearch, setExtraInfoSearch] = useState('')
+	const [expandedExtraInfoTemplateIDs, setExpandedExtraInfoTemplateIDs] = useState<string[]>([])
   const [finishTask, setFinishTask] = useState<TaskRecord>()
   const [quitDialogOpen, setQuitDialogOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -115,17 +125,18 @@ export default function App() {
   const finishedTerminalTaskIDs = useRef(new Set<string>())
   const terminalTitleValues = useRef(new Map<string, string>())
   const latestRealtimeStatusVersion = useRef(0)
+	const initializedExtraInfoGroups = useRef(false)
 
   useEffect(() => {
     void (async () => {
       try {
-		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoCatalogues, loadedExtraInfoTemplates] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoCatalogues(), api.listExtraInfoTemplates()])
+		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoTemplates, loadedExtraInfos] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoTemplates(), api.listExtraInfos()])
         setTasks(loadedTasks)
         setSettings(loadedSettings)
         setActiveTaskStatus(loadedSettings.activeTaskStatus ?? 'pending')
         setDetectedShells(loadedShells)
-		setExtraInfoCatalogues(loadedExtraInfoCatalogues)
 		setExtraInfoTemplates(loadedExtraInfoTemplates)
+		setExtraInfos(loadedExtraInfos)
         const width = clampTaskTreeWidth(loadedSettings.taskTreeWidth)
         currentTreeWidth.current = width
         setTreeWidth(width)
@@ -168,6 +179,25 @@ export default function App() {
   useEffect(() => api.onTaskScriptError((message) => setMessage(message)), [])
 
   useEffect(() => api.onRealtimeStatusError((message) => setMessage(message)), [])
+
+	useEffect(() => {
+		if (initializedExtraInfoGroups.current || extraInfoTemplates.length === 0) {
+			return
+		}
+		initializedExtraInfoGroups.current = true
+		setExpandedExtraInfoTemplateIDs(extraInfoTemplates.filter((template) => template.catalogue === 'git').map((template) => template.id))
+	}, [extraInfoTemplates])
+
+	useEffect(() => {
+		const search = extraInfoSearch.trim().toLocaleLowerCase()
+		if (!search) {
+			return
+		}
+		const matchedTemplateIDs = extraInfos
+			.filter((info) => extraInfoName(info).toLocaleLowerCase().includes(search))
+			.map((info) => info.templateId)
+		setExpandedExtraInfoTemplateIDs((current) => [...new Set([...current, ...matchedTemplateIDs])])
+	}, [extraInfoSearch, extraInfos])
 
   useEffect(() => {
     const unsubscribe = api.onRealtimeStatusEvent((event) => {
@@ -245,6 +275,16 @@ export default function App() {
 			setMessage(`参数“${missingParameter.displayName}”不能为空`)
 			return
 		}
+		const invalidParameter = taskExtraInfoDraft.flatMap((item) => item.parameters).find((parameter) => !parameter.key.trim() || !parameter.displayName.trim())
+		if (invalidParameter) {
+			setMessage('动态参数的键和显示名称不能为空')
+			return
+		}
+		const duplicateParameter = taskExtraInfoDraft.find((item) => new Set(item.parameters.map((parameter) => parameter.key.trim())).size !== item.parameters.length)
+		if (duplicateParameter) {
+			setMessage(`信息“${duplicateParameter.displayName ?? duplicateParameter.catalogue}”包含重复的动态参数键`)
+			return
+		}
     try {
       if (editingTask) {
 			const hasExtraInfo = taskExtraInfoDraft.length > 0 || (editingTask.extraInfo?.length ?? 0) > 0
@@ -273,16 +313,16 @@ export default function App() {
 	const openExtraInfoManager = async () => {
 		setExtraInfoManagerOpen(true)
 		try {
-			const [catalogues, templates] = await Promise.all([api.listExtraInfoCatalogues(), api.listExtraInfoTemplates()])
-			setExtraInfoCatalogues(catalogues)
+			const [templates, infos] = await Promise.all([api.listExtraInfoTemplates(), api.listExtraInfos()])
 			setExtraInfoTemplates(templates)
+			setExtraInfos(infos)
 		} catch (error) {
 			showError(error, setMessage)
 		}
 	}
 
 	const openExtraInfoTemplateEditor = (template?: ExtraInfoTemplate) => {
-		setExtraInfoTemplateDraft(template ? cloneExtraInfoTemplate(template) : createExtraInfoTemplateDraft(extraInfoCatalogues[0] ?? ''))
+		setExtraInfoTemplateDraft(template ? cloneExtraInfoTemplate(template) : createExtraInfoTemplateDraft(''))
 	}
 
 	const updateExtraInfoTemplateDraft = (update: Partial<ExtraInfoTemplate>) => {
@@ -301,29 +341,6 @@ export default function App() {
 			...current,
 			fields: current.fields.map((field, fieldIndex) => fieldIndex === index ? {...field, ...update} : field),
 		} : current)
-	}
-
-	const saveExtraInfoCatalogue = async () => {
-		const name = extraInfoCatalogueDraft.trim()
-		if (!name) {
-			return
-		}
-		try {
-			const saved = await api.saveExtraInfoCatalogue(name)
-			setExtraInfoCatalogues((current) => current.includes(saved) ? current : [...current, saved])
-			setExtraInfoCatalogueDraft('')
-		} catch (error) {
-			showError(error, setMessage)
-		}
-	}
-
-	const deleteExtraInfoCatalogue = async (catalogue: string) => {
-		try {
-			await api.deleteExtraInfoCatalogue(catalogue)
-			setExtraInfoCatalogues((current) => current.filter((item) => item !== catalogue))
-		} catch (error) {
-			showError(error, setMessage)
-		}
 	}
 
 	const saveExtraInfoTemplate = async () => {
@@ -346,6 +363,60 @@ export default function App() {
 		try {
 			await api.deleteExtraInfoTemplate(templateID)
 			setExtraInfoTemplates((current) => current.filter((template) => template.id !== templateID))
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const closeExtraInfoEditor = () => {
+		setExtraInfoEditorOpen(false)
+		setExtraInfoDraft(undefined)
+		setNewExtraInfoTemplateID('')
+	}
+
+	const openExtraInfoEditor = (info?: ExtraInfo) => {
+		setExtraInfoEditorOpen(true)
+		if (info) {
+			setExtraInfoDraft(cloneExtraInfo(info))
+			return
+		}
+		setExtraInfoDraft(undefined)
+		setNewExtraInfoTemplateID('')
+	}
+
+	const selectExtraInfoTemplate = (templateID: string) => {
+		setNewExtraInfoTemplateID(templateID)
+		const template = extraInfoTemplates.find((item) => item.id === templateID)
+		if (!template) {
+			return
+		}
+		setExtraInfoDraft(createExtraInfoDraft(template))
+	}
+
+	const saveExtraInfo = async () => {
+		if (!extraInfoDraft) {
+			return
+		}
+		if (!extraInfoName(extraInfoDraft).trim()) {
+			setMessage('信息名称不能为空')
+			return
+		}
+		try {
+			const saved = await api.saveExtraInfo(extraInfoDraft)
+			setExtraInfos((current) => current.some((item) => item.id === saved.id)
+				? current.map((item) => item.id === saved.id ? saved : item)
+				: [...current, saved])
+			closeExtraInfoEditor()
+			setExpandedExtraInfoTemplateIDs((current) => [...new Set([...current, saved.templateId])])
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const deleteExtraInfo = async (infoID: string) => {
+		try {
+			await api.deleteExtraInfo(infoID)
+			setExtraInfos((current) => current.filter((item) => item.id !== infoID))
 		} catch (error) {
 			showError(error, setMessage)
 		}
@@ -796,8 +867,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               />
             </Box>
 			<TaskExtraInfoEditor
-				catalogues={extraInfoCatalogues}
 				templates={extraInfoTemplates}
+				infos={extraInfos}
 				extraInfo={taskExtraInfoDraft}
 				onChange={setTaskExtraInfoDraft}
 			/>
@@ -811,89 +882,162 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
 		<Dialog open={extraInfoManagerOpen} onClose={() => setExtraInfoManagerOpen(false)} aria-labelledby="extra-info-manager-title" fullWidth maxWidth="md">
 			<DialogTitle id="extra-info-manager-title">额外信息管理</DialogTitle>
-			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
-				<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2}}>
-					<Typography variant="body2" color="text.secondary">维护任务可选信息；修改或删除模板不会改变已有任务。</Typography>
-					<Button variant="contained" size="small" disabled={extraInfoCatalogues.length === 0} onClick={() => openExtraInfoTemplateEditor()}>新增信息</Button>
-				</Box>
-				<Box sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.25}}>
-					<Typography variant="subtitle2">分类</Typography>
-					<Box sx={{display: 'flex', alignItems: 'flex-start', gap: 1}}>
-						<TextField size="small" label="分类名称" value={extraInfoCatalogueDraft} onChange={(event) => setExtraInfoCatalogueDraft(event.target.value)} sx={{flex: 1}}/>
-						<Button variant="outlined" size="small" disabled={!extraInfoCatalogueDraft.trim()} onClick={() => void saveExtraInfoCatalogue()}>新增分类</Button>
-					</Box>
-					{extraInfoCatalogues.length === 0 ? (
-						<Typography variant="caption" color="text.secondary">先创建分类，才能新增额外信息。</Typography>
-					) : (
-						<Box sx={{display: 'flex', flexWrap: 'wrap', gap: 0.75}}>
-							{extraInfoCatalogues.map((catalogue) => (
-								<Chip
-									key={catalogue}
-									label={catalogue}
-									onDelete={() => void deleteExtraInfoCatalogue(catalogue)}
-									deleteIcon={<DeleteOutlineOutlinedIcon aria-label={`删除分类 ${catalogue}`}/>}
-								/>
+			<DialogContent data-testid="extra-info-manager-content" sx={{display: 'flex', flexDirection: 'column', gap: 2, minHeight: 0, overflowY: 'auto', pt: '12px !important'}}>
+				<Accordion defaultExpanded disableGutters elevation={0} sx={{flexShrink: 0, border: 1, borderColor: 'divider', borderRadius: '8px !important', overflow: 'hidden', '&:before': {display: 'none'}}}>
+					<AccordionSummary expandIcon={<ExpandMoreOutlinedIcon/>} aria-label="分类模板">
+						<Box sx={{minWidth: 0, pr: 1}}>
+							<Typography variant="subtitle2">分类模板</Typography>
+							<Typography variant="caption" color="text.secondary">分类就是可填写的信息模板，定义固定字段、默认值和动态参数。</Typography>
+						</Box>
+					</AccordionSummary>
+					<AccordionDetails sx={{display: 'grid', gap: 1, pt: 0}}>
+						<Box sx={{display: 'flex', justifyContent: 'flex-end'}}>
+							<Button variant="contained" size="small" onClick={() => openExtraInfoTemplateEditor()}>新增模板</Button>
+						</Box>
+						<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
+							{extraInfoTemplates.map((template, index) => (
+								<Box key={template.id} sx={{display: 'grid', gridTemplateColumns: {xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) auto'}, alignItems: 'center', gap: 1.25, px: 1.5, py: 1.25, borderBottom: index === extraInfoTemplates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+									<Box sx={{display: 'grid', gap: 0.5, minWidth: 0}}>
+										<Box sx={{display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap'}}>
+											<Typography variant="body2" sx={{fontWeight: 700, overflowWrap: 'anywhere'}}>{template.catalogue}</Typography>
+											{template.builtIn && <Chip label="内置 Git" size="small" color="primary" variant="outlined"/>}
+										</Box>
+										<Typography variant="caption" color="text.secondary" sx={{overflowWrap: 'anywhere'}}>{template.fields.map((field) => `${field.displayName}${field.defaultValue ? `：${field.defaultValue}` : ''}`).join(' · ')}</Typography>
+									</Box>
+									<Box sx={{display: 'flex', alignItems: 'center', justifyContent: {xs: 'space-between', sm: 'flex-end'}, flexWrap: 'wrap', gap: 0.75, minWidth: 0}}>
+										<Chip label={`${template.fields.length} 固定 · ${template.parameters.length} 参数`} size="small" variant="outlined"/>
+										<Button size="small" onClick={() => openExtraInfoTemplateEditor(template)}>编辑</Button>
+										<Tooltip title={template.builtIn ? '内置 Git 模板不可删除' : '删除模板'}><span><IconButton aria-label={`删除模板 ${template.catalogue}`} size="small" color="error" disabled={template.builtIn} onClick={() => void deleteExtraInfoTemplate(template.id)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></span></Tooltip>
+									</Box>
+								</Box>
 							))}
 						</Box>
-					)}
+					</AccordionDetails>
+				</Accordion>
+				<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mt: 0.5}}>
+					<Box>
+						<Typography variant="subtitle2">信息</Typography>
+						<Typography variant="caption" color="text.secondary">填写固定字段后保存为可复用信息，任务选择它时会生成独立快照。</Typography>
+					</Box>
+					<Button size="small" variant="outlined" disabled={extraInfoTemplates.length === 0} onClick={() => openExtraInfoEditor()}>新增信息</Button>
 				</Box>
-				{extraInfoTemplates.length === 0 ? (
-					<Alert severity="info" variant="outlined">暂无额外信息，可新增 Git 仓库等任务上下文。</Alert>
-				) : (
-					<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
-						{extraInfoTemplates.map((template, index) => (
-								<Box key={template.id} sx={{display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, py: 1.25, borderBottom: index === extraInfoTemplates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
-									<Box sx={{minWidth: 0, flex: 1}}>
-										<Typography variant="body2" sx={{fontWeight: 700}} noWrap>{template.displayName}</Typography>
-										<Typography variant="caption" color="text.secondary" noWrap>{template.catalogue} · {template.fields.map((field) => `${field.displayName}：${field.value}`).join(' · ')}</Typography>
+				<TextField size="small" fullWidth label="搜索信息" placeholder="按名称模糊搜索" value={extraInfoSearch} onChange={(event) => setExtraInfoSearch(event.target.value)}/>
+				{extraInfos.length === 0 ? <Alert severity="info" variant="outlined">暂无信息。选择一个模板后填写固定字段即可添加。</Alert> : (
+					<Box sx={{display: 'grid', gap: 0.75}}>
+						{extraInfoTemplates.map((template) => {
+							const templateInfos = extraInfos.filter((info) => info.templateId === template.id)
+							const infos = templateInfos.filter((info) => extraInfoName(info).toLocaleLowerCase().includes(extraInfoSearch.trim().toLocaleLowerCase()))
+							const expanded = expandedExtraInfoTemplateIDs.includes(template.id)
+							return <Accordion key={template.id} disableGutters elevation={0} expanded={expanded} onChange={(_, nextExpanded) => setExpandedExtraInfoTemplateIDs((current) => nextExpanded ? [...new Set([...current, template.id])] : current.filter((id) => id !== template.id))} sx={{border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': {display: 'none'}}}>
+								<AccordionSummary expandIcon={<ExpandMoreOutlinedIcon/>} aria-label={`信息分类 ${template.displayName || template.catalogue} ${template.catalogue}`}>
+									<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, width: '100%', minWidth: 0, pr: 1}}>
+										<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{template.displayName || template.catalogue}</Typography><Typography variant="caption" color="text.secondary">{template.catalogue}</Typography></Box>
+										<Chip label={`${infos.length}${extraInfoSearch.trim() ? ` / ${templateInfos.length}` : ''} 条信息`} size="small" variant="outlined"/>
 									</Box>
-									<Chip label={`${template.fields.length} 个固定字段 · ${template.parameters.length} 个参数`} size="small" variant="outlined"/>
-								<Button size="small" onClick={() => openExtraInfoTemplateEditor(template)}>编辑</Button>
-								<Button size="small" color="error" onClick={() => void deleteExtraInfoTemplate(template.id)}>删除</Button>
-							</Box>
-						))}
+								</AccordionSummary>
+								<AccordionDetails sx={{display: 'grid', gap: 0, pt: 0}}>
+									{infos.length === 0 ? <Typography variant="body2" color="text.secondary" sx={{px: 0.5, pb: 1}}>未找到匹配的信息。</Typography> : infos.map((info, index) => <Box key={info.id} sx={{display: 'flex', alignItems: 'center', gap: 1.25, px: 0.5, py: 1.1, borderTop: index === 0 ? 1 : 0, borderColor: 'divider'}}>
+										<Box sx={{minWidth: 0, flex: 1}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{extraInfoName(info)}</Typography></Box>
+										<Button size="small" onClick={() => openExtraInfoEditor(info)}>编辑</Button>
+										<IconButton aria-label={`删除信息 ${extraInfoName(info)}`} size="small" color="error" onClick={() => void deleteExtraInfo(info.id)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+									</Box>)}
+								</AccordionDetails>
+							</Accordion>
+						})}
 					</Box>
 				)}
 			</DialogContent>
-			<DialogActions>
-				<Button onClick={() => setExtraInfoManagerOpen(false)}>关闭</Button>
-			</DialogActions>
+			<DialogActions><Button onClick={() => setExtraInfoManagerOpen(false)}>关闭</Button></DialogActions>
+		</Dialog>
+
+		<Dialog open={extraInfoEditorOpen} onClose={closeExtraInfoEditor} aria-labelledby="extra-info-value-editor-title" fullWidth maxWidth="sm">
+			<DialogTitle id="extra-info-value-editor-title">{extraInfoDraft?.id ? '编辑信息' : '新增信息'}</DialogTitle>
+			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
+				{!extraInfoDraft ? <TextField select required autoFocus label="选择模板" value={newExtraInfoTemplateID} onChange={(event) => selectExtraInfoTemplate(event.target.value)}>
+					{extraInfoTemplates.map((template) => <MenuItem key={template.id} value={template.id}>{`${template.displayName || template.catalogue}（${template.catalogue}）`}</MenuItem>)}
+				</TextField> : <Typography variant="caption" color="text.secondary">{extraInfoDraft.catalogue}</Typography>}
+				{extraInfoDraft?.fields.map((field, index) => <TextField key={field.key} required={field.key === 'name'} label={field.displayName} value={field.value ?? ''} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, fields: current.fields.map((item, fieldIndex) => fieldIndex === index ? {...item, value: event.target.value} : item)} : current)}/>) }
+				{extraInfoDraft && <Box sx={{display: 'grid', gap: 1, pt: 0.5}}>
+					<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
+						<Typography variant="subtitle2">动态参数</Typography>
+						<Button size="small" onClick={() => setExtraInfoDraft((current) => current ? {...current, parameters: [...(current.parameters ?? []), {key: '', displayName: '', required: false, inputType: 'text', value: ''}]} : current)}>新增动态参数</Button>
+					</Box>
+					<Typography variant="caption" color="text.secondary">这些参数会和模板参数一起带入任务，可在任务中填写值。</Typography>
+					{(extraInfoDraft.parameters ?? []).map((parameter, index) => <Box key={index} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1, p: 1}}>
+						<Box sx={{display: 'grid', gridTemplateColumns: {xs: 'minmax(0, 1fr)', sm: 'repeat(3, minmax(0, 1fr))'}, gap: 1, minWidth: 0}}>
+							<TextField required size="small" label={`参数键 ${index + 1}`} value={parameter.key} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, parameters: (current.parameters ?? []).map((item, parameterIndex) => parameterIndex === index ? {...item, key: event.target.value} : item)} : current)}/>
+							<TextField required size="small" label={`参数显示名称 ${index + 1}`} value={parameter.displayName} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, parameters: (current.parameters ?? []).map((item, parameterIndex) => parameterIndex === index ? {...item, displayName: event.target.value} : item)} : current)}/>
+							<TextField select size="small" label={`参数类型 ${index + 1}`} value={extraInfoParameterInputType(parameter)} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, parameters: (current.parameters ?? []).map((item, parameterIndex) => {
+								if (parameterIndex !== index) {
+									return item
+								}
+								const inputType = event.target.value as ExtraInfoParameterInputType
+								return {...item, inputType, required: inputType === 'checkbox' ? false : item.required, value: inputType === 'checkbox' ? 'false' : item.value}
+							})} : current)}>
+								<MenuItem value="text">文本</MenuItem>
+								<MenuItem value="checkbox">复选框</MenuItem>
+							</TextField>
+						</Box>
+						{extraInfoParameterInputType(parameter) === 'checkbox'
+							? <FormControlLabel sx={{m: 0}} control={<Checkbox checked={parameter.value === 'true'} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, parameters: (current.parameters ?? []).map((item, parameterIndex) => parameterIndex === index ? {...item, value: event.target.checked ? 'true' : 'false'} : item)} : current)}/>} label={`默认值 ${index + 1}`}/>
+							: <TextField size="small" label={`默认值 ${index + 1}`} value={parameter.value} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, parameters: (current.parameters ?? []).map((item, parameterIndex) => parameterIndex === index ? {...item, value: event.target.value} : item)} : current)}/>
+						}
+						<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1}}>
+							{extraInfoParameterInputType(parameter) !== 'checkbox' && <FormControlLabel sx={{m: 0}} control={<Checkbox checked={parameter.required} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, parameters: (current.parameters ?? []).map((item, parameterIndex) => parameterIndex === index ? {...item, required: event.target.checked} : item)} : current)}/>} label={`参数 ${index + 1} 必填`}/>}
+							<IconButton aria-label={`删除动态参数 ${parameter.displayName || index + 1}`} size="small" color="error" onClick={() => setExtraInfoDraft((current) => current ? {...current, parameters: (current.parameters ?? []).filter((_, parameterIndex) => parameterIndex !== index)} : current)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+						</Box>
+					</Box>)}
+				</Box>}
+			</DialogContent>
+			<DialogActions><Button onClick={closeExtraInfoEditor}>取消</Button><Button variant="contained" disabled={!extraInfoDraft} onClick={() => void saveExtraInfo()}>保存信息</Button></DialogActions>
 		</Dialog>
 
 		<Dialog open={Boolean(extraInfoTemplateDraft)} onClose={() => setExtraInfoTemplateDraft(undefined)} aria-labelledby="extra-info-editor-title" fullWidth maxWidth="sm">
-			<DialogTitle id="extra-info-editor-title">{extraInfoTemplateDraft?.id ? '编辑额外信息' : '新增额外信息'}</DialogTitle>
+			<DialogTitle id="extra-info-editor-title">{extraInfoTemplateDraft?.id ? '编辑模板' : '新增模板'}</DialogTitle>
 			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
-				<TextField required select label="分类" value={extraInfoTemplateDraft?.catalogue ?? ''} onChange={(event) => updateExtraInfoTemplateDraft({catalogue: event.target.value})}>
-					{extraInfoCatalogues.map((catalogue) => <MenuItem key={catalogue} value={catalogue}>{catalogue}</MenuItem>)}
-				</TextField>
-				<TextField required label="信息展示名称" helperText="任务创建时以此名称作为选择项。" value={extraInfoTemplateDraft?.displayName ?? ''} onChange={(event) => updateExtraInfoTemplateDraft({displayName: event.target.value})}/>
+				{extraInfoTemplateDraft?.builtIn && <Alert severity="info" variant="outlined">Git 内置字段的键和显示名称不可修改；可调整默认值、分支必填状态，并添加新的字段或参数。</Alert>}
+				<TextField required label="分类" value={extraInfoTemplateDraft?.catalogue ?? ''} disabled={extraInfoTemplateDraft?.builtIn} onChange={(event) => updateExtraInfoTemplateDraft({catalogue: event.target.value})}/>
+				<TextField label="模板备注" value={extraInfoTemplateDraft?.displayName ?? ''} disabled={extraInfoTemplateDraft?.builtIn} onChange={(event) => updateExtraInfoTemplateDraft({displayName: event.target.value})}/>
 				<Box sx={{display: 'grid', gap: 1}}>
 					<Box sx={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
 						<Typography variant="subtitle2">固定字段</Typography>
-						<Button size="small" onClick={() => updateExtraInfoTemplateDraft({fields: [...(extraInfoTemplateDraft?.fields ?? []), {key: '', displayName: '', value: ''}]})}>新增固定字段</Button>
+						<Button size="small" onClick={() => updateExtraInfoTemplateDraft({fields: [...(extraInfoTemplateDraft?.fields ?? []), {key: '', displayName: '', defaultValue: ''}]})}>新增固定字段</Button>
 					</Box>
-					{extraInfoTemplateDraft?.fields.map((field, index) => (
-						<Box key={index} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr 1fr auto'}, alignItems: 'center', gap: 1}}>
-							<TextField required size="small" label={`固定键 ${index + 1}`} value={field.key} onChange={(event) => updateExtraInfoTemplateField(index, {key: event.target.value})}/>
-							<TextField required size="small" label={`固定字段显示名称 ${index + 1}`} value={field.displayName} onChange={(event) => updateExtraInfoTemplateField(index, {displayName: event.target.value})}/>
-							<TextField required size="small" label={`固定值 ${index + 1}`} value={field.value} onChange={(event) => updateExtraInfoTemplateField(index, {value: event.target.value})}/>
-							<IconButton aria-label={`删除固定字段 ${index + 1}`} size="small" color="error" disabled={extraInfoTemplateDraft.fields.length === 1} onClick={() => updateExtraInfoTemplateDraft({fields: extraInfoTemplateDraft.fields.filter((_, fieldIndex) => fieldIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+					{extraInfoTemplateDraft?.fields.map((field, index) => {
+						const protectedField = Boolean(extraInfoTemplateDraft.builtIn && (field.key === 'name' || field.key === 'repository'))
+						return <Box key={index} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr 1fr auto'}, alignItems: 'center', gap: 1}}>
+							<TextField required size="small" label={`固定键 ${index + 1}`} disabled={protectedField} value={field.key} onChange={(event) => updateExtraInfoTemplateField(index, {key: event.target.value})}/>
+							<TextField required size="small" label={`固定字段显示名称 ${index + 1}`} disabled={protectedField} value={field.displayName} onChange={(event) => updateExtraInfoTemplateField(index, {displayName: event.target.value})}/>
+							<TextField size="small" label={`默认值 ${index + 1}`} value={field.defaultValue ?? ''} onChange={(event) => updateExtraInfoTemplateField(index, {defaultValue: event.target.value})}/>
+							<IconButton aria-label={`删除固定字段 ${index + 1}`} size="small" color="error" disabled={protectedField || extraInfoTemplateDraft.fields.length === 1} onClick={() => updateExtraInfoTemplateDraft({fields: extraInfoTemplateDraft.fields.filter((_, fieldIndex) => fieldIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
 						</Box>
-					))}
+					})}
 				</Box>
 				<Box sx={{display: 'grid', gap: 1}}>
 					<Box sx={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
 						<Typography variant="subtitle2">动态参数</Typography>
-						<Button size="small" onClick={() => updateExtraInfoTemplateDraft({parameters: [...(extraInfoTemplateDraft?.parameters ?? []), {key: '', displayName: '', required: false}]})}>新增参数</Button>
+						<Button size="small" onClick={() => updateExtraInfoTemplateDraft({parameters: [...(extraInfoTemplateDraft?.parameters ?? []), {key: '', displayName: '', required: false, inputType: 'text'}]})}>新增参数</Button>
 					</Box>
-					{extraInfoTemplateDraft?.parameters.map((parameter, index) => (
-						<Box key={index} sx={{display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', alignItems: 'center', gap: 1}}>
-							<TextField required size="small" label={`参数键 ${index + 1}`} value={parameter.key} onChange={(event) => updateExtraInfoTemplateParameter(index, {key: event.target.value})}/>
-							<TextField required size="small" label={`参数显示名称 ${index + 1}`} value={parameter.displayName} onChange={(event) => updateExtraInfoTemplateParameter(index, {displayName: event.target.value})}/>
-							<FormControlLabel control={<Checkbox checked={parameter.required} onChange={(event) => updateExtraInfoTemplateParameter(index, {required: event.target.checked})}/>} label={`参数 ${index + 1} 必填`}/>
-							<IconButton aria-label={`删除参数 ${index + 1}`} size="small" color="error" onClick={() => updateExtraInfoTemplateDraft({parameters: extraInfoTemplateDraft.parameters.filter((_, parameterIndex) => parameterIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+					{extraInfoTemplateDraft?.parameters.map((parameter, index) => {
+						const protectedParameter = Boolean(extraInfoTemplateDraft.builtIn && parameter.key === 'branch')
+						return <Box key={index} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1, p: 1}}>
+							<Box sx={{display: 'grid', gridTemplateColumns: {xs: 'minmax(0, 1fr)', sm: 'repeat(3, minmax(0, 1fr))'}, gap: 1, minWidth: 0}}>
+								<TextField required size="small" label={`参数键 ${index + 1}`} disabled={protectedParameter} value={parameter.key} onChange={(event) => updateExtraInfoTemplateParameter(index, {key: event.target.value})}/>
+								<TextField required size="small" label={`参数显示名称 ${index + 1}`} disabled={protectedParameter} value={parameter.displayName} onChange={(event) => updateExtraInfoTemplateParameter(index, {displayName: event.target.value})}/>
+								<TextField select size="small" label={`参数类型 ${index + 1}`} disabled={protectedParameter} value={extraInfoParameterInputType(parameter)} onChange={(event) => {
+									const inputType = event.target.value as ExtraInfoParameterInputType
+									updateExtraInfoTemplateParameter(index, {inputType, required: inputType === 'checkbox' ? false : parameter.required})
+								}}>
+									<MenuItem value="text">文本</MenuItem>
+									<MenuItem value="checkbox">复选框</MenuItem>
+								</TextField>
+							</Box>
+							<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1}}>
+								{extraInfoParameterInputType(parameter) !== 'checkbox' && <FormControlLabel sx={{m: 0}} control={<Checkbox checked={parameter.required} onChange={(event) => updateExtraInfoTemplateParameter(index, {required: event.target.checked})}/>} label={`参数 ${index + 1} 必填`}/>}
+								<IconButton aria-label={`删除参数 ${index + 1}`} size="small" color="error" disabled={protectedParameter} onClick={() => updateExtraInfoTemplateDraft({parameters: extraInfoTemplateDraft.parameters.filter((_, parameterIndex) => parameterIndex !== index)})}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+							</Box>
 						</Box>
-					))}
+					})}
 				</Box>
 			</DialogContent>
 			<DialogActions>
@@ -1065,8 +1209,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           </HTTPHelpSection>
 
 			<HTTPHelpSection title="任务附加信息">
-				<Typography variant="body2" color="text.secondary">通过顶部“额外信息管理”维护模板。任务详情的 <code>extraInfo</code> 按目录聚合，并将信息键和值、参数键和值平铺；展示名称不会返回。</Typography>
-				<HTTPCodeBlock>{'{"extraInfo":{"git":[{"repository":"git@example.com:team/api.git","branch":"main"}]}}'}</HTTPCodeBlock>
+				<Typography variant="body2" color="text.secondary">先通过顶部“额外信息管理”定义模板并保存信息。任务详情的 <code>extraInfo</code> 按目录聚合，将固定字段和动态参数平铺；信息名称以固定字段 <code>name</code> 返回。</Typography>
+				<HTTPCodeBlock>{'{"extraInfo":{"git":[{"name":"API 服务","repository":"git@example.com:team/api.git","branch":"main"}]}}'}</HTTPCodeBlock>
 			</HTTPHelpSection>
 
           <HTTPHelpSection title="状态更新">
@@ -1306,51 +1450,69 @@ function StartupScreen() {
 }
 
 function TaskExtraInfoEditor({
-	catalogues,
 	templates,
+	infos,
 	extraInfo,
 	onChange,
 }: {
-	catalogues: string[]
 	templates: ExtraInfoTemplate[]
+	infos: ExtraInfo[]
 	extraInfo: TaskExtraInfo[]
 	onChange: Dispatch<SetStateAction<TaskExtraInfo[]>>
 }) {
 	const [selectedCatalogue, setSelectedCatalogue] = useState('')
+	const [informationSearch, setInformationSearch] = useState('')
 	useEffect(() => {
+		const catalogues = [...new Set(templates.map((template) => template.catalogue))]
 		setSelectedCatalogue((current) => catalogues.includes(current) ? current : catalogues[0] ?? '')
-	}, [catalogues])
+	}, [templates])
 
-	const templateIDs = new Set(templates.map((template) => template.id))
-	const deletedSnapshots = extraInfo.filter((item) => !templateIDs.has(item.id))
-	const selectedByID = new Map(extraInfo.map((item) => [item.id, item]))
-	const visibleTemplates = templates.filter((template) => template.catalogue === selectedCatalogue)
+	const catalogues = [...new Set(templates.map((template) => template.catalogue))]
+	const informationIDs = new Set(infos.map((info) => info.id))
+	const deletedSnapshots = extraInfo.filter((item) => !item.informationId || !informationIDs.has(item.informationId))
+	const selectedByInformationID = new Map(extraInfo.filter((item) => item.informationId).map((item) => [item.informationId!, item]))
+	const visibleInfos = infos.filter((info) => info.catalogue === selectedCatalogue && extraInfoName(info).toLocaleLowerCase().includes(informationSearch.trim().toLocaleLowerCase()))
+	const templatesByID = new Map(templates.map((template) => [template.id, template]))
 
-	const toggleTemplate = (template: ExtraInfoTemplate, selected: boolean) => {
+	const toggleInformation = (info: ExtraInfo, selected: boolean) => {
+		const template = templatesByID.get(info.templateId)
+		if (!template) {
+			return
+		}
 		onChange((current) => selected
-			? [...current, createTaskExtraInfo(template)]
-			: current.filter((item) => item.id !== template.id),
+			? [...current, createTaskExtraInfo(info, template)]
+			: current.filter((item) => item.informationId !== info.id),
 		)
 	}
 
-	const updateParameter = (itemID: string, parameterKey: string, value: string) => {
-		onChange((current) => current.map((item) => item.id !== itemID ? item : {
+	const updateParameter = (itemKey: string, parameterIndex: number, update: Partial<TaskExtraInfo['parameters'][number]>) => {
+		onChange((current) => current.map((item) => taskExtraInfoKey(item) !== itemKey ? item : {
 			...item,
-			parameters: item.parameters.map((parameter) => parameter.key === parameterKey ? {...parameter, value} : parameter),
+			parameters: item.parameters.map((parameter, index) => index === parameterIndex ? {...parameter, ...update} : parameter),
 		}))
 	}
+
+	const addParameter = (itemKey: string) => onChange((current) => current.map((item) => taskExtraInfoKey(item) !== itemKey ? item : {
+		...item,
+		parameters: [...item.parameters, {key: '', displayName: '', required: false, inputType: 'text', value: ''}],
+	}))
+
+	const removeParameter = (itemKey: string, parameterIndex: number) => onChange((current) => current.map((item) => taskExtraInfoKey(item) !== itemKey ? item : {
+		...item,
+		parameters: item.parameters.filter((_, index) => index !== parameterIndex),
+	}))
 
 	return (
 		<Box component="section" sx={{display: 'grid', gap: 1.25, borderTop: 1, borderColor: 'divider', pt: 1.75}}>
 			<Box>
 				<Typography variant="subtitle2">附加信息</Typography>
-				<Typography variant="caption" color="text.secondary">选择分类后勾选信息；任务会保存当前内容和参数值。</Typography>
+				<Typography variant="caption" color="text.secondary">选择信息后仅填写动态参数；任务内还可新增动态参数。</Typography>
 			</Box>
 			<Box sx={{display: 'grid', gap: 0.75}}>
 				<Typography variant="caption" color="text.secondary">已选择 {extraInfo.length} 项</Typography>
 				{extraInfo.length > 0 && <Box sx={{display: 'flex', flexWrap: 'wrap', gap: 0.75}}>
 					{extraInfo.map((item) => (
-						<Chip key={item.id} size="small" label={`${item.catalogue} · ${item.displayName}`} onDelete={() => onChange((current) => current.filter((currentItem) => currentItem.id !== item.id))}/>
+						<Chip key={taskExtraInfoKey(item)} size="small" label={item.displayName ?? '已保存信息'} onDelete={() => onChange((current) => current.filter((currentItem) => taskExtraInfoKey(currentItem) !== taskExtraInfoKey(item)))}/>
 					))}
 				</Box>}
 			</Box>
@@ -1361,29 +1523,31 @@ function TaskExtraInfoEditor({
 				<TextField select size="small" label="选择分类" value={selectedCatalogue} onChange={(event) => setSelectedCatalogue(event.target.value)}>
 					{catalogues.map((catalogue) => <MenuItem key={catalogue} value={catalogue}>{catalogue}</MenuItem>)}
 				</TextField>
+				<TextField size="small" label="搜索信息" placeholder="按名称模糊搜索" value={informationSearch} onChange={(event) => setInformationSearch(event.target.value)}/>
 				<Box sx={{display: 'grid', gap: 0.75, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.25}}>
-					{visibleTemplates.length === 0 ? (
-						<Typography variant="body2" color="text.secondary">该分类暂无可选信息。</Typography>
-					) : visibleTemplates.map((template) => {
-						const selected = selectedByID.get(template.id)
+					{visibleInfos.length === 0 ? (
+						<Typography variant="body2" color="text.secondary">该分类未找到可选信息。</Typography>
+					) : visibleInfos.map((info) => {
+						const selected = selectedByInformationID.get(info.id)
+						const template = templatesByID.get(info.templateId)
 						return (
-							<Box key={template.id} sx={{display: 'grid', gap: selected ? 1 : 0}}>
+							<Box key={info.id} sx={{display: 'grid', gap: selected ? 1 : 0}}>
 								<FormControlLabel
-									control={<Checkbox checked={Boolean(selected)} onChange={(event) => toggleTemplate(template, event.target.checked)}/>}
-									label={selected?.displayName ?? template.displayName}
+									control={<Checkbox checked={Boolean(selected)} onChange={(event) => toggleInformation(info, event.target.checked)}/>}
+									label={extraInfoName(info)}
 								/>
-								{selected && <TaskExtraInfoSnapshotFields item={selected} onChange={updateParameter}/>}
+								{selected && <TaskExtraInfoSnapshotFields item={selected} template={template} information={info} onChange={updateParameter} onAddParameter={addParameter} onRemoveParameter={removeParameter}/>}
 							</Box>
 						)
 					})}
 				</Box>
 			</>}
 			{deletedSnapshots.map((item) => (
-				<Box key={item.id} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'warning.light', borderRadius: 1, p: 1.25}}>
+				<Box key={taskExtraInfoKey(item)} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'warning.light', borderRadius: 1, p: 1.25}}>
 					<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
-						<Typography variant="body2" sx={{fontWeight: 700}}>{item.displayName}（已删除）</Typography>
+						<Typography variant="body2" sx={{fontWeight: 700}}>{item.displayName ?? '信息'}（已删除）</Typography>
 					</Box>
-					<TaskExtraInfoSnapshotFields item={item} onChange={updateParameter}/>
+					<TaskExtraInfoSnapshotFields item={item} template={templatesByID.get(item.templateId ?? '')} onChange={updateParameter} onAddParameter={addParameter} onRemoveParameter={removeParameter}/>
 				</Box>
 			))}
 		</Box>
@@ -1392,27 +1556,51 @@ function TaskExtraInfoEditor({
 
 function TaskExtraInfoSnapshotFields({
 	item,
+	template,
+	information,
 	onChange,
+	onAddParameter,
+	onRemoveParameter,
 }: {
 	item: TaskExtraInfo
-	onChange: (itemID: string, parameterKey: string, value: string) => void
+	template?: ExtraInfoTemplate
+	information?: ExtraInfo
+	onChange: (itemKey: string, parameterIndex: number, update: Partial<TaskExtraInfo['parameters'][number]>) => void
+	onAddParameter: (itemKey: string) => void
+	onRemoveParameter: (itemKey: string, parameterIndex: number) => void
 }) {
+	const itemKey = taskExtraInfoKey(item)
+	const readonlyParameterKeys = new Set([
+		...(template?.parameters ?? []).map((parameter) => parameter.key),
+		...(information?.parameters ?? []).map((parameter) => parameter.key),
+	])
 	return (
 		<Box sx={{display: 'grid', gap: 1, pl: 4.5, minWidth: 0}}>
-			{item.fields.map((field) => <Box key={field.key} sx={{display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap'}}>
-				<Typography variant="caption" color="text.secondary">{field.displayName}</Typography>
-				<Typography variant="caption" sx={{fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere'}}>{field.value}</Typography>
-			</Box>)}
-			{item.parameters.map((parameter) => (
-				<TextField
-					key={parameter.key}
-					size="small"
-					label={parameter.displayName}
-					value={parameter.value}
-					required={parameter.required}
-					onChange={(event) => onChange(item.id, parameter.key, event.target.value)}
-				/>
-			))}
+			{item.parameters.map((parameter, parameterIndex) => {
+				const readonly = readonlyParameterKeys.has(parameter.key)
+				const inputType = extraInfoParameterInputType(parameter)
+				return <Box key={`parameter-${parameterIndex}`} sx={{display: 'grid', gap: 1, minWidth: 0}}>
+					{!readonly && <Box sx={{display: 'grid', gridTemplateColumns: {xs: 'minmax(0, 1fr)', sm: 'repeat(3, minmax(0, 1fr))'}, gap: 1, minWidth: 0}}>
+						<TextField size="small" required label="参数键" value={parameter.key} onChange={(event) => onChange(itemKey, parameterIndex, {key: event.target.value})}/>
+						<TextField size="small" required label="显示名称" value={parameter.displayName} onChange={(event) => onChange(itemKey, parameterIndex, {displayName: event.target.value})}/>
+						<TextField select size="small" label="参数类型" value={inputType} onChange={(event) => {
+							const nextInputType = event.target.value as ExtraInfoParameterInputType
+							onChange(itemKey, parameterIndex, {inputType: nextInputType, required: nextInputType === 'checkbox' ? false : parameter.required, value: nextInputType === 'checkbox' ? 'false' : parameter.value})
+						}}>
+							<MenuItem value="text">文本</MenuItem>
+							<MenuItem value="checkbox">复选框</MenuItem>
+						</TextField>
+					</Box>}
+					<Box sx={{display: 'flex', alignItems: 'center', gap: 1, minWidth: 0}}>
+						{inputType === 'checkbox'
+							? <FormControlLabel sx={{m: 0, flex: 1, minWidth: 0}} control={<Checkbox checked={parameter.value === 'true'} onChange={(event) => onChange(itemKey, parameterIndex, {value: event.target.checked ? 'true' : 'false'})}/>} label={parameter.displayName || '动态参数'}/>
+							: <TextField sx={{flex: 1}} size="small" label={parameter.displayName || '动态参数'} value={parameter.value} required={parameter.required} onChange={(event) => onChange(itemKey, parameterIndex, {value: event.target.value})}/>
+						}
+						{!readonly && <IconButton aria-label={`删除动态参数 ${parameter.displayName || parameter.key}`} size="small" color="error" onClick={() => onRemoveParameter(itemKey, parameterIndex)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>}
+					</Box>
+				</Box>
+			})}
+			<Button size="small" sx={{justifySelf: 'start'}} onClick={() => onAddParameter(itemKey)}>新增动态参数</Button>
 		</Box>
 	)
 }
@@ -1452,18 +1640,58 @@ function replaceTask(tasks: TaskRecord[], next: TaskRecord): TaskRecord[] {
 }
 
 function createExtraInfoTemplateDraft(catalogue: string): ExtraInfoTemplate {
-	return {id: '', catalogue, displayName: '', fields: [{key: '', displayName: '', value: ''}], parameters: []}
+	return {id: '', catalogue, displayName: '', builtIn: false, fields: [{key: 'name', displayName: '名称', defaultValue: ''}], parameters: []}
 }
 
 function cloneExtraInfoTemplate(template: ExtraInfoTemplate): ExtraInfoTemplate {
 	return {...template, fields: template.fields.map((field) => ({...field})), parameters: template.parameters.map((parameter) => ({...parameter}))}
 }
 
-function createTaskExtraInfo(template: ExtraInfoTemplate): TaskExtraInfo {
+function createExtraInfoDraft(template: ExtraInfoTemplate): ExtraInfo {
 	return {
-		...cloneExtraInfoTemplate(template),
-		parameters: template.parameters.map((parameter) => ({...parameter, value: ''})),
+		id: '',
+		templateId: template.id,
+		catalogue: template.catalogue,
+		fields: template.fields.map((field) => ({key: field.key, displayName: field.displayName, value: field.defaultValue ?? ''})),
+		parameters: [],
 	}
+}
+
+function cloneExtraInfo(info: ExtraInfo): ExtraInfo {
+	return {...info, fields: info.fields.map((field) => ({...field})), parameters: (info.parameters ?? []).map((parameter) => ({...parameter}))}
+}
+
+function extraInfoName(info: ExtraInfo): string {
+	return info.fields.find((field) => field.key === 'name')?.value ?? ''
+}
+
+function extraInfoParameterInputType(parameter: {inputType?: ExtraInfoParameterInputType}): ExtraInfoParameterInputType {
+	return parameter.inputType === 'checkbox' ? 'checkbox' : 'text'
+}
+
+function createTaskExtraInfo(info: ExtraInfo, template: ExtraInfoTemplate): TaskExtraInfo {
+	return {
+		id: '',
+		informationId: info.id,
+		templateId: template.id,
+		catalogue: info.catalogue,
+		displayName: extraInfoName(info),
+		fields: info.fields.map((field) => ({...field, defaultValue: undefined})),
+		parameters: [
+			...template.parameters.map((parameter) => {
+				const inputType = extraInfoParameterInputType(parameter)
+				return {...parameter, inputType, required: inputType === 'checkbox' ? false : parameter.required, value: inputType === 'checkbox' ? 'false' : ''}
+			}),
+			...(info.parameters ?? []).map((parameter) => {
+				const inputType = extraInfoParameterInputType(parameter)
+				return {...parameter, inputType, required: inputType === 'checkbox' ? false : parameter.required, value: inputType === 'checkbox' && parameter.value !== 'true' ? 'false' : parameter.value}
+			}),
+		],
+	}
+}
+
+function taskExtraInfoKey(item: TaskExtraInfo): string {
+	return item.id || item.informationId || `${item.catalogue}:${item.displayName ?? ''}`
 }
 
 function cloneTaskExtraInfo(extraInfo: TaskExtraInfo[]): TaskExtraInfo[] {

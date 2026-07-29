@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 )
 
@@ -23,6 +24,7 @@ type Manager struct {
 
 type managedSession struct {
 	info    Info
+	command string
 	session Session
 	done    chan struct{}
 }
@@ -128,7 +130,11 @@ func (manager *Manager) createWithEnvironmentBuilder(request StartRequest, envir
 	}
 
 	info := Info{ID: request.ID, TaskID: request.TaskID, State: StateActive}
-	managed := &managedSession{info: info, session: session, done: make(chan struct{})}
+	command := request.Command
+	if command == "" {
+		command = request.ShellPath
+	}
+	managed := &managedSession{info: info, command: command, session: session, done: make(chan struct{})}
 	if manager.sessions[request.TaskID] == nil {
 		manager.sessions[request.TaskID] = make(map[string]*managedSession)
 	}
@@ -140,6 +146,19 @@ func (manager *Manager) createWithEnvironmentBuilder(request StartRequest, envir
 	go manager.watch(managed)
 
 	return info, nil
+}
+
+func (manager *Manager) ListActive(taskID string) []ActiveSession {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	byID := manager.sessions[taskID]
+	items := make([]ActiveSession, 0, len(byID))
+	for _, managed := range byID {
+		items = append(items, ActiveSession{ID: managed.info.ID, Command: managed.command})
+	}
+	sort.Slice(items, func(left, right int) bool { return items[left].ID < items[right].ID })
+	return items
 }
 
 func (manager *Manager) Write(taskID, terminalID, data string) error {

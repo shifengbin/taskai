@@ -11,10 +11,13 @@ const bindings = vi.hoisted(() => ({
 	ListTasks: vi.fn(),
 	ListExtraInfoCatalogues: vi.fn(),
 	ListExtraInfoTemplates: vi.fn(),
+	ListExtraInfos: vi.fn(),
 	SaveExtraInfoCatalogue: vi.fn(),
 	SaveExtraInfoTemplate: vi.fn(),
+	SaveExtraInfo: vi.fn(),
 	DeleteExtraInfoCatalogue: vi.fn(),
 	DeleteExtraInfoTemplate: vi.fn(),
+	DeleteExtraInfo: vi.fn(),
   ReorderTasks: vi.fn(),
 	ReportTerminalTitleActivity: vi.fn(),
   StartTask: vi.fn(),
@@ -77,6 +80,7 @@ describe('App confirmation flows', () => {
 		bindings.ReportTerminalTitleActivity.mockResolvedValue(true)
 		bindings.ListExtraInfoCatalogues.mockResolvedValue([])
 		bindings.ListExtraInfoTemplates.mockResolvedValue([])
+		bindings.ListExtraInfos.mockResolvedValue([])
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
@@ -318,104 +322,291 @@ describe('App confirmation flows', () => {
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
   })
 
-	it('在设置按钮旁管理分类，并以选择方式为多字段信息保存分类', async () => {
+	it('管理内置 Git 模板，并先选择模板后以默认值创建可复用信息', async () => {
 		const user = userEvent.setup()
-		bindings.SaveExtraInfoCatalogue.mockResolvedValue('git')
-		bindings.SaveExtraInfoTemplate.mockResolvedValue({
-			id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [
-				{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'},
-				{key: 'remote', displayName: '远程名称', value: 'origin'},
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [
+				{key: 'name', displayName: '项目名称', defaultValue: ''},
+				{key: 'repository', displayName: '仓库地址', defaultValue: 'git@example.com:team/api.git'},
 			],
-			parameters: [{key: 'branch', displayName: '分支', required: true}],
+			parameters: [{key: 'branch', displayName: '仓库分支', required: true}],
+		}])
+		bindings.SaveExtraInfo.mockResolvedValue({
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [
+				{key: 'name', displayName: '项目名称', value: 'API 服务'},
+				{key: 'repository', displayName: '仓库地址', value: 'git@example.com:team/api.git'},
+			],
 		})
 		render(<App/>)
 
 		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
-		expect(screen.getByRole('dialog', {name: '额外信息管理'})).toBeInTheDocument()
-		await user.type(screen.getByRole('textbox', {name: '分类名称'}), 'git')
-		await user.click(screen.getByRole('button', {name: '新增分类'}))
-		await waitFor(() => expect(bindings.SaveExtraInfoCatalogue).toHaveBeenCalledWith('git'))
-		await waitFor(() => expect(screen.getByRole('button', {name: '新增信息'})).toBeEnabled())
+		expect(screen.getByText('内置 Git')).toBeInTheDocument()
+		expect(screen.getByRole('button', {name: '删除模板 git'})).toBeDisabled()
+		expect(screen.getAllByRole('button', {name: '新增信息'})).toHaveLength(1)
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		expect(screen.getByRole('combobox')).toHaveTextContent('git')
-		await user.type(screen.getByRole('textbox', {name: '信息展示名称'}), 'API 仓库')
-		await user.type(screen.getByRole('textbox', {name: '固定键 1'}), 'repository')
-		await user.type(screen.getByRole('textbox', {name: '固定字段显示名称 1'}), '仓库')
-		await user.type(screen.getByRole('textbox', {name: '固定值 1'}), 'git@example.com:team/api.git')
-		await user.click(screen.getByRole('button', {name: '新增固定字段'}))
-		await user.type(screen.getByRole('textbox', {name: '固定键 2'}), 'remote')
-		await user.type(screen.getByRole('textbox', {name: '固定字段显示名称 2'}), '远程名称')
-		await user.type(screen.getByRole('textbox', {name: '固定值 2'}), 'origin')
-		await user.click(screen.getByRole('button', {name: '新增参数'}))
-		await user.type(screen.getByRole('textbox', {name: '参数键 1'}), 'branch')
-		await user.type(screen.getByRole('textbox', {name: '参数显示名称 1'}), '分支')
-		await user.click(screen.getByRole('checkbox', {name: '参数 1 必填'}))
+		expect(screen.getByRole('combobox', {name: '选择模板'})).toBeInTheDocument()
+		await user.click(screen.getByRole('combobox', {name: '选择模板'}))
+		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
+		await user.type(screen.getByRole('textbox', {name: '项目名称'}), 'API 服务')
+		expect(screen.getByRole('textbox', {name: '仓库地址'})).toHaveValue('git@example.com:team/api.git')
 		await user.click(screen.getByRole('button', {name: '保存信息'}))
 
-		await waitFor(() => expect(bindings.SaveExtraInfoTemplate).toHaveBeenCalledWith({
-			id: '', catalogue: 'git', displayName: 'API 仓库', fields: [
-				{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'},
-				{key: 'remote', displayName: '远程名称', value: 'origin'},
-			],
-			parameters: [{key: 'branch', displayName: '分支', required: true}],
-		}))
+		await waitFor(() => expect(bindings.SaveExtraInfo).toHaveBeenCalledWith(expect.objectContaining({
+			id: '', templateId: 'git-template', catalogue: 'git', fields: expect.arrayContaining([
+				expect.objectContaining({key: 'name', value: 'API 服务'}),
+				expect.objectContaining({key: 'repository', value: 'git@example.com:team/api.git'}),
+			]),
+		})))
 	})
 
-	it('创建任务时切换分类选择多个信息并保留已选项', async () => {
+	it('模板动态参数可切换为复选框，且不再设置必填状态', async () => {
 		const user = userEvent.setup()
-		bindings.ListExtraInfoCatalogues.mockResolvedValue(['git', 'issue'])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增模板'}))
+		await user.click(screen.getByRole('button', {name: '新增参数'}))
+		await user.click(screen.getByLabelText('参数 1 必填'))
+		await user.click(screen.getByRole('combobox', {name: '参数类型 1'}))
+		await user.click(screen.getByRole('option', {name: '复选框'}))
+
+		expect(screen.queryByLabelText('参数 1 必填')).not.toBeInTheDocument()
+	})
+
+	it('信息级动态参数保存默认值并在任务中作为只读定义带入', async () => {
+		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([{
-			id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'}],
-			parameters: [{key: 'branch', displayName: '分支', required: true}],
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [
+				{key: 'name', displayName: '项目名称', defaultValue: ''},
+				{key: 'repository', displayName: '仓库地址', defaultValue: 'git@example.com:team/api.git'},
+			],
+			parameters: [{key: 'branch', displayName: '仓库分支', required: false}],
+		}])
+		bindings.SaveExtraInfo.mockResolvedValue({
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [
+				{key: 'name', displayName: '项目名称', value: 'API 服务'},
+				{key: 'repository', displayName: '仓库地址', value: 'git@example.com:team/api.git'},
+			],
+			parameters: [{key: 'environment', displayName: '环境', required: true, value: 'production'}],
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		await user.click(screen.getByRole('combobox', {name: '选择模板'}))
+		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
+		await user.type(screen.getByRole('textbox', {name: '项目名称'}), 'API 服务')
+		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
+		await user.type(screen.getByRole('textbox', {name: '参数键 1'}), 'environment')
+		await user.type(screen.getByRole('textbox', {name: '参数显示名称 1'}), '环境')
+		await user.type(screen.getByRole('textbox', {name: '默认值 1'}), 'production')
+		await user.click(screen.getByLabelText('参数 1 必填'))
+		await user.click(screen.getByRole('button', {name: '保存信息'}))
+
+		await waitFor(() => expect(bindings.SaveExtraInfo).toHaveBeenCalledWith(expect.objectContaining({
+			parameters: [expect.objectContaining({key: 'environment', displayName: '环境', required: true, value: 'production'})],
+		})))
+		await user.click(await screen.findByRole('button', {name: '关闭'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '额外信息管理'})).not.toBeInTheDocument())
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		await user.click(screen.getByRole('checkbox', {name: 'API 服务'}))
+		expect(screen.getByRole('textbox', {name: '环境'})).toHaveValue('production')
+		expect(screen.queryByRole('textbox', {name: '参数键'})).not.toBeInTheDocument()
+		expect(screen.queryByRole('textbox', {name: '显示名称'})).not.toBeInTheDocument()
+	})
+
+	it('按模板折叠信息并按名称搜索', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
 		}, {
-			id: 'template-2', catalogue: 'issue', displayName: '缺陷单', fields: [{key: 'project', displayName: '项目', value: 'TASK'}], parameters: [],
+			id: 'issue-template', catalogue: 'issue', displayName: '缺陷', builtIn: false,
+			fields: [{key: 'name', displayName: '名称'}], parameters: [],
+		}])
+		bindings.ListExtraInfos.mockResolvedValue([{
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [{key: 'name', displayName: '项目名称', value: 'API 服务'}],
+		}, {
+			id: 'issue-info', templateId: 'issue-template', catalogue: 'issue', fields: [{key: 'name', displayName: '名称', value: '缺陷单'}],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		const gitGroup = screen.getByRole('button', {name: /Git.*git/})
+		const issueGroup = screen.getByRole('button', {name: /缺陷.*issue/})
+		expect(gitGroup).toHaveAttribute('aria-expanded', 'true')
+		expect(issueGroup).toHaveAttribute('aria-expanded', 'false')
+		await user.type(screen.getByRole('textbox', {name: '搜索信息'}), '缺陷')
+		await waitFor(() => expect(issueGroup).toHaveAttribute('aria-expanded', 'true'))
+		expect(gitGroup).toBeInTheDocument()
+		expect(screen.getByText('缺陷单')).toBeInTheDocument()
+		expect(screen.queryByText('API 服务')).not.toBeInTheDocument()
+	})
+
+	it('分类模板可以整体折叠而不影响信息分组', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
+		}])
+		bindings.ListExtraInfos.mockResolvedValue([{
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [{key: 'name', displayName: '项目名称', value: 'API 服务'}],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		const templateSection = screen.getByRole('button', {name: /分类模板/})
+		expect(templateSection).toHaveAttribute('aria-expanded', 'true')
+		await user.click(templateSection)
+		expect(templateSection).toHaveAttribute('aria-expanded', 'false')
+		expect(screen.getByRole('button', {name: /Git.*git/})).toBeInTheDocument()
+	})
+
+	it('分类模板列表使用可滚动的纵向布局，避免覆盖后续模板', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
+		}, {
+			id: 'legacy-template', catalogue: 'git-legacy', displayName: '旧仓库', builtIn: false,
+			fields: [{key: 'name', displayName: '项目名称'}], parameters: [],
+		}, {
+			id: 'other-template', catalogue: 'other', displayName: '其他', builtIn: false,
+			fields: [{key: 'name', displayName: '名称'}], parameters: [],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		const content = screen.getByTestId('extra-info-manager-content')
+		expect(getComputedStyle(content).display).toBe('flex')
+		expect(getComputedStyle(content).flexDirection).toBe('column')
+		expect(screen.getByText('git', {selector: 'p'})).toBeInTheDocument()
+		expect(screen.getByText('git-legacy', {selector: 'p'})).toBeInTheDocument()
+		expect(screen.getByText('other', {selector: 'p'})).toBeInTheDocument()
+	})
+
+	it('创建任务时按名称搜索信息，且只填写动态参数', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}],
+			parameters: [{key: 'branch', displayName: '仓库分支', required: true}],
+		}, {
+			id: 'issue-template', catalogue: 'issue', builtIn: false,
+			fields: [{key: 'name', displayName: '名称'}, {key: 'project', displayName: '项目'}], parameters: [],
+		}])
+		bindings.ListExtraInfos.mockResolvedValue([{
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [
+				{key: 'name', displayName: '项目名称', value: 'API 服务'},
+				{key: 'repository', displayName: '仓库地址', value: 'git@example.com:team/api.git'},
+			],
+		}, {
+			id: 'issue-info', templateId: 'issue-template', catalogue: 'issue', fields: [
+				{key: 'name', displayName: '名称', value: '缺陷单'}, {key: 'project', displayName: '项目', value: 'TASK-123'},
+			],
 		}])
 		bindings.CreateTaskWithExtraInfo.mockResolvedValue({
-			id: 'task-2', title: '关联 API', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
-			extraInfo: [{
-				id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'}],
-				parameters: [{key: 'branch', displayName: '分支', required: true, value: 'main'}],
-			}, {
-				id: 'template-2', catalogue: 'issue', displayName: '缺陷单', fields: [{key: 'project', displayName: '项目', value: 'TASK'}], parameters: [],
-			}],
+			id: 'task-2', title: '关联 API', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z', extraInfo: [],
 		})
 		render(<App/>)
 
 		await user.click(await screen.findByRole('button', {name: '新建任务'}))
 		await user.type(screen.getByRole('textbox', {name: '标题'}), '关联 API')
-		expect(screen.getByText('已选择 0 项')).toBeInTheDocument()
-		await user.click(screen.getByRole('checkbox', {name: 'API 仓库'}))
-		await user.type(screen.getByRole('textbox', {name: '分支'}), 'main')
+		const search = screen.getByRole('textbox', {name: '搜索信息'})
+		await user.type(search, 'API')
+		await user.click(screen.getByRole('checkbox', {name: 'API 服务'}))
+		expect(screen.queryByRole('textbox', {name: '项目名称'})).not.toBeInTheDocument()
+		expect(screen.queryByRole('textbox', {name: '仓库地址'})).not.toBeInTheDocument()
+		await user.type(screen.getByRole('textbox', {name: '仓库分支'}), 'main')
+		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
+		await user.type(screen.getByRole('textbox', {name: '参数键'}), 'tag')
+		await user.type(screen.getByRole('textbox', {name: '显示名称'}), '发布标签')
+		await user.type(screen.getByRole('textbox', {name: '发布标签'}), 'v1.2.0')
 		await user.click(screen.getByLabelText('选择分类'))
 		await user.click(screen.getByRole('option', {name: 'issue'}))
+		expect(search).toHaveValue('API')
+		expect(screen.queryByRole('checkbox', {name: '缺陷单'})).not.toBeInTheDocument()
+		await user.clear(search)
 		await user.click(screen.getByRole('checkbox', {name: '缺陷单'}))
-		expect(screen.getByText('git · API 仓库')).toBeInTheDocument()
-		expect(screen.getByText('issue · 缺陷单')).toBeInTheDocument()
+		expect(screen.queryByText('git · API 服务')).not.toBeInTheDocument()
+		expect(screen.queryByText('issue · 缺陷单')).not.toBeInTheDocument()
+		expect(screen.getByText('API 服务')).toBeInTheDocument()
+		expect(screen.getAllByText('缺陷单')).not.toHaveLength(0)
 		await user.click(screen.getByRole('button', {name: '创建'}))
 
-		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('关联 API', '', '#4f46e5', [{
-			id: 'template-1', catalogue: 'git', displayName: 'API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/api.git'}],
-			parameters: [{key: 'branch', displayName: '分支', required: true, value: 'main'}],
-		}, {
-			id: 'template-2', catalogue: 'issue', displayName: '缺陷单', fields: [{key: 'project', displayName: '项目', value: 'TASK'}], parameters: [],
-		}]))
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('关联 API', '', '#4f46e5', expect.arrayContaining([
+			expect.objectContaining({
+				informationId: 'api-info', templateId: 'git-template', catalogue: 'git',
+				parameters: expect.arrayContaining([
+					expect.objectContaining({key: 'branch', value: 'main'}),
+					expect.objectContaining({key: 'tag', displayName: '发布标签', value: 'v1.2.0'}),
+				]),
+			}),
+			expect.objectContaining({informationId: 'issue-info', templateId: 'issue-template', catalogue: 'issue'}),
+		])))
 	})
 
-	it('编辑任务时保留已删除模板快照并允许修改参数', async () => {
+	it('任务中的复选框动态参数以 true 或 false 保存', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}],
+			parameters: [{key: 'branch', displayName: '仓库分支', required: false, inputType: 'checkbox'}],
+		}])
+		bindings.ListExtraInfos.mockResolvedValue([{
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [
+				{key: 'name', displayName: '项目名称', value: 'API 服务'},
+				{key: 'repository', displayName: '仓库地址', value: 'git@example.com:team/api.git'},
+			], parameters: [],
+		}])
+		bindings.CreateTaskWithExtraInfo.mockResolvedValue({
+			id: 'task-2', title: '发布 API', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z', extraInfo: [],
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '发布 API')
+		await user.click(screen.getByRole('checkbox', {name: 'API 服务'}))
+		const branch = screen.getByRole('checkbox', {name: '仓库分支'})
+		expect(branch).not.toBeChecked()
+		await user.click(branch)
+		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
+		await user.type(screen.getByRole('textbox', {name: '参数键'}), 'notify')
+		await user.type(screen.getByRole('textbox', {name: '显示名称'}), '发送通知')
+		await user.click(screen.getByRole('combobox', {name: '参数类型'}))
+		await user.click(screen.getByRole('option', {name: '复选框'}))
+		const notify = screen.getByRole('checkbox', {name: '发送通知'})
+		expect(notify).not.toBeChecked()
+		await user.click(notify)
+		await user.click(screen.getByRole('button', {name: '创建'}))
+
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('发布 API', '', '#4f46e5', expect.arrayContaining([
+			expect.objectContaining({
+				parameters: expect.arrayContaining([
+					expect.objectContaining({key: 'branch', inputType: 'checkbox', required: false, value: 'true'}),
+					expect.objectContaining({key: 'notify', inputType: 'checkbox', required: false, value: 'true'}),
+				]),
+			}),
+		])))
+	})
+
+	it('编辑任务时保留已删除信息快照并允许修改动态参数', async () => {
 		const user = userEvent.setup()
 		bindings.ListTasks.mockResolvedValue([{
 			id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
 			extraInfo: [{
-				id: 'removed-template', catalogue: 'git', displayName: '旧 API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/old-api.git'}],
-				parameters: [{key: 'branch', displayName: '分支', required: true, value: 'main'}],
+				id: 'snapshot-old', informationId: 'removed-info', templateId: 'git-template', catalogue: 'git', displayName: '旧 API 仓库',
+				fields: [
+					{key: 'name', displayName: '项目名称', value: '旧 API 仓库'},
+					{key: 'repository', displayName: '仓库地址', value: 'git@example.com:team/old-api.git'},
+				],
+				parameters: [{key: 'branch', displayName: '仓库分支', required: true, value: 'main'}],
 			}],
 		}])
 		bindings.UpdateTaskWithExtraInfo.mockResolvedValue({
-			id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
-			extraInfo: [{
-				id: 'removed-template', catalogue: 'git', displayName: '旧 API 仓库', fields: [{key: 'repository', displayName: '仓库', value: 'git@example.com:team/old-api.git'}],
-				parameters: [{key: 'branch', displayName: '分支', required: true, value: 'release/1.0'}],
-			}],
+			id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z', extraInfo: [],
 		})
 		render(<App/>)
 
@@ -423,13 +614,14 @@ describe('App confirmation flows', () => {
 		await user.click(screen.getByRole('button', {name: '任务操作'}))
 		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
 		expect(screen.getByText('旧 API 仓库（已删除）')).toBeInTheDocument()
-		const branch = screen.getByRole('textbox', {name: '分支'})
+		expect(screen.queryByRole('textbox', {name: '项目名称'})).not.toBeInTheDocument()
+		const branch = screen.getByRole('textbox', {name: '仓库分支'})
 		await user.clear(branch)
 		await user.type(branch, 'release/1.0')
 		await user.click(screen.getByRole('button', {name: '保存'}))
 
 		await waitFor(() => expect(bindings.UpdateTaskWithExtraInfo).toHaveBeenCalledWith('task-1', '清理临时文件', '', '#4f46e5', expect.arrayContaining([
-			expect.objectContaining({id: 'removed-template', parameters: [expect.objectContaining({key: 'branch', value: 'release/1.0'})]}),
+			expect.objectContaining({id: 'snapshot-old', parameters: [expect.objectContaining({key: 'branch', value: 'release/1.0'})]}),
 		])))
 	})
 
@@ -920,7 +1112,6 @@ describe('App confirmation flows', () => {
 	  afterScript: {script: 'after-script', arguments: ['--after']},
     })
   })
-})
 
 	it('将任务菜单配置显示为菜单管理', async () => {
 		const user = userEvent.setup()
@@ -931,3 +1122,4 @@ describe('App confirmation flows', () => {
 		await user.click(screen.getByRole('tab', {name: '菜单管理'}))
 		expect(screen.getByText('右键菜单与“任务操作”下拉菜单共用此顺序。系统项仅可调序。')).toBeInTheDocument()
 	})
+})
