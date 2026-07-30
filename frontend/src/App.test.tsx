@@ -6,8 +6,10 @@ const bindings = vi.hoisted(() => ({
   ClearSelectedTerminal: vi.fn(),
   CreateTask: vi.fn(),
 	CreateTaskWithExtraInfo: vi.fn(),
+	CreateTaskWithExtraInfoAndLifecycleChains: vi.fn(),
   UpdateTask: vi.fn(),
 	UpdateTaskWithExtraInfo: vi.fn(),
+	UpdateTaskWithExtraInfoAndLifecycleChains: vi.fn(),
 	ListTasks: vi.fn(),
 	ListExtraInfoCatalogues: vi.fn(),
 	ListExtraInfoTemplates: vi.fn(),
@@ -18,9 +20,19 @@ const bindings = vi.hoisted(() => ({
 	DeleteExtraInfoCatalogue: vi.fn(),
 	DeleteExtraInfoTemplate: vi.fn(),
 	DeleteExtraInfo: vi.fn(),
+	ListLifecycleCommands: vi.fn(),
+	SaveLifecycleCommand: vi.fn(),
+	DeleteLifecycleCommand: vi.fn(),
+	ListLifecycleCommandChains: vi.fn(),
+	SaveLifecycleCommandChain: vi.fn(),
+	CopyLifecycleCommandChain: vi.fn(),
+	DeleteLifecycleCommandChain: vi.fn(),
+	SaveLifecycleDefaultChain: vi.fn(),
   ReorderTasks: vi.fn(),
+	SetTaskShelved: vi.fn(),
 	ReportTerminalTitleActivity: vi.fn(),
   StartTask: vi.fn(),
+	RetryTaskLifecycleCommandChain: vi.fn(),
   FinishTask: vi.fn(),
   GetSettings: vi.fn(),
   SaveSettings: vi.fn(),
@@ -81,6 +93,8 @@ describe('App confirmation flows', () => {
 		bindings.ListExtraInfoCatalogues.mockResolvedValue([])
 		bindings.ListExtraInfoTemplates.mockResolvedValue([])
 		bindings.ListExtraInfos.mockResolvedValue([])
+		bindings.ListLifecycleCommands.mockResolvedValue([])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([])
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
@@ -144,6 +158,21 @@ describe('App confirmation flows', () => {
 
     await user.click(screen.getByRole('tab', {name: /已完成/}))
     await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'completed'})))
+  })
+
+  it('从任务操作菜单搁置任务后使用完整列表刷新任务树', async () => {
+    const user = userEvent.setup()
+    bindings.SetTaskShelved.mockResolvedValue([{
+      id: 'task-1', title: '清理临时文件', description: '', status: 'running', shelved: true, createdAt: '2026-07-22T00:00:00Z',
+    }])
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(await screen.findByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '搁置任务'}))
+
+    expect(bindings.SetTaskShelved).toHaveBeenCalledWith('task-1', true)
+    expect(await screen.findByRole('button', {name: '展开已搁置任务'})).toHaveTextContent('已搁置 (1)')
   })
 
   it('指针拖动任务条目后持久化同状态内的新顺序', async () => {
@@ -321,6 +350,173 @@ describe('App confirmation flows', () => {
 
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
   })
+
+	it('新建任务预选默认命令链，并通过链选择绑定保存', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleChains: [
+				{id: 'start-chain', name: '启动准备', commandIds: ['system.lifecycle.create-workspace'], applicableHooks: ['postStart']},
+				{id: 'end-chain', name: '结束清理', commandIds: ['system.lifecycle.delete-workspace'], applicableHooks: ['beforeEnd']},
+			],
+			lifecycleDefaultChains: {postStart: 'start-chain', beforeEnd: 'end-chain'},
+		})
+		bindings.CreateTaskWithExtraInfoAndLifecycleChains.mockResolvedValue({
+			id: 'task-new', title: '带链任务', description: '', color: '#4f46e5', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		expect(screen.getByLabelText('开始后')).toHaveTextContent('启动准备')
+		const titleInput = document.querySelector<HTMLInputElement>('input[required]')
+		const taskForm = titleInput?.closest('form')
+		if (!titleInput || !taskForm) {
+			throw new Error('未找到新建任务表单')
+		}
+		fireEvent.change(titleInput, {target: {value: '带链任务'}})
+		fireEvent.submit(taskForm)
+
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndLifecycleChains).toHaveBeenCalledWith(
+			'带链任务', '', '#4f46e5', [], {postStart: 'start-chain', beforeEnd: 'end-chain'},
+		))
+	})
+
+	it('按钩子范围筛选新建任务链，并在编辑任务时锁定链选择', async () => {
+		const user = userEvent.setup()
+		const beforeStartChain = {id: 'before-start-chain', name: '开始前准备', commandIds: ['prepare'], applicableHooks: ['beforeStart']}
+		const postStartChain = {id: 'post-start-chain', name: '开始后通知', commandIds: ['notify'], applicableHooks: ['postStart']}
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'task-scoped', title: '有范围的任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
+		}])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleChains: [beforeStartChain, postStartChain], lifecycleDefaultChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
+		})
+		bindings.UpdateTask.mockResolvedValue({
+			id: 'task-scoped', title: '更新后的范围任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
+		})
+		bindings.UpdateTaskWithExtraInfoAndLifecycleChains.mockResolvedValue({
+			id: 'task-scoped', title: '更新后的范围任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		await user.click(screen.getByLabelText('开始前'))
+		expect(await screen.findByRole('option', {name: '开始前准备'})).toBeInTheDocument()
+		expect(screen.queryByRole('option', {name: '开始后通知'})).not.toBeInTheDocument()
+		await user.keyboard('{Escape}')
+		await user.click(screen.getByRole('button', {name: '取消'}))
+
+		await user.click(await screen.findByRole('tab', {name: /执行中/}))
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByLabelText('开始前')).toHaveAttribute('aria-disabled', 'true')
+		expect(screen.getByLabelText('开始后')).toHaveAttribute('aria-disabled', 'true')
+		await user.clear(screen.getByRole('textbox', {name: '标题'}))
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '更新后的范围任务')
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.UpdateTask).toHaveBeenCalledWith('task-scoped', '更新后的范围任务', '', '#4f46e5'))
+		expect(bindings.UpdateTaskWithExtraInfoAndLifecycleChains).not.toHaveBeenCalled()
+	})
+
+	it('编辑未执行任务时可修改命令链', async () => {
+		const user = userEvent.setup()
+		const beforeStartChain = {id: 'before-start-chain', name: '开始前准备', commandIds: ['prepare'], applicableHooks: ['beforeStart']}
+		const postStartChain = {id: 'post-start-chain', name: '开始后通知', commandIds: ['notify'], applicableHooks: ['postStart']}
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'task-pending-chain', title: '待调整链任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleChains: {beforeStart: beforeStartChain.id},
+		}])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleChains: [beforeStartChain, postStartChain], lifecycleDefaultChains: {},
+		})
+		bindings.UpdateTaskWithExtraInfoAndLifecycleChains.mockResolvedValue({
+			id: 'task-pending-chain', title: '待调整链任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
+		})
+		render(<App/>)
+
+		await screen.findByText('待调整链任务')
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByLabelText('开始后')).not.toHaveAttribute('aria-disabled', 'true')
+		await user.click(screen.getByLabelText('开始后'))
+		await user.click(await screen.findByRole('option', {name: '开始后通知'}))
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.UpdateTaskWithExtraInfoAndLifecycleChains).toHaveBeenCalledWith(
+			'task-pending-chain', '待调整链任务', '', '#4f46e5', [], {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
+		))
+	})
+
+	it('编辑已完成任务时锁定命令链', async () => {
+		const user = userEvent.setup()
+		const postEndChain = {id: 'post-end-chain', name: '结束后清理', commandIds: ['cleanup'], applicableHooks: ['postEnd']}
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'task-completed-chain', title: '已完成链任务', description: '', status: 'completed', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleChains: {postEnd: postEndChain.id},
+		}])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleChains: [postEndChain], lifecycleDefaultChains: {}, activeTaskStatus: 'completed',
+		})
+		bindings.UpdateTask.mockResolvedValue({
+			id: 'task-completed-chain', title: '已完成链任务', description: '', status: 'completed', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleChains: {postEnd: postEndChain.id},
+		})
+		render(<App/>)
+
+		await screen.findByText('已完成链任务')
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByLabelText('结束后')).toHaveAttribute('aria-disabled', 'true')
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.UpdateTask).toHaveBeenCalledWith('task-completed-chain', '已完成链任务', '', '#4f46e5'))
+		expect(bindings.UpdateTaskWithExtraInfoAndLifecycleChains).not.toHaveBeenCalled()
+	})
+
+	it('命令和链管理按适用范围保存并筛选命令', async () => {
+		const user = userEvent.setup()
+		const beforeStartCommand = {id: 'prepare', kind: 'custom', name: '开始前命令', command: 'prepare', arguments: [], applicableHooks: ['beforeStart']}
+		const postStartCommand = {id: 'notify', kind: 'custom', name: '开始后命令', command: 'notify', arguments: [], applicableHooks: ['postStart']}
+		bindings.ListLifecycleCommands.mockResolvedValue([beforeStartCommand, postStartCommand])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleCommands: [beforeStartCommand, postStartCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+		})
+		bindings.SaveLifecycleCommand.mockResolvedValue({...beforeStartCommand, id: 'new-command', name: '新命令'})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		await screen.findByText('开始前命令')
+		await user.click(screen.getByRole('button', {name: '新增链'}))
+		const chainDialog = screen.getByRole('dialog', {name: '新增命令链'})
+		expect(within(chainDialog).getByText('请先选择命令链适用范围。')).toBeInTheDocument()
+		await user.click(within(chainDialog).getByLabelText('开始前'))
+		expect(await within(chainDialog).findByLabelText('开始前命令')).toBeInTheDocument()
+		expect(within(chainDialog).queryByLabelText('开始后命令')).not.toBeInTheDocument()
+    await user.click(within(chainDialog).getByRole('button', {name: '取消'}))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', {name: '新增命令链'})).not.toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', {name: '新增命令'}))
+		const commandDialog = screen.getByRole('dialog', {name: '新增命令'})
+		expect(within(commandDialog).getByRole('button', {name: '保存命令'})).toBeDisabled()
+		await user.type(within(commandDialog).getByRole('textbox', {name: '命令名称'}), '新命令')
+		await user.type(within(commandDialog).getByRole('textbox', {name: '可执行命令'}), 'new-command')
+		await user.click(within(commandDialog).getByLabelText('开始前'))
+		await user.click(within(commandDialog).getByRole('button', {name: '保存命令'}))
+		await waitFor(() => expect(bindings.SaveLifecycleCommand).toHaveBeenCalledWith(expect.objectContaining({name: '新命令', command: 'new-command', applicableHooks: ['beforeStart']})))
+	})
 
 	it('管理内置 Git 模板，并以默认值创建可复用信息', async () => {
 		const user = userEvent.setup()

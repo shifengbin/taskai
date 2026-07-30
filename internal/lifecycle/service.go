@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"taskai/internal/settings"
 	"taskai/internal/storage"
 	"taskai/internal/task"
 	"taskai/internal/workspace"
@@ -11,10 +12,6 @@ import (
 
 type TerminalCloser interface {
 	CloseTask(taskID string) error
-}
-
-type TerminalReopener interface {
-	ReopenTask(taskID string)
 }
 
 type Service struct {
@@ -32,6 +29,14 @@ func (service *Service) CreateTask(title, description, color string) (task.Task,
 }
 
 func (service *Service) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
+	return service.createTask(title, description, color, extraInfo, nil, true)
+}
+
+func (service *Service) CreateTaskWithExtraInfoAndLifecycleChains(title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string) (task.Task, error) {
+	return service.createTask(title, description, color, extraInfo, chains, false)
+}
+
+func (service *Service) createTask(title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string, useDefaults bool) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -40,6 +45,15 @@ func (service *Service) CreateTaskWithExtraInfo(title, description, color string
 	created, err := task.NewTask(title, description, color, service.now())
 	if err != nil {
 		return task.Task{}, err
+	}
+	if useDefaults {
+		created.LifecycleChains = copyLifecycleChains(data.Settings.LifecycleDefaultChains)
+	} else {
+		selected, err := validateLifecycleChainSelections(data.Settings, chains)
+		if err != nil {
+			return task.Task{}, err
+		}
+		created.LifecycleChains = selected
 	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, nil, extraInfo)
 	if err != nil {
@@ -57,6 +71,16 @@ func (service *Service) CreateTaskWithExtraInfo(title, description, color string
 	return created, nil
 }
 
+func copyLifecycleChains(chains map[task.LifecycleHook]string) map[task.LifecycleHook]string {
+	copy := make(map[task.LifecycleHook]string, len(chains))
+	for hook, chainID := range chains {
+		if chainID != "" {
+			copy[hook] = chainID
+		}
+	}
+	return copy
+}
+
 func (service *Service) ListTasks() ([]task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
@@ -64,6 +88,18 @@ func (service *Service) ListTasks() ([]task.Task, error) {
 	}
 
 	return data.Tasks, nil
+}
+
+func (service *Service) GetTask(taskID string) (task.Task, error) {
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	return data.Tasks[index], nil
 }
 
 func (service *Service) ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error) {
@@ -105,6 +141,59 @@ func (service *Service) ReorderTasks(status task.Status, taskIDs []string) ([]ta
 		return nil, err
 	}
 
+	return data.Tasks, nil
+}
+
+func (service *Service) SetTaskShelved(taskID string, shelved bool) ([]task.Task, error) {
+	data, err := service.repository.Load()
+	if err != nil {
+		return nil, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return nil, err
+	}
+	target := data.Tasks[index]
+	if target.Status != task.StatusRunning {
+		return nil, fmt.Errorf("仅执行中任务可以切换搁置状态")
+	}
+	if target.IsLifecycleLocked() {
+		return nil, fmt.Errorf("任务正在执行命令链，暂不能切换搁置状态")
+	}
+	if target.Shelved == shelved {
+		return data.Tasks, nil
+	}
+
+	positions := make([]int, 0)
+	normalTasks := make([]task.Task, 0)
+	shelvedTasks := make([]task.Task, 0)
+	for taskIndex, current := range data.Tasks {
+		if current.Status != task.StatusRunning {
+			continue
+		}
+		positions = append(positions, taskIndex)
+		if current.ID == taskID {
+			continue
+		}
+		if current.Shelved {
+			shelvedTasks = append(shelvedTasks, current)
+			continue
+		}
+		normalTasks = append(normalTasks, current)
+	}
+	target.Shelved = shelved
+	if shelved {
+		shelvedTasks = append(shelvedTasks, target)
+	} else {
+		normalTasks = append(normalTasks, target)
+	}
+	ordered := append(normalTasks, shelvedTasks...)
+	for positionIndex, taskIndex := range positions {
+		data.Tasks[taskIndex] = ordered[positionIndex]
+	}
+	if err := service.repository.Save(data); err != nil {
+		return nil, err
+	}
 	return data.Tasks, nil
 }
 
@@ -154,6 +243,96 @@ func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, colo
 		return task.Task{}, err
 	}
 	return updated, nil
+}
+
+func (service *Service) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string) (task.Task, error) {
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	current := data.Tasks[index]
+	if current.Status != task.StatusPending {
+		return task.Task{}, fmt.Errorf("仅未执行任务可以修改生命周期命令链")
+	}
+	if current.IsLifecycleLocked() {
+		return task.Task{}, fmt.Errorf("任务正在执行命令链，暂不能修改")
+	}
+	selected, err := validateLifecycleChainSelections(data.Settings, chains)
+	if err != nil {
+		return task.Task{}, err
+	}
+	updated, err := current.UpdateDetails(title, description, color)
+	if err != nil {
+		return task.Task{}, err
+	}
+	snapshots, err := buildTaskExtraInfoSnapshots(data, current.ExtraInfo, extraInfo)
+	if err != nil {
+		return task.Task{}, err
+	}
+	updated, err = updated.UpdateExtraInfo(snapshots)
+	if err != nil {
+		return task.Task{}, err
+	}
+	updated.LifecycleChains = selected
+	data.Tasks[index] = updated
+	if err := service.repository.Save(data); err != nil {
+		return task.Task{}, err
+	}
+	return updated, nil
+}
+
+func (service *Service) UpdateLifecycleExecution(taskID string, execution *task.LifecycleExecution) (task.Task, error) {
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	normalized, err := task.NormalizeLifecycleExecution(execution)
+	if err != nil {
+		return task.Task{}, err
+	}
+	data.Tasks[index].LifecycleExecution = normalized
+	if err := service.repository.Save(data); err != nil {
+		return task.Task{}, err
+	}
+	return data.Tasks[index], nil
+}
+
+func validateLifecycleChainSelections(current settings.Settings, chains map[task.LifecycleHook]string) (map[task.LifecycleHook]string, error) {
+	normalized, err := task.NormalizeLifecycleChains(chains)
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[string]settings.LifecycleCommandChain, len(current.LifecycleChains))
+	for _, chain := range current.LifecycleChains {
+		known[chain.ID] = chain
+	}
+	for hook, chainID := range normalized {
+		chain, found := known[chainID]
+		if !found {
+			return nil, fmt.Errorf("%s 选择的生命周期命令链不存在: %q", hook, chainID)
+		}
+		if !lifecycleChainSupportsHook(chain, hook) {
+			return nil, fmt.Errorf("%s 选择的生命周期命令链不适用: %q", hook, chainID)
+		}
+	}
+	return normalized, nil
+}
+
+func lifecycleChainSupportsHook(chain settings.LifecycleCommandChain, hook task.LifecycleHook) bool {
+	for _, applicableHook := range chain.ApplicableHooks {
+		if applicableHook == hook {
+			return true
+		}
+	}
+	return false
 }
 
 func buildTaskExtraInfoSnapshots(data storage.Data, existing, requested []task.TaskExtraInfo) ([]task.TaskExtraInfo, error) {
@@ -330,6 +509,14 @@ func sameFields(left, right []task.ExtraInfoField) bool {
 }
 
 func (service *Service) StartTask(taskID string) (task.Task, error) {
+	prepared, err := service.PrepareStartTask(taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	return service.CommitStartTask(prepared)
+}
+
+func (service *Service) PrepareStartTask(taskID string) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -342,15 +529,36 @@ func (service *Service) StartTask(taskID string) (task.Task, error) {
 		return task.Task{}, fmt.Errorf("任务当前状态不能开始执行")
 	}
 
-	workspacePath, err := workspace.Create(data.Settings.WorkspaceRoot, taskID)
+	workspaceRoot, workspacePath, err := workspace.TaskPath(data.Settings.WorkspaceRoot, taskID)
 	if err != nil {
 		return task.Task{}, err
 	}
+	prepared := data.Tasks[index]
+	prepared.WorkspaceRoot = workspaceRoot
+	prepared.WorkspacePath = workspacePath
+	return prepared, nil
+}
+
+func (service *Service) CommitStartTask(prepared task.Task) (task.Task, error) {
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, err
+	}
+	index, err := taskIndex(data.Tasks, prepared.ID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	if data.Tasks[index].Status != task.StatusPending {
+		return task.Task{}, fmt.Errorf("任务当前状态不能开始执行")
+	}
+	if prepared.WorkspaceRoot == "" || prepared.WorkspacePath == "" {
+		return task.Task{}, fmt.Errorf("任务缺少工作目录快照")
+	}
 	data.Tasks[index].Status = task.StatusRunning
-	data.Tasks[index].WorkspaceRoot = data.Settings.WorkspaceRoot
-	data.Tasks[index].WorkspacePath = workspacePath
+	data.Tasks[index].Shelved = false
+	data.Tasks[index].WorkspaceRoot = prepared.WorkspaceRoot
+	data.Tasks[index].WorkspacePath = prepared.WorkspacePath
 	if err := service.repository.Save(data); err != nil {
-		workspace.Remove(data.Settings.WorkspaceRoot, workspacePath, taskID)
 		return task.Task{}, err
 	}
 
@@ -373,15 +581,10 @@ func (service *Service) FinishTask(taskID string) (task.Task, error) {
 	if err := service.closer.CloseTask(taskID); err != nil {
 		return task.Task{}, fmt.Errorf("关闭任务终端失败: %w", err)
 	}
-	if err := workspace.Remove(current.WorkspaceRoot, current.WorkspacePath, taskID); err != nil {
-		if reopener, ok := service.closer.(TerminalReopener); ok {
-			reopener.ReopenTask(taskID)
-		}
-		return task.Task{}, err
-	}
 
 	completedAt := service.now()
 	data.Tasks[index].Status = task.StatusCompleted
+	data.Tasks[index].Shelved = false
 	data.Tasks[index].CompletedAt = &completedAt
 	if err := service.repository.Save(data); err != nil {
 		return task.Task{}, err

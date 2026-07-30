@@ -306,6 +306,245 @@ func TestRepositoryLoadsOldDataWithEmptyExtraInfoTemplates(t *testing.T) {
 	}
 }
 
+func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [
+    {"id":"pending","title":"待开始","color":"#4f46e5","status":"pending","extraInfo":[]},
+    {"id":"running","title":"执行中","color":"#4f46e5","status":"running","extraInfo":[]},
+    {"id":"completed","title":"已完成","color":"#4f46e5","status":"completed","extraInfo":[]}
+  ],
+  "settings": {"workspaceRoot":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `","taskTreeWidth":360}
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(data.Settings.LifecycleCommands) != 2 || len(data.Settings.LifecycleChains) != 2 {
+		t.Fatalf("生命周期设置迁移 = %#v", data.Settings)
+	}
+	if got := data.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
+		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
+		task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+	}) {
+		t.Fatalf("未执行任务链选择 = %#v", got)
+	}
+	if got := data.Tasks[1].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
+		task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID,
+	}) {
+		t.Fatalf("执行中任务链选择 = %#v", got)
+	}
+	if got := data.Tasks[2].LifecycleChains; len(got) != 0 {
+		t.Fatalf("已完成任务链选择 = %#v，期望为空", got)
+	}
+
+	persisted, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var persistedData map[string]json.RawMessage
+	if err := json.Unmarshal(persisted, &persistedData); err != nil {
+		t.Fatalf("Unmarshal persisted data error = %v", err)
+	}
+	if !jsonContainsKey(persistedData["settings"], "lifecycleCommands") || !jsonContainsKey(persistedData["settings"], "lifecycleChains") {
+		t.Fatalf("迁移结果未持久化生命周期设置: %s", persisted)
+	}
+}
+
+func TestRepositoryMigratesLifecycleApplicableHooks(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [],
+  "settings": {
+    "workspaceRoot": "` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `",
+    "taskTreeWidth": 360,
+    "lifecycleCommands": [{"id":"legacy-command","kind":"custom","name":"旧命令","command":"echo","arguments":[]}],
+    "lifecycleChains": [{"id":"legacy-chain","name":"旧链","commandIds":["legacy-command"]}],
+    "lifecycleDefaultChains": {"postStart":"legacy-chain"}
+  }
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := []settings.LifecycleHook{
+		settings.LifecycleHookBeforeStart,
+		settings.LifecycleHookPostStart,
+		settings.LifecycleHookBeforeEnd,
+		settings.LifecycleHookPostEnd,
+		settings.LifecycleHookUpdateTask,
+	}
+	if !reflect.DeepEqual(data.Settings.LifecycleCommands[0].ApplicableHooks, want) || !reflect.DeepEqual(data.Settings.LifecycleChains[0].ApplicableHooks, want) {
+		t.Fatalf("迁移后的命令链范围 = %#v", data.Settings)
+	}
+}
+
+func TestRepositoryPreservesLegacyChainWithoutCommonApplicableHook(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [],
+  "settings": {
+    "workspaceRoot": "` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `",
+    "taskTreeWidth": 360,
+    "lifecycleChains": [{"id":"legacy-mixed","name":"旧混合链","commandIds":["system.lifecycle.create-workspace","system.lifecycle.delete-workspace"]}],
+    "lifecycleDefaultChains": {}
+  }
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	if _, err := repository.Load(); err != nil {
+		t.Fatalf("第一次 Load() error = %v", err)
+	}
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("第二次 Load() error = %v", err)
+	}
+	if len(data.Settings.LifecycleChains) != 1 || len(data.Settings.LifecycleChains[0].ApplicableHooks) != 0 {
+		t.Fatalf("无共同范围的旧链 = %#v", data.Settings.LifecycleChains)
+	}
+}
+
+func TestRepositoryMarksInterruptedLifecycleExecutionAsFailed(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [{
+    "id":"running","title":"执行中","color":"#4f46e5","status":"running","extraInfo":[],
+    "lifecycleChains":{"postStart":"chain"},
+    "lifecycleExecution":{"hook":"postStart","chainId":"chain","currentIndex":1,"commandCount":1,"state":"running"}
+  }],
+  "settings": {"workspaceRoot":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `","taskTreeWidth":360,
+    "lifecycleCommands":[{"id":"command","kind":"custom","name":"命令","command":"echo","arguments":[]}],
+    "lifecycleChains":[{"id":"chain","name":"链","commandIds":["command"]}],
+    "lifecycleDefaultChains":{}}
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	execution := data.Tasks[0].LifecycleExecution
+	if execution == nil || execution.State != task.LifecycleExecutionFailed || execution.Error == "" {
+		t.Fatalf("中断执行记录 = %#v", execution)
+	}
+}
+
+func TestRepositoryManagesLifecycleCommandsChainsAndDeletionConstraints(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	if _, err := repository.SaveLifecycleCommand(settings.LifecycleCommand{Name: "没有范围", Command: "prepare"}); err == nil {
+		t.Fatal("SaveLifecycleCommand() error = nil，期望拒绝没有适用范围的命令")
+	}
+	command, err := repository.SaveLifecycleCommand(settings.LifecycleCommand{
+		Name: "准备仓库", Command: "prepare", Arguments: []string{"--fast"}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart, settings.LifecycleHookPostStart},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommand() error = %v", err)
+	}
+	if command.ID == "" || command.Kind != settings.LifecycleCommandKindCustom {
+		t.Fatalf("保存的生命周期命令 = %#v", command)
+	}
+	chain, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
+		Name: "开始前准备", CommandIDs: []string{command.ID}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
+	}
+	if chain.ID == "" || len(chain.CommandIDs) != 1 {
+		t.Fatalf("保存的生命周期链 = %#v", chain)
+	}
+	copy, err := repository.CopyLifecycleCommandChain(chain.ID)
+	if err != nil {
+		t.Fatalf("CopyLifecycleCommandChain() error = %v", err)
+	}
+	if copy.ID == chain.ID || !reflect.DeepEqual(copy.CommandIDs, chain.CommandIDs) {
+		t.Fatalf("复制的生命周期链 = %#v，源链 = %#v", copy, chain)
+	}
+
+	if err := repository.DeleteLifecycleCommand(command.ID); err == nil {
+		t.Fatal("DeleteLifecycleCommand() error = nil，期望拒绝删除仍被链引用的命令")
+	}
+
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Tasks = []task.Task{{
+		ID: "pending", Title: "未执行", Color: task.DefaultColor, Status: task.StatusPending, ExtraInfo: []task.TaskExtraInfo{},
+		LifecycleChains: map[task.LifecycleHook]string{task.LifecycleHookBeforeStart: chain.ID},
+	}}
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if err := repository.DeleteLifecycleCommandChain(chain.ID); err == nil {
+		t.Fatal("DeleteLifecycleCommandChain() error = nil，期望拒绝删除被未执行任务引用的链")
+	}
+	if _, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
+		ID: chain.ID, Name: chain.Name, CommandIDs: chain.CommandIDs, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookPostStart},
+	}); err == nil {
+		t.Fatal("SaveLifecycleCommandChain() error = nil，期望拒绝缩小未执行任务引用链的适用范围")
+	}
+
+	data.Tasks[0].Status = task.StatusCompleted
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() completed task error = %v", err)
+	}
+	if err := repository.DeleteLifecycleCommandChain(chain.ID); err != nil {
+		t.Fatalf("DeleteLifecycleCommandChain() completed chain error = %v", err)
+	}
+	if err := repository.DeleteLifecycleCommandChain(copy.ID); err != nil {
+		t.Fatalf("DeleteLifecycleCommandChain() copied chain error = %v", err)
+	}
+	if err := repository.DeleteLifecycleCommand(command.ID); err != nil {
+		t.Fatalf("DeleteLifecycleCommand() unreferenced command error = %v", err)
+	}
+}
+
+func TestRepositoryClearsLifecycleDefaultWhenDeletingCompletedOnlyChain(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	chain, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
+		Name: "完成后清理", CommandIDs: []string{settings.LifecycleCommandDeleteWorkspaceID}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookPostEnd},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
+	}
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.LifecycleDefaultChains[task.LifecycleHookPostEnd] = chain.ID
+	data.Tasks = []task.Task{{
+		ID: "completed", Title: "已完成", Color: task.DefaultColor, Status: task.StatusCompleted, ExtraInfo: []task.TaskExtraInfo{},
+		LifecycleChains: map[task.LifecycleHook]string{task.LifecycleHookPostEnd: chain.ID},
+	}}
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	if err := repository.DeleteLifecycleCommandChain(chain.ID); err != nil {
+		t.Fatalf("DeleteLifecycleCommandChain() error = %v", err)
+	}
+	loaded, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if _, found := loaded.Settings.LifecycleDefaultChains[task.LifecycleHookPostEnd]; found {
+		t.Fatalf("删除链后仍保留默认值: %#v", loaded.Settings.LifecycleDefaultChains)
+	}
+}
+
 func TestRepositoryPersistsAndDeletesExtraInfoTemplateWithoutTouchingTasks(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 	template, err := task.NewExtraInfoTemplate("deployment", "API 部署", []task.ExtraInfoField{{Key: "repository", DisplayName: "仓库", DefaultValue: "git@example.com:team/api.git"}}, []task.ExtraInfoParameterDefinition{{Key: "branch", DisplayName: "分支", Required: true}})
@@ -366,11 +605,17 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(got.Tasks) != 1 || !reflect.DeepEqual(got.Tasks[0], want.Tasks[0]) {
-		t.Errorf("Load() Tasks = %#v, want %#v", got.Tasks, want.Tasks)
+	expectedTask := want.Tasks[0]
+	expectedTask.LifecycleChains = map[task.LifecycleHook]string{task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID}
+	if len(got.Tasks) != 1 || !reflect.DeepEqual(got.Tasks[0], expectedTask) {
+		t.Errorf("Load() Tasks = %#v, want %#v", got.Tasks, expectedTask)
 	}
-	if !reflect.DeepEqual(got.Settings, want.Settings) {
-		t.Errorf("Load() Settings = %#v, want %#v", got.Settings, want.Settings)
+	expectedSettings, err := settings.NormalizeLifecycle(want.Settings)
+	if err != nil {
+		t.Fatalf("NormalizeLifecycle() error = %v", err)
+	}
+	if !reflect.DeepEqual(got.Settings, expectedSettings) {
+		t.Errorf("Load() Settings = %#v, want %#v", got.Settings, expectedSettings)
 	}
 
 	entries, err := os.ReadDir(filepath.Dir(dataPath))
@@ -450,7 +695,11 @@ func TestRepositorySaveSettingsKeepsTaskWorkspaceSnapshot(t *testing.T) {
 	if len(got.Tasks) != 1 || got.Tasks[0].WorkspacePath != originalTask.WorkspacePath || got.Tasks[0].WorkspaceRoot != originalTask.WorkspaceRoot {
 		t.Errorf("SaveSettings() changed task workspace snapshot: %#v", got.Tasks)
 	}
-	if !reflect.DeepEqual(got.Settings, nextSettings) {
-		t.Errorf("SaveSettings() Settings = %#v, want %#v", got.Settings, nextSettings)
+	expectedSettings, err := settings.NormalizeLifecycle(nextSettings)
+	if err != nil {
+		t.Fatalf("NormalizeLifecycle() error = %v", err)
+	}
+	if !reflect.DeepEqual(got.Settings, expectedSettings) {
+		t.Errorf("SaveSettings() Settings = %#v, want %#v", got.Settings, expectedSettings)
 	}
 }

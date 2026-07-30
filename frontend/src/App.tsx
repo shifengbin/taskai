@@ -67,6 +67,10 @@ import {
 	type ExtraInfo,
 	type ExtraInfoField,
 	type ExtraInfoParameterInputType,
+	type LifecycleCommand,
+	type LifecycleCommandChain,
+	type LifecycleHook,
+	lifecycleHooks,
 	taskStatusLabel,
   type ColorScheme,
 	type ExtraInfoTemplate,
@@ -95,6 +99,7 @@ export default function App() {
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({})
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
 	const [taskExtraInfoDraft, setTaskExtraInfoDraft] = useState<TaskExtraInfo[]>([])
+	const [taskLifecycleChainsDraft, setTaskLifecycleChainsDraft] = useState<Partial<Record<LifecycleHook, string>>>({})
   const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
 	const [extraInfoManagerOpen, setExtraInfoManagerOpen] = useState(false)
@@ -112,7 +117,7 @@ export default function App() {
   const [draftDescription, setDraftDescription] = useState('')
   const [draftColor, setDraftColor] = useState(defaultTaskColor)
   const [settingsDraft, setSettingsDraft] = useState<SettingsRecord>()
-  const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status'>('workspace')
+  const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle'>('workspace')
   const [statusHelpOpen, setStatusHelpOpen] = useState(false)
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
@@ -181,6 +186,10 @@ export default function App() {
   useEffect(() => api.onTaskScriptError((message) => setMessage(message)), [])
 
   useEffect(() => api.onRealtimeStatusError((message) => setMessage(message)), [])
+
+	useEffect(() => api.onLifecycleEvent((updated) => {
+		setTasks((current) => replaceTask(current, updated))
+	}), [])
 
 	useEffect(() => {
 		if (initializedExtraInfoGroups.current || extraInfoTemplates.length === 0) {
@@ -257,6 +266,7 @@ export default function App() {
     setDraftDescription(task?.description ?? '')
     setDraftColor(task?.color || defaultTaskColor)
 		setTaskExtraInfoDraft(task?.extraInfo ? cloneTaskExtraInfo(task.extraInfo) : [])
+		setTaskLifecycleChainsDraft({...task?.lifecycleChains ?? settings?.lifecycleDefaultChains ?? {}})
     setTaskDialogOpen(true)
   }
 
@@ -264,6 +274,7 @@ export default function App() {
     setTaskDialogOpen(false)
     setEditingTask(undefined)
 		setTaskExtraInfoDraft([])
+		setTaskLifecycleChainsDraft({})
   }
 
   const saveTask = async (event: FormEvent) => {
@@ -290,14 +301,19 @@ export default function App() {
     try {
       if (editingTask) {
 			const hasExtraInfo = taskExtraInfoDraft.length > 0 || (editingTask.extraInfo?.length ?? 0) > 0
-			const updated = hasExtraInfo
-				? await api.updateTaskWithExtraInfo(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
-				: await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
+			const updated = editingTask.status === 'pending'
+					? await api.updateTaskWithExtraInfoAndLifecycleChains(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
+					: hasExtraInfo
+						? await api.updateTaskWithExtraInfo(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
+						: await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
         setTasks((current) => replaceTask(current, updated))
       } else {
-			const created = taskExtraInfoDraft.length > 0
-				? await api.createTaskWithExtraInfo(draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
-				: await api.createTask(draftTitle, draftDescription, draftColor)
+			const hasLifecycleChainSelection = Object.keys(taskLifecycleChainsDraft).length > 0
+			const created = hasLifecycleChainSelection
+				? await api.createTaskWithExtraInfoAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
+				: taskExtraInfoDraft.length > 0
+					? await api.createTaskWithExtraInfo(draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
+					: await api.createTask(draftTitle, draftDescription, draftColor)
         setTasks((current) => [...current, created])
         void changeActiveTaskStatus('pending')
         setSelectedTaskID(created.id)
@@ -443,6 +459,23 @@ export default function App() {
     }
   }
 
+	const retryLifecycleChain = async (taskID: string) => {
+		try {
+			const updated = await api.retryTaskLifecycleCommandChain(taskID)
+			setTasks((current) => replaceTask(current, updated))
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const setTaskShelved = async (taskID: string, shelved: boolean) => {
+		try {
+			setTasks(await api.setTaskShelved(taskID, shelved))
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
   const reorderTasks = async (taskID: string, targetTaskID: string, position: 'before' | 'after') => {
     const sourceTask = tasks.find((task) => task.id === taskID)
     if (!sourceTask || sourceTask.status !== activeTaskStatus) {
@@ -585,6 +618,21 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		setStatusHelpOpen(false)
     closeTaskMenuItemEditor()
   }
+
+	const refreshLifecycleConfiguration = async () => {
+		try {
+			const refreshed = await api.getSettings()
+			setSettings(refreshed)
+			setSettingsDraft((current) => current ? {
+				...current,
+				lifecycleCommands: refreshed.lifecycleCommands ?? [],
+				lifecycleChains: refreshed.lifecycleChains ?? [],
+				lifecycleDefaultChains: refreshed.lifecycleDefaultChains ?? {},
+			} : current)
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
 
   const moveTaskMenuItem = (itemID: string, offset: number) => {
     setSettingsDraft((current) => {
@@ -815,7 +863,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 onOpenTaskFolder={(taskID) => void openTaskFolder(taskID)}
                 onRunMenuCommand={(taskID, itemID) => void runTaskMenuCommand(taskID, itemID)}
                 onStartTask={(taskID) => void startTask(taskID)}
-                onFinishTask={(taskID) => setFinishTask(tasks.find((task) => task.id === taskID))}
+				onFinishTask={(taskID) => setFinishTask(tasks.find((task) => task.id === taskID))}
+				onRetryLifecycle={(taskID) => void retryLifecycleChain(taskID)}
+				onSetTaskShelved={(taskID, shelved) => void setTaskShelved(taskID, shelved)}
                 onCloseTerminal={(terminal) => void closeTerminal(terminal)}
                 onReorderTasks={(taskID, targetTaskID, position) => void reorderTasks(taskID, targetTaskID, position)}
               />
@@ -881,6 +931,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				infos={extraInfos}
 				extraInfo={taskExtraInfoDraft}
 				onChange={setTaskExtraInfoDraft}
+			/>
+			<TaskLifecycleChainSelector
+				chains={settings?.lifecycleChains ?? []}
+				selected={taskLifecycleChainsDraft}
+				onChange={setTaskLifecycleChainsDraft}
+				disabled={editingTask?.status !== undefined && editingTask.status !== 'pending'}
 			/>
           </DialogContent>
           <DialogActions>
@@ -1083,7 +1139,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         <DialogContent sx={{display: 'grid', gap: 3, pt: '12px !important'}}>
           <Tabs
             value={settingsTab}
-            onChange={(_, value: 'workspace' | 'shell' | 'menu' | 'status') => setSettingsTab(value)}
+			onChange={(_, value: 'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle') => setSettingsTab(value)}
             aria-label="设置分类"
             variant="scrollable"
             scrollButtons="auto"
@@ -1092,6 +1148,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <Tab value="shell" label="终端 Shell"/>
             <Tab value="menu" label="菜单管理"/>
             <Tab value="status" label="实时状态"/>
+			<Tab value="lifecycle" label="生命周期编排"/>
           </Tabs>
 
           {settingsTab === 'workspace' && <Box component="section" sx={{display: 'grid', gap: 1.5}}>
@@ -1203,6 +1260,38 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               </Box>
             </>}
           </Box>}
+
+			{settingsTab === 'lifecycle' && <LifecycleManagement
+				commands={settings?.lifecycleCommands ?? []}
+				chains={settings?.lifecycleChains ?? []}
+				defaults={settings?.lifecycleDefaultChains ?? {}}
+				onSaveCommand={async (command) => {
+					await api.saveLifecycleCommand(command)
+					await refreshLifecycleConfiguration()
+				}}
+				onDeleteCommand={async (commandID) => {
+					await api.deleteLifecycleCommand(commandID)
+					await refreshLifecycleConfiguration()
+				}}
+				onSaveChain={async (chain) => {
+					await api.saveLifecycleCommandChain(chain)
+					await refreshLifecycleConfiguration()
+				}}
+				onCopyChain={async (chainID) => {
+					await api.copyLifecycleCommandChain(chainID)
+					await refreshLifecycleConfiguration()
+				}}
+				onDeleteChain={async (chainID) => {
+					await api.deleteLifecycleCommandChain(chainID)
+					await refreshLifecycleConfiguration()
+				}}
+				onSaveDefault={async (hook, chainID) => {
+					const saved = await api.saveLifecycleDefaultChain(hook, chainID)
+					setSettings(saved)
+					setSettingsDraft((current) => current ? {...current, lifecycleDefaultChains: saved.lifecycleDefaultChains ?? {}} : current)
+				}}
+				onError={(error) => showError(error, setMessage)}
+			/>}
         </DialogContent>
         <DialogActions>
           <Button onClick={closeSettingsDialog}>取消</Button>
@@ -1481,6 +1570,256 @@ function StartupScreen() {
   )
 }
 
+function TaskLifecycleChainSelector({
+	chains,
+	selected,
+	onChange,
+	disabled = false,
+}: {
+	chains: LifecycleCommandChain[]
+	selected: Partial<Record<LifecycleHook, string>>
+	onChange: Dispatch<SetStateAction<Partial<Record<LifecycleHook, string>>>>
+	disabled?: boolean
+}) {
+	return (
+		<Box component="section" sx={{display: 'grid', gap: 1.25, borderTop: 1, borderColor: 'divider', pt: 1.75}}>
+			<Box>
+				<Typography variant="subtitle2">生命周期命令链</Typography>
+			<Typography variant="caption" color="text.secondary">每个阶段最多选择一条链；留空表示跳过该阶段。{disabled ? ' 执行中和已完成任务不可修改。' : ''}</Typography>
+			</Box>
+			<Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1.25}}>
+				{lifecycleHooks.map((hook) => {
+					const selectedChainID = selected[hook.id] ?? ''
+					const applicableChains = chains.filter((chain) => lifecycleChainAppliesTo(chain, hook.id))
+					const selectedChain = chains.find((chain) => chain.id === selectedChainID)
+					const displayChains = selectedChain && !applicableChains.some((chain) => chain.id === selectedChain.id)
+						? [...applicableChains, selectedChain]
+						: applicableChains
+					return <TextField
+						key={hook.id}
+						select
+						size="small"
+						label={hook.label}
+						value={selectedChainID}
+						disabled={disabled}
+						onChange={(event) => onChange((current) => {
+							const next = {...current}
+							if (event.target.value) {
+								next[hook.id] = event.target.value
+							} else {
+								delete next[hook.id]
+							}
+							return next
+						})}
+					>
+						<MenuItem value="">不执行命令链</MenuItem>
+						{displayChains.map((chain) => <MenuItem key={chain.id} value={chain.id}>{chain.name}{!lifecycleChainAppliesTo(chain, hook.id) ? '（当前范围不适用）' : ''}</MenuItem>)}
+					</TextField>
+				})}
+			</Box>
+		</Box>
+	)
+}
+
+function lifecycleChainAppliesTo(chain: LifecycleCommandChain, hook: LifecycleHook) {
+	return chain.applicableHooks.includes(hook)
+}
+
+function lifecycleHooksCover(availableHooks: LifecycleHook[], requiredHooks: LifecycleHook[]) {
+	return requiredHooks.every((hook) => availableHooks.includes(hook))
+}
+
+function lifecycleHooksLabel(hooks: LifecycleHook[]) {
+	const labels = hooks.map((hook) => lifecycleHooks.find((item) => item.id === hook)?.label).filter(Boolean)
+	return labels.join('、') || '未设置'
+}
+
+function LifecycleManagement({
+	commands,
+	chains,
+	defaults,
+	onSaveCommand,
+	onDeleteCommand,
+	onSaveChain,
+	onCopyChain,
+	onDeleteChain,
+	onSaveDefault,
+	onError,
+}: {
+	commands: LifecycleCommand[]
+	chains: LifecycleCommandChain[]
+	defaults: Partial<Record<LifecycleHook, string>>
+	onSaveCommand(command: LifecycleCommand): Promise<void>
+	onDeleteCommand(commandID: string): Promise<void>
+	onSaveChain(chain: LifecycleCommandChain): Promise<void>
+	onCopyChain(chainID: string): Promise<void>
+	onDeleteChain(chainID: string): Promise<void>
+	onSaveDefault(hook: LifecycleHook, chainID: string): Promise<void>
+	onError(error: unknown): void
+}) {
+	const [commandDraft, setCommandDraft] = useState<LifecycleCommand>()
+	const [chainDraft, setChainDraft] = useState<LifecycleCommandChain>()
+	const commandNames = new Map(commands.map((command) => [command.id, command.name]))
+	const commandsByID = new Map(commands.map((command) => [command.id, command]))
+
+	const saveCommand = async () => {
+		if (!commandDraft) {
+			return
+		}
+		try {
+			await onSaveCommand({...commandDraft, name: commandDraft.name.trim(), command: commandDraft.command?.trim(), arguments: commandDraft.arguments.map((argument) => argument.trim()).filter(Boolean), applicableHooks: [...commandDraft.applicableHooks]})
+			setCommandDraft(undefined)
+		} catch (error) {
+			onError(error)
+		}
+	}
+
+	const saveChain = async () => {
+		if (!chainDraft) {
+			return
+		}
+		try {
+			await onSaveChain({...chainDraft, name: chainDraft.name.trim(), commandIds: chainDraft.commandIds.filter(Boolean), applicableHooks: [...chainDraft.applicableHooks]})
+			setChainDraft(undefined)
+		} catch (error) {
+			onError(error)
+		}
+	}
+
+	const toggleChainCommand = (commandID: string, checked: boolean) => {
+		setChainDraft((current) => current ? {
+			...current,
+			commandIds: checked ? [...current.commandIds, commandID] : current.commandIds.filter((currentID) => currentID !== commandID),
+		} : current)
+	}
+
+	const toggleApplicableHook = (hook: LifecycleHook, target: 'command' | 'chain', checked: boolean) => {
+		const update = (hooks: LifecycleHook[]) => checked ? [...hooks, hook] : hooks.filter((currentHook) => currentHook !== hook)
+		if (target === 'command') {
+			setCommandDraft((current) => current ? {...current, applicableHooks: update(current.applicableHooks)} : current)
+			return
+		}
+		setChainDraft((current) => current ? {...current, applicableHooks: update(current.applicableHooks)} : current)
+	}
+
+	const incompatibleChainCommandIDs = chainDraft?.commandIds.filter((commandID) => {
+		const command = commandsByID.get(commandID)
+		return !command || !lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks)
+	}) ?? []
+
+	const moveChainCommand = (index: number, offset: number) => {
+		setChainDraft((current) => {
+			if (!current || index + offset < 0 || index + offset >= current.commandIds.length) {
+				return current
+			}
+			const commandIds = [...current.commandIds]
+			const [commandID] = commandIds.splice(index, 1)
+			commandIds.splice(index + offset, 0, commandID)
+			return {...current, commandIds}
+		})
+	}
+
+	const moveChainCommandTo = (fromIndex: number, toIndex: number) => {
+		if (fromIndex === toIndex) {
+			return
+		}
+		setChainDraft((current) => {
+			if (!current || fromIndex < 0 || toIndex < 0 || fromIndex >= current.commandIds.length || toIndex >= current.commandIds.length) {
+				return current
+			}
+			const commandIds = [...current.commandIds]
+			const [commandID] = commandIds.splice(fromIndex, 1)
+			commandIds.splice(toIndex, 0, commandID)
+			return {...current, commandIds}
+		})
+	}
+
+	return <Box component="section" sx={{display: 'grid', gap: 2.5}}>
+		<Box sx={{display: 'grid', gap: 0.5}}>
+			<Typography variant="subtitle2">五个钩子的默认链</Typography>
+			<Typography variant="caption" color="text.secondary">新建任务会预选这里的链；任务保存后保留自己的选择。</Typography>
+		</Box>
+		<Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1.25}}>
+			{lifecycleHooks.map((hook) => <TextField key={hook.id} select size="small" label={hook.label} value={defaults[hook.id] ?? ''} onChange={(event) => void onSaveDefault(hook.id, event.target.value).catch(onError)}>
+				<MenuItem value="">不设置默认链</MenuItem>
+				{chains.filter((chain) => lifecycleChainAppliesTo(chain, hook.id)).map((chain) => <MenuItem key={chain.id} value={chain.id}>{chain.name}</MenuItem>)}
+			</TextField>)}
+		</Box>
+
+		<Box sx={{display: 'grid', gap: 1.25, pt: 0.5, borderTop: 1, borderColor: 'divider'}}>
+			<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
+				<Box><Typography variant="subtitle2">命令库</Typography><Typography variant="caption" color="text.secondary">系统目录命令只读；自定义命令通过所选 Shell 执行。</Typography></Box>
+				<Button size="small" variant="contained" onClick={() => setCommandDraft({id: '', kind: 'custom', name: '', command: '', arguments: [], applicableHooks: []})}>新增命令</Button>
+			</Box>
+			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden'}}>
+				{commands.map((command, index) => <Box key={command.id} sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === commands.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{command.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{command.kind === 'custom' ? `${command.command}${command.arguments.length ? ` ${command.arguments.join(' ')}` : ''}` : '系统内置目录操作'}</Typography><Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(command.applicableHooks)}</Typography></Box>
+					<Box sx={{display: 'flex', alignItems: 'center', gap: 0.5}}>
+						<Chip size="small" label={command.kind === 'custom' ? '自定义' : '系统'} variant="outlined"/>
+						{command.kind === 'custom' && <Button size="small" onClick={() => setCommandDraft({...command, arguments: [...command.arguments], applicableHooks: [...command.applicableHooks]})}>编辑</Button>}
+						{command.kind === 'custom' && <IconButton aria-label={`删除命令 ${command.name}`} color="error" size="small" onClick={() => void onDeleteCommand(command.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>}
+					</Box>
+				</Box>)}
+			</Box>
+		</Box>
+
+		<Box sx={{display: 'grid', gap: 1.25, pt: 0.5, borderTop: 1, borderColor: 'divider'}}>
+			<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
+				<Box><Typography variant="subtitle2">命令链</Typography><Typography variant="caption" color="text.secondary">同一条链可被多个钩子和任务复用，修改将在下次执行或重试时生效。</Typography></Box>
+				<Button size="small" variant="contained" onClick={() => setChainDraft({id: '', name: '', commandIds: [], applicableHooks: []})}>新增链</Button>
+			</Box>
+			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden'}}>
+				{chains.map((chain, index) => <Box key={chain.id} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: 'minmax(0, 1fr) auto'}, gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === chains.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{chain.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{chain.commandIds.map((commandID) => commandNames.get(commandID) ?? '已删除命令').join(' → ')}</Typography><Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(chain.applicableHooks)}</Typography></Box>
+					<Box sx={{display: 'flex', justifyContent: 'flex-end', gap: 0.5, flexWrap: 'wrap'}}><Button size="small" onClick={() => setChainDraft({...chain, commandIds: [...chain.commandIds], applicableHooks: [...chain.applicableHooks]})}>编辑</Button><Button size="small" onClick={() => void onCopyChain(chain.id).catch(onError)}>复制</Button><IconButton aria-label={`删除命令链 ${chain.name}`} color="error" size="small" onClick={() => void onDeleteChain(chain.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></Box>
+				</Box>)}
+			</Box>
+		</Box>
+
+		<Dialog open={Boolean(commandDraft)} onClose={() => setCommandDraft(undefined)} fullWidth maxWidth="sm">
+			<DialogTitle>{commandDraft?.id ? '编辑命令' : '新增命令'}</DialogTitle>
+			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
+				<TextField autoFocus required label="命令名称" value={commandDraft?.name ?? ''} onChange={(event) => setCommandDraft((current) => current ? {...current, name: event.target.value} : current)}/>
+				<TextField required label="可执行命令" helperText="由任务设置中选定的 Shell 启动。" value={commandDraft?.command ?? ''} onChange={(event) => setCommandDraft((current) => current ? {...current, command: event.target.value} : current)}/>
+				<TextField multiline minRows={3} label="参数（每行一个）" value={commandDraft?.arguments.join('\n') ?? ''} onChange={(event) => setCommandDraft((current) => current ? {...current, arguments: event.target.value.split('\n')} : current)}/>
+				<Box sx={{display: 'grid', gap: 0.5}}><Typography variant="subtitle2">适用范围</Typography>{lifecycleHooks.map((hook) => <FormControlLabel key={hook.id} control={<Checkbox checked={Boolean(commandDraft?.applicableHooks.includes(hook.id))} onChange={(event) => toggleApplicableHook(hook.id, 'command', event.target.checked)}/>} label={hook.label}/>)}</Box>
+			</DialogContent>
+			<DialogActions><Button onClick={() => setCommandDraft(undefined)}>取消</Button><Button variant="contained" disabled={!commandDraft?.applicableHooks.length} onClick={() => void saveCommand()}>保存命令</Button></DialogActions>
+		</Dialog>
+
+		<Dialog open={Boolean(chainDraft)} onClose={() => setChainDraft(undefined)} fullWidth maxWidth="sm">
+			<DialogTitle>{chainDraft?.id ? '编辑命令链' : '新增命令链'}</DialogTitle>
+			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
+				<TextField autoFocus required label="命令链名称" value={chainDraft?.name ?? ''} onChange={(event) => setChainDraft((current) => current ? {...current, name: event.target.value} : current)}/>
+				<Box sx={{display: 'grid', gap: 0.5}}><Typography variant="subtitle2">适用范围</Typography>{lifecycleHooks.map((hook) => <FormControlLabel key={hook.id} control={<Checkbox checked={Boolean(chainDraft?.applicableHooks.includes(hook.id))} onChange={(event) => toggleApplicableHook(hook.id, 'chain', event.target.checked)}/>} label={hook.label}/>)}</Box>
+				<Box sx={{display: 'grid', gap: 0.5}}><Typography variant="subtitle2">可用命令</Typography>{chainDraft?.applicableHooks.length ? commands.filter((command) => lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks) || chainDraft.commandIds.includes(command.id)).map((command) => <FormControlLabel key={command.id} control={<Checkbox checked={Boolean(chainDraft.commandIds.includes(command.id))} onChange={(event) => toggleChainCommand(command.id, event.target.checked)}/>} label={`${command.name}${lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks) ? '' : '（与当前范围不匹配）'}`}/>) : <Typography variant="body2" color="text.secondary">请先选择命令链适用范围。</Typography>}</Box>
+				{incompatibleChainCommandIDs.length > 0 && <Typography variant="body2" color="error">请移除与当前范围不匹配的命令后再保存。</Typography>}
+				<Box sx={{display: 'grid', gap: 0.5}}>
+					<Typography variant="subtitle2">执行顺序</Typography>
+					{chainDraft?.commandIds.length ? chainDraft.commandIds.map((commandID, index) => (
+						<Box
+							key={`${commandID}-${index}`}
+							draggable
+							onDragStart={(event) => event.dataTransfer.setData('text/plain', String(index))}
+							onDragOver={(event) => event.preventDefault()}
+							onDrop={(event) => {
+								const fromIndex = Number(event.dataTransfer.getData('text/plain'))
+								moveChainCommandTo(fromIndex, index)
+							}}
+							sx={{display: 'flex', alignItems: 'center', gap: 0.5, border: 1, borderColor: 'divider', borderRadius: 1, px: 1, cursor: 'grab', '&:active': {cursor: 'grabbing'}}}
+						>
+							<Typography variant="body2" sx={{flex: 1}}>{index + 1}. {commandNames.get(commandID) ?? '已删除命令'}</Typography>
+							<IconButton aria-label={`上移链命令 ${index + 1}`} size="small" disabled={index === 0} onClick={() => moveChainCommand(index, -1)}><ArrowUpwardOutlinedIcon fontSize="inherit"/></IconButton>
+							<IconButton aria-label={`下移链命令 ${index + 1}`} size="small" disabled={index === chainDraft.commandIds.length - 1} onClick={() => moveChainCommand(index, 1)}><ArrowDownwardOutlinedIcon fontSize="inherit"/></IconButton>
+						</Box>
+					)) : <Typography variant="body2" color="text.secondary">至少选择一个命令。</Typography>}
+				</Box>
+			</DialogContent>
+			<DialogActions><Button onClick={() => setChainDraft(undefined)}>取消</Button><Button variant="contained" disabled={!chainDraft?.applicableHooks.length || !chainDraft.commandIds.length || incompatibleChainCommandIDs.length > 0} onClick={() => void saveChain()}>保存命令链</Button></DialogActions>
+		</Dialog>
+	</Box>
+}
+
 function TaskExtraInfoEditor({
 	templates,
 	infos,
@@ -1618,6 +1957,10 @@ function TaskDetail({task}: {task?: TaskRecord}) {
       <Typography variant="body1" sx={{whiteSpace: 'pre-wrap', color: task.description ? 'text.primary' : 'text.secondary', mb: 4}}>
         {task.description || '暂无任务描述'}
       </Typography>
+		{task.lifecycleExecution && <Alert severity={task.lifecycleExecution.state === 'failed' ? 'error' : 'warning'} variant="outlined" sx={{mb: 3}}>
+			<Typography variant="subtitle2">{lifecycleHooks.find((hook) => hook.id === task.lifecycleExecution?.hook)?.label ?? '生命周期'}：{task.lifecycleExecution.currentCommandName || '命令'}（{task.lifecycleExecution.currentIndex}/{task.lifecycleExecution.commandCount}）</Typography>
+			{task.lifecycleExecution.error && <Typography variant="body2" sx={{mt: 0.5, whiteSpace: 'pre-wrap'}}>{task.lifecycleExecution.error}</Typography>}
+		</Alert>}
       {task.status === 'running' && task.workspacePath && (
         <Box sx={{display: 'grid', gap: 0.5}}>
           <Typography variant="overline" color="text.secondary">工作目录</Typography>

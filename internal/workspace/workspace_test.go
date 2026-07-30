@@ -27,6 +27,21 @@ func TestCreateCreatesTaskIDChildDirectory(t *testing.T) {
 	}
 }
 
+func TestCreateReusesExistingSafeTaskWorkspace(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspaces")
+	first, err := Create(root, "task-1")
+	if err != nil {
+		t.Fatalf("first Create() error = %v", err)
+	}
+	second, err := Create(root, "task-1")
+	if err != nil {
+		t.Fatalf("second Create() error = %v", err)
+	}
+	if first != second {
+		t.Errorf("Create() reused path = %q，期望 %q", second, first)
+	}
+}
+
 func TestRemoveDeletesMatchingTaskWorkspace(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "workspaces")
 	path, err := Create(root, "task-1")

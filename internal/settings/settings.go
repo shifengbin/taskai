@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"taskai/internal/task"
 )
 
 const DefaultTaskTreeWidth = 360
@@ -56,6 +58,45 @@ type TaskScript struct {
 	Arguments []string `json:"arguments,omitempty"`
 }
 
+type LifecycleHook = task.LifecycleHook
+
+const (
+	LifecycleHookBeforeStart = task.LifecycleHookBeforeStart
+	LifecycleHookPostStart   = task.LifecycleHookPostStart
+	LifecycleHookBeforeEnd   = task.LifecycleHookBeforeEnd
+	LifecycleHookPostEnd     = task.LifecycleHookPostEnd
+	LifecycleHookUpdateTask  = task.LifecycleHookUpdateTask
+)
+
+type LifecycleCommandKind string
+
+const (
+	LifecycleCommandKindCustom          LifecycleCommandKind = "custom"
+	LifecycleCommandKindCreateWorkspace LifecycleCommandKind = "create-workspace"
+	LifecycleCommandKindDeleteWorkspace LifecycleCommandKind = "delete-workspace"
+
+	LifecycleCommandCreateWorkspaceID = "system.lifecycle.create-workspace"
+	LifecycleCommandDeleteWorkspaceID = "system.lifecycle.delete-workspace"
+	LifecycleChainCreateWorkspaceID   = "system.lifecycle-chain.create-workspace"
+	LifecycleChainDeleteWorkspaceID   = "system.lifecycle-chain.delete-workspace"
+)
+
+type LifecycleCommand struct {
+	ID              string               `json:"id"`
+	Kind            LifecycleCommandKind `json:"kind"`
+	Name            string               `json:"name"`
+	Command         string               `json:"command,omitempty"`
+	Arguments       []string             `json:"arguments"`
+	ApplicableHooks []LifecycleHook      `json:"applicableHooks"`
+}
+
+type LifecycleCommandChain struct {
+	ID              string          `json:"id"`
+	Name            string          `json:"name"`
+	CommandIDs      []string        `json:"commandIds"`
+	ApplicableHooks []LifecycleHook `json:"applicableHooks"`
+}
+
 type TaskMenuItem struct {
 	ID           string           `json:"id"`
 	Kind         TaskMenuItemKind `json:"kind"`
@@ -68,26 +109,32 @@ type TaskMenuItem struct {
 }
 
 type Settings struct {
-	WorkspaceRoot            string               `json:"workspaceRoot"`
-	TaskTreeWidth            int                  `json:"taskTreeWidth"`
-	ColorScheme              ColorScheme          `json:"colorScheme"`
-	ShellPath                string               `json:"shellPath"`
-	TaskMenuItems            []TaskMenuItem       `json:"taskMenuItems"`
-	ActiveTaskStatus         TaskStatus           `json:"activeTaskStatus"`
-	StatusManagementMode     StatusManagementMode `json:"statusManagementMode"`
-	StatusManagementHTTPPort int                  `json:"statusManagementHTTPPort"`
-	HTTPServiceEnabled       bool                 `json:"httpServiceEnabled"`
+	WorkspaceRoot            string                   `json:"workspaceRoot"`
+	TaskTreeWidth            int                      `json:"taskTreeWidth"`
+	ColorScheme              ColorScheme              `json:"colorScheme"`
+	ShellPath                string                   `json:"shellPath"`
+	TaskMenuItems            []TaskMenuItem           `json:"taskMenuItems"`
+	ActiveTaskStatus         TaskStatus               `json:"activeTaskStatus"`
+	StatusManagementMode     StatusManagementMode     `json:"statusManagementMode"`
+	StatusManagementHTTPPort int                      `json:"statusManagementHTTPPort"`
+	HTTPServiceEnabled       bool                     `json:"httpServiceEnabled"`
+	LifecycleCommands        []LifecycleCommand       `json:"lifecycleCommands"`
+	LifecycleChains          []LifecycleCommandChain  `json:"lifecycleChains"`
+	LifecycleDefaultChains   map[LifecycleHook]string `json:"lifecycleDefaultChains"`
 }
 
 func Default(applicationDataDirectory string) Settings {
 	return Settings{
-		WorkspaceRoot:        filepath.Join(applicationDataDirectory, "workspaces"),
-		TaskTreeWidth:        DefaultTaskTreeWidth,
-		ColorScheme:          DefaultColorScheme,
-		ShellPath:            DefaultShellPath(),
-		TaskMenuItems:        DefaultTaskMenuItems(),
-		ActiveTaskStatus:     DefaultActiveTaskStatus,
-		StatusManagementMode: DefaultStatusManagementMode,
+		WorkspaceRoot:          filepath.Join(applicationDataDirectory, "workspaces"),
+		TaskTreeWidth:          DefaultTaskTreeWidth,
+		ColorScheme:            DefaultColorScheme,
+		ShellPath:              DefaultShellPath(),
+		TaskMenuItems:          DefaultTaskMenuItems(),
+		ActiveTaskStatus:       DefaultActiveTaskStatus,
+		StatusManagementMode:   DefaultStatusManagementMode,
+		LifecycleCommands:      DefaultLifecycleCommands(),
+		LifecycleChains:        DefaultLifecycleChains(),
+		LifecycleDefaultChains: DefaultLifecycleDefaultChains(),
 	}
 }
 
@@ -96,6 +143,27 @@ func DefaultTaskMenuItems() []TaskMenuItem {
 		fixedTaskMenuItem(TaskMenuItemEditTaskID),
 		fixedTaskMenuItem(TaskMenuItemCreateTerminalID),
 		fixedTaskMenuItem(TaskMenuItemOpenFolderID),
+	}
+}
+
+func DefaultLifecycleCommands() []LifecycleCommand {
+	return []LifecycleCommand{
+		fixedLifecycleCommand(LifecycleCommandCreateWorkspaceID),
+		fixedLifecycleCommand(LifecycleCommandDeleteWorkspaceID),
+	}
+}
+
+func DefaultLifecycleChains() []LifecycleCommandChain {
+	return []LifecycleCommandChain{
+		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", CommandIDs: []string{LifecycleCommandCreateWorkspaceID}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", CommandIDs: []string{LifecycleCommandDeleteWorkspaceID}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
+	}
+}
+
+func DefaultLifecycleDefaultChains() map[LifecycleHook]string {
+	return map[LifecycleHook]string{
+		LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
+		LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
 	}
 }
 
@@ -142,6 +210,10 @@ func Validate(next Settings) (Settings, error) {
 		return Settings{}, err
 	}
 	next.TaskMenuItems = menuItems
+	next, err = NormalizeLifecycle(next)
+	if err != nil {
+		return Settings{}, err
+	}
 
 	absoluteRoot, err := filepath.Abs(next.WorkspaceRoot)
 	if err != nil {
@@ -181,6 +253,17 @@ func fixedTaskMenuItem(id string) TaskMenuItem {
 		return TaskMenuItem{ID: id, Kind: TaskMenuItemKindOpenFolder, Name: "打开任务文件夹"}
 	default:
 		return TaskMenuItem{}
+	}
+}
+
+func fixedLifecycleCommand(id string) LifecycleCommand {
+	switch id {
+	case LifecycleCommandCreateWorkspaceID:
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录", Arguments: []string{}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}}
+	case LifecycleCommandDeleteWorkspaceID:
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindDeleteWorkspace, Name: "删除任务工作目录", Arguments: []string{}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}}
+	default:
+		return LifecycleCommand{}
 	}
 }
 
@@ -239,6 +322,223 @@ func normalizeTaskScript(script *TaskScript) *TaskScript {
 		return nil
 	}
 	return &TaskScript{Script: path, Arguments: normalizeArguments(script.Arguments)}
+}
+
+func NormalizeLifecycle(next Settings) (Settings, error) {
+	lifecycleCommands, err := normalizeLifecycleCommands(next.LifecycleCommands)
+	if err != nil {
+		return Settings{}, err
+	}
+	next.LifecycleCommands = lifecycleCommands
+	lifecycleChains, err := normalizeLifecycleChains(next.LifecycleChains, lifecycleCommands)
+	if err != nil {
+		return Settings{}, err
+	}
+	next.LifecycleChains = lifecycleChains
+	lifecycleDefaults, err := normalizeLifecycleDefaultChains(next.LifecycleDefaultChains, lifecycleChains)
+	if err != nil {
+		return Settings{}, err
+	}
+	next.LifecycleDefaultChains = lifecycleDefaults
+	return next, nil
+}
+
+func normalizeLifecycleCommands(commands []LifecycleCommand) ([]LifecycleCommand, error) {
+	normalized := make([]LifecycleCommand, 0, len(commands)+2)
+	seen := make(map[string]bool, len(commands)+2)
+	for _, command := range commands {
+		command.ID = strings.TrimSpace(command.ID)
+		if command.ID == "" {
+			return nil, fmt.Errorf("生命周期命令 ID 不能为空")
+		}
+		if seen[command.ID] {
+			return nil, fmt.Errorf("生命周期命令 ID 重复: %q", command.ID)
+		}
+		seen[command.ID] = true
+		if fixed := fixedLifecycleCommand(command.ID); fixed.ID != "" {
+			normalized = append(normalized, fixed)
+			continue
+		}
+		if command.Kind != LifecycleCommandKindCustom {
+			return nil, fmt.Errorf("不支持的生命周期命令类型: %q", command.Kind)
+		}
+		command.Name = strings.TrimSpace(command.Name)
+		command.Command = strings.TrimSpace(command.Command)
+		if command.Name == "" || command.Command == "" {
+			return nil, fmt.Errorf("自定义生命周期命令名称和可执行命令不能为空")
+		}
+		command.Arguments = normalizeArguments(command.Arguments)
+		applicableHooks, err := normalizeLifecycleApplicableHooks(command.ApplicableHooks, allLifecycleHooks(), false)
+		if err != nil {
+			return nil, fmt.Errorf("自定义生命周期命令 %q 的适用范围无效: %w", command.Name, err)
+		}
+		command.ApplicableHooks = applicableHooks
+		normalized = append(normalized, command)
+	}
+	for _, command := range DefaultLifecycleCommands() {
+		if !seen[command.ID] {
+			normalized = append(normalized, command)
+		}
+	}
+	return normalized, nil
+}
+
+func normalizeLifecycleChains(chains []LifecycleCommandChain, commands []LifecycleCommand) ([]LifecycleCommandChain, error) {
+	if chains == nil {
+		return DefaultLifecycleChains(), nil
+	}
+	knownCommands := make(map[string]LifecycleCommand, len(commands))
+	for _, command := range commands {
+		knownCommands[command.ID] = command
+	}
+	normalized := make([]LifecycleCommandChain, 0, len(chains))
+	seen := make(map[string]bool, len(chains))
+	for _, chain := range chains {
+		chain.ID = strings.TrimSpace(chain.ID)
+		chain.Name = strings.TrimSpace(chain.Name)
+		if chain.ID == "" || chain.Name == "" {
+			return nil, fmt.Errorf("生命周期命令链 ID 和名称不能为空")
+		}
+		if seen[chain.ID] {
+			return nil, fmt.Errorf("生命周期命令链 ID 重复: %q", chain.ID)
+		}
+		seen[chain.ID] = true
+		commandIDs := make([]string, 0, len(chain.CommandIDs))
+		for _, commandID := range chain.CommandIDs {
+			commandID = strings.TrimSpace(commandID)
+			if commandID == "" {
+				return nil, fmt.Errorf("生命周期命令链引用不存在的命令: %q", commandID)
+			}
+			if _, found := knownCommands[commandID]; !found {
+				return nil, fmt.Errorf("生命周期命令链引用不存在的命令: %q", commandID)
+			}
+			commandIDs = append(commandIDs, commandID)
+		}
+		if len(commandIDs) == 0 {
+			return nil, fmt.Errorf("生命周期命令链必须包含命令")
+		}
+		chain.CommandIDs = commandIDs
+		if chain.ApplicableHooks == nil {
+			chain.ApplicableHooks = commonLifecycleHooks(commandIDs, knownCommands)
+		} else {
+			applicableHooks, err := normalizeLifecycleApplicableHooks(chain.ApplicableHooks, nil, true)
+			if err != nil {
+				return nil, fmt.Errorf("生命周期命令链 %q 的适用范围无效: %w", chain.Name, err)
+			}
+			chain.ApplicableHooks = applicableHooks
+		}
+		for _, commandID := range commandIDs {
+			if !lifecycleHooksCover(knownCommands[commandID].ApplicableHooks, chain.ApplicableHooks) {
+				return nil, fmt.Errorf("生命周期命令链 %q 引用的命令 %q 不适用于全部链范围", chain.Name, knownCommands[commandID].Name)
+			}
+		}
+		normalized = append(normalized, chain)
+	}
+	return normalized, nil
+}
+
+func normalizeLifecycleDefaultChains(defaults map[LifecycleHook]string, chains []LifecycleCommandChain) (map[LifecycleHook]string, error) {
+	if defaults == nil {
+		knownChains := make(map[string]LifecycleCommandChain, len(chains))
+		for _, chain := range chains {
+			knownChains[chain.ID] = chain
+		}
+		defaultChains := DefaultLifecycleDefaultChains()
+		for hook, chainID := range defaultChains {
+			chain, found := knownChains[chainID]
+			if !found || !lifecycleHookIncluded(chain.ApplicableHooks, hook) {
+				delete(defaultChains, hook)
+			}
+		}
+		return defaultChains, nil
+	}
+	knownChains := make(map[string]LifecycleCommandChain, len(chains))
+	for _, chain := range chains {
+		knownChains[chain.ID] = chain
+	}
+	normalized := make(map[LifecycleHook]string, len(defaults))
+	for hook, chainID := range defaults {
+		if !task.IsLifecycleHook(hook) {
+			return nil, fmt.Errorf("不支持的生命周期默认钩子: %q", hook)
+		}
+		chainID = strings.TrimSpace(chainID)
+		if chainID == "" {
+			continue
+		}
+		chain, found := knownChains[chainID]
+		if !found {
+			return nil, fmt.Errorf("生命周期默认链不存在: %q", chainID)
+		}
+		if !lifecycleHookIncluded(chain.ApplicableHooks, hook) {
+			continue
+		}
+		normalized[hook] = chainID
+	}
+	return normalized, nil
+}
+
+func allLifecycleHooks() []LifecycleHook {
+	return []LifecycleHook{
+		LifecycleHookBeforeStart,
+		LifecycleHookPostStart,
+		LifecycleHookBeforeEnd,
+		LifecycleHookPostEnd,
+		LifecycleHookUpdateTask,
+	}
+}
+
+func normalizeLifecycleApplicableHooks(hooks, legacyHooks []LifecycleHook, allowEmpty bool) ([]LifecycleHook, error) {
+	if hooks == nil {
+		hooks = legacyHooks
+	}
+	normalized := make([]LifecycleHook, 0, len(hooks))
+	seen := make(map[LifecycleHook]bool, len(hooks))
+	for _, hook := range hooks {
+		if !task.IsLifecycleHook(hook) {
+			return nil, fmt.Errorf("不支持的生命周期钩子: %q", hook)
+		}
+		if !seen[hook] {
+			seen[hook] = true
+			normalized = append(normalized, hook)
+		}
+	}
+	if len(normalized) == 0 && !allowEmpty {
+		return nil, fmt.Errorf("至少选择一个生命周期钩子")
+	}
+	return normalized, nil
+}
+
+func commonLifecycleHooks(commandIDs []string, commands map[string]LifecycleCommand) []LifecycleHook {
+	common := allLifecycleHooks()
+	for _, commandID := range commandIDs {
+		commandHooks := commands[commandID].ApplicableHooks
+		filtered := make([]LifecycleHook, 0, len(common))
+		for _, hook := range common {
+			if lifecycleHookIncluded(commandHooks, hook) {
+				filtered = append(filtered, hook)
+			}
+		}
+		common = filtered
+	}
+	return common
+}
+
+func lifecycleHooksCover(available, required []LifecycleHook) bool {
+	for _, hook := range required {
+		if !lifecycleHookIncluded(available, hook) {
+			return false
+		}
+	}
+	return true
+}
+
+func lifecycleHookIncluded(hooks []LifecycleHook, expected LifecycleHook) bool {
+	for _, hook := range hooks {
+		if hook == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeArguments(arguments []string) []string {

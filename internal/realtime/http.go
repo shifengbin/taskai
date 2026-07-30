@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"taskai/internal/task"
 )
 
 type TaskState string
@@ -31,17 +33,19 @@ type TaskCatalog struct {
 }
 
 type TaskResource struct {
-	ID            string                       `json:"id"`
-	Title         string                       `json:"title"`
-	Description   string                       `json:"description"`
-	Color         string                       `json:"color"`
-	Status        string                       `json:"status"`
-	CreatedAt     time.Time                    `json:"createdAt"`
-	CompletedAt   *time.Time                   `json:"completedAt,omitempty"`
-	WorkspaceRoot string                       `json:"workspaceRoot,omitempty"`
-	WorkspacePath string                       `json:"workspacePath,omitempty"`
-	ExtraInfo     *map[string][]map[string]any `json:"extraInfo,omitempty"`
-	Terminals     *[]TerminalResource          `json:"terminals,omitempty"`
+	ID                 string                        `json:"id"`
+	Title              string                        `json:"title"`
+	Description        string                        `json:"description"`
+	Color              string                        `json:"color"`
+	Status             string                        `json:"status"`
+	CreatedAt          time.Time                     `json:"createdAt"`
+	CompletedAt        *time.Time                    `json:"completedAt,omitempty"`
+	WorkspaceRoot      string                        `json:"workspaceRoot,omitempty"`
+	WorkspacePath      string                        `json:"workspacePath,omitempty"`
+	LifecycleChains    map[task.LifecycleHook]string `json:"lifecycleChains"`
+	LifecycleExecution *task.LifecycleExecution      `json:"lifecycleExecution,omitempty"`
+	ExtraInfo          *map[string][]map[string]any  `json:"extraInfo,omitempty"`
+	Terminals          *[]TerminalResource           `json:"terminals,omitempty"`
 }
 
 type TerminalResource struct {

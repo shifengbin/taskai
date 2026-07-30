@@ -41,6 +41,150 @@ func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 	}
 }
 
+func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
+	current := Default(t.TempDir())
+
+	if len(current.LifecycleCommands) != 2 {
+		t.Fatalf("默认生命周期命令数量 = %d，期望 2", len(current.LifecycleCommands))
+	}
+	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID {
+		t.Fatalf("默认生命周期命令 = %#v", current.LifecycleCommands)
+	}
+	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
+		t.Fatalf("内置命令适用范围 = %#v", current.LifecycleCommands)
+	}
+	if !reflect.DeepEqual(current.LifecycleChains[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleChains[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
+		t.Fatalf("内置命令链适用范围 = %#v", current.LifecycleChains)
+	}
+	if got := current.LifecycleDefaultChains[LifecycleHookBeforeStart]; got != LifecycleChainCreateWorkspaceID {
+		t.Fatalf("beforeStart 默认链 = %q，期望 %q", got, LifecycleChainCreateWorkspaceID)
+	}
+	if got := current.LifecycleDefaultChains[LifecycleHookPostEnd]; got != LifecycleChainDeleteWorkspaceID {
+		t.Fatalf("postEnd 默认链 = %q，期望 %q", got, LifecycleChainDeleteWorkspaceID)
+	}
+}
+
+func TestValidateNormalizesLifecycleCommandsChainsAndDefaults(t *testing.T) {
+	validated, err := Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		LifecycleCommands: []LifecycleCommand{
+			{ID: " custom-prepare ", Kind: LifecycleCommandKindCustom, Name: " 准备仓库 ", Command: " prepare ", Arguments: []string{" --fast ", ""}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+			{ID: LifecycleCommandCreateWorkspaceID, Kind: LifecycleCommandKindCustom, Name: " 被篡改 ", Command: " rm "},
+		},
+		LifecycleChains: []LifecycleCommandChain{{
+			ID:              " chain-prepare ",
+			Name:            " 开始准备 ",
+			CommandIDs:      []string{" custom-prepare ", LifecycleCommandCreateWorkspaceID},
+			ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+		}},
+		LifecycleDefaultChains: map[LifecycleHook]string{LifecycleHookBeforeStart: " chain-prepare "},
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	custom := lifecycleCommandByID(validated.LifecycleCommands, "custom-prepare")
+	if custom == nil || custom.Name != "准备仓库" || custom.Command != "prepare" || !reflect.DeepEqual(custom.Arguments, []string{"--fast"}) {
+		t.Fatalf("自定义生命周期命令 = %#v", custom)
+	}
+	create := lifecycleCommandByID(validated.LifecycleCommands, LifecycleCommandCreateWorkspaceID)
+	if create == nil || create.Kind != LifecycleCommandKindCreateWorkspace || create.Name == "被篡改" || create.Command != "" {
+		t.Fatalf("创建目录内置命令 = %#v", create)
+	}
+	if len(validated.LifecycleChains) != 1 || validated.LifecycleChains[0].ID != "chain-prepare" || !reflect.DeepEqual(validated.LifecycleChains[0].CommandIDs, []string{"custom-prepare", LifecycleCommandCreateWorkspaceID}) {
+		t.Fatalf("生命周期链 = %#v", validated.LifecycleChains)
+	}
+	if got := validated.LifecycleDefaultChains[LifecycleHookBeforeStart]; got != "chain-prepare" {
+		t.Fatalf("beforeStart 默认链 = %q", got)
+	}
+}
+
+func TestValidateLifecycleApplicableHooks(t *testing.T) {
+	allHooks := []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookBeforeEnd, LifecycleHookPostEnd, LifecycleHookUpdateTask}
+	legacy, err := Validate(Settings{
+		WorkspaceRoot:     t.TempDir(),
+		TaskTreeWidth:     DefaultTaskTreeWidth,
+		LifecycleCommands: []LifecycleCommand{{ID: "legacy-command", Kind: LifecycleCommandKindCustom, Name: "旧命令", Command: "echo"}},
+		LifecycleChains:   []LifecycleCommandChain{{ID: "legacy-chain", Name: "旧链", CommandIDs: []string{"legacy-command"}}},
+	})
+	if err != nil {
+		t.Fatalf("Validate() 迁移旧范围 error = %v", err)
+	}
+	if !reflect.DeepEqual(legacy.LifecycleCommands[0].ApplicableHooks, allHooks) || !reflect.DeepEqual(legacy.LifecycleChains[0].ApplicableHooks, allHooks) {
+		t.Fatalf("旧配置范围迁移 = %#v", legacy)
+	}
+
+	invalidCommand := Settings{
+		WorkspaceRoot:     t.TempDir(),
+		TaskTreeWidth:     DefaultTaskTreeWidth,
+		LifecycleCommands: []LifecycleCommand{{ID: "command", Kind: LifecycleCommandKindCustom, Name: "命令", Command: "echo", ApplicableHooks: []LifecycleHook{}}},
+	}
+	if _, err := Validate(invalidCommand); err == nil {
+		t.Fatal("Validate() error = nil，期望拒绝没有适用范围的自定义命令")
+	}
+
+	invalidChain := Settings{
+		WorkspaceRoot:     t.TempDir(),
+		TaskTreeWidth:     DefaultTaskTreeWidth,
+		LifecycleCommands: []LifecycleCommand{{ID: "command", Kind: LifecycleCommandKindCustom, Name: "命令", Command: "echo", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}}},
+		LifecycleChains:   []LifecycleCommandChain{{ID: "chain", Name: "链", CommandIDs: []string{"command"}, ApplicableHooks: []LifecycleHook{LifecycleHookPostStart}}},
+	}
+	if _, err := Validate(invalidChain); err == nil {
+		t.Fatal("Validate() error = nil，期望拒绝范围不匹配的命令链")
+	}
+}
+
+func TestValidateRejectsInvalidLifecycleCommandChainAndDefault(t *testing.T) {
+	base := Settings{WorkspaceRoot: t.TempDir(), TaskTreeWidth: DefaultTaskTreeWidth}
+	base.LifecycleCommands = append(DefaultLifecycleCommands(), LifecycleCommand{ID: "custom", Kind: LifecycleCommandKindCustom, Name: "命令", Command: "echo"})
+
+	invalidCommand := base
+	invalidCommand.LifecycleCommands[len(invalidCommand.LifecycleCommands)-1].Command = ""
+	if _, err := Validate(invalidCommand); err == nil {
+		t.Fatal("Validate() error = nil，期望拒绝无可执行命令的自定义生命周期命令")
+	}
+
+	invalidChain := base
+	invalidChain.LifecycleChains = []LifecycleCommandChain{{ID: "chain", Name: "链", CommandIDs: []string{"missing"}}}
+	if _, err := Validate(invalidChain); err == nil {
+		t.Fatal("Validate() error = nil，期望拒绝引用不存在命令的链")
+	}
+
+	invalidDefault := base
+	invalidDefault.LifecycleChains = []LifecycleCommandChain{{ID: "chain", Name: "链", CommandIDs: []string{"custom"}}}
+	invalidDefault.LifecycleDefaultChains = map[LifecycleHook]string{LifecycleHookPostStart: "missing"}
+	if _, err := Validate(invalidDefault); err == nil {
+		t.Fatal("Validate() error = nil，期望拒绝引用不存在链的默认值")
+	}
+}
+
+func TestValidateDefaultsOnlyAvailableLifecycleChains(t *testing.T) {
+	validated, err := Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		LifecycleChains: []LifecycleCommandChain{{
+			ID:         LifecycleChainCreateWorkspaceID,
+			Name:       "创建任务工作目录",
+			CommandIDs: []string{LifecycleCommandCreateWorkspaceID},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if !reflect.DeepEqual(validated.LifecycleDefaultChains, map[LifecycleHook]string{LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID}) {
+		t.Fatalf("可用默认链 = %#v", validated.LifecycleDefaultChains)
+	}
+}
+
+func lifecycleCommandByID(commands []LifecycleCommand, id string) *LifecycleCommand {
+	for index := range commands {
+		if commands[index].ID == id {
+			return &commands[index]
+		}
+	}
+	return nil
+}
+
 func TestValidateDefaultsAndValidatesActiveTaskStatus(t *testing.T) {
 	validated, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),

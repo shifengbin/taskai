@@ -7,28 +7,42 @@ import (
 )
 
 func Create(root, taskID string) (string, error) {
-	if err := validateTaskID(taskID); err != nil {
+	absRoot, workspacePath, err := TaskPath(root, taskID)
+	if err != nil {
 		return "", err
 	}
-
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", fmt.Errorf("解析任务工作区根目录失败: %w", err)
-	}
-	absRoot = filepath.Clean(absRoot)
 	if err := os.MkdirAll(absRoot, 0o700); err != nil {
 		return "", fmt.Errorf("创建任务工作区根目录失败: %w", err)
 	}
-
-	workspacePath := filepath.Join(absRoot, taskID)
-	if !isDirectTaskChild(absRoot, workspacePath, taskID) {
-		return "", fmt.Errorf("任务工作目录不安全")
+	if info, err := os.Lstat(workspacePath); err == nil {
+		if info.IsDir() {
+			return workspacePath, nil
+		}
+		return "", fmt.Errorf("任务工作目录已存在且不是目录")
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("检查任务工作目录失败: %w", err)
 	}
 	if err := os.Mkdir(workspacePath, 0o700); err != nil {
 		return "", fmt.Errorf("创建任务工作目录失败: %w", err)
 	}
 
 	return workspacePath, nil
+}
+
+func TaskPath(root, taskID string) (string, string, error) {
+	if err := validateTaskID(taskID); err != nil {
+		return "", "", err
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", fmt.Errorf("解析任务工作区根目录失败: %w", err)
+	}
+	absRoot = filepath.Clean(absRoot)
+	workspacePath := filepath.Join(absRoot, taskID)
+	if !isDirectTaskChild(absRoot, workspacePath, taskID) {
+		return "", "", fmt.Errorf("任务工作目录不安全")
+	}
+	return absRoot, workspacePath, nil
 }
 
 func Remove(root, workspacePath, taskID string) error {

@@ -14,6 +14,8 @@ var (
 	ErrTitleRequired          = errors.New("任务标题不能为空")
 	ErrInvalidColor           = errors.New("任务颜色必须是十六进制颜色值")
 	ErrExtraInfoFieldRequired = errors.New("额外信息字段不能为空")
+	ErrInvalidLifecycleHook   = errors.New("不支持的生命周期钩子")
+	ErrInvalidLifecycleState  = errors.New("不支持的生命周期执行状态")
 )
 
 const DefaultColor = "#4f46e5"
@@ -28,6 +30,34 @@ const (
 	StatusCompleted Status = "completed"
 )
 
+type LifecycleHook string
+
+const (
+	LifecycleHookBeforeStart LifecycleHook = "beforeStart"
+	LifecycleHookPostStart   LifecycleHook = "postStart"
+	LifecycleHookBeforeEnd   LifecycleHook = "beforeEnd"
+	LifecycleHookPostEnd     LifecycleHook = "postEnd"
+	LifecycleHookUpdateTask  LifecycleHook = "updateTask"
+)
+
+type LifecycleExecutionState string
+
+const (
+	LifecycleExecutionRunning LifecycleExecutionState = "running"
+	LifecycleExecutionFailed  LifecycleExecutionState = "failed"
+)
+
+type LifecycleExecution struct {
+	Hook               LifecycleHook           `json:"hook"`
+	ChainID            string                  `json:"chainId"`
+	CurrentCommandID   string                  `json:"currentCommandId,omitempty"`
+	CurrentCommandName string                  `json:"currentCommandName,omitempty"`
+	CurrentIndex       int                     `json:"currentIndex"`
+	CommandCount       int                     `json:"commandCount"`
+	State              LifecycleExecutionState `json:"state"`
+	Error              string                  `json:"error,omitempty"`
+}
+
 type ExtraInfoParameterInputType string
 
 const (
@@ -36,16 +66,19 @@ const (
 )
 
 type Task struct {
-	ID            string          `json:"id"`
-	Title         string          `json:"title"`
-	Description   string          `json:"description"`
-	Color         string          `json:"color"`
-	Status        Status          `json:"status"`
-	CreatedAt     time.Time       `json:"createdAt"`
-	CompletedAt   *time.Time      `json:"completedAt,omitempty"`
-	WorkspaceRoot string          `json:"workspaceRoot,omitempty"`
-	WorkspacePath string          `json:"workspacePath,omitempty"`
-	ExtraInfo     []TaskExtraInfo `json:"extraInfo"`
+	ID                 string                   `json:"id"`
+	Title              string                   `json:"title"`
+	Description        string                   `json:"description"`
+	Color              string                   `json:"color"`
+	Status             Status                   `json:"status"`
+	Shelved            bool                     `json:"shelved"`
+	CreatedAt          time.Time                `json:"createdAt"`
+	CompletedAt        *time.Time               `json:"completedAt,omitempty"`
+	WorkspaceRoot      string                   `json:"workspaceRoot,omitempty"`
+	WorkspacePath      string                   `json:"workspacePath,omitempty"`
+	ExtraInfo          []TaskExtraInfo          `json:"extraInfo"`
+	LifecycleChains    map[LifecycleHook]string `json:"lifecycleChains"`
+	LifecycleExecution *LifecycleExecution      `json:"lifecycleExecution,omitempty"`
 }
 
 type ExtraInfoParameterDefinition struct {
@@ -105,11 +138,62 @@ type TaskExtraInfo struct {
 
 func NewTask(title, description, color string, now time.Time) (Task, error) {
 	return Task{
-		ID:        newID(),
-		Status:    StatusPending,
-		CreatedAt: now,
-		ExtraInfo: []TaskExtraInfo{},
+		ID:              newID(),
+		Status:          StatusPending,
+		CreatedAt:       now,
+		ExtraInfo:       []TaskExtraInfo{},
+		LifecycleChains: map[LifecycleHook]string{},
 	}.UpdateDetails(title, description, color)
+}
+
+func IsLifecycleHook(hook LifecycleHook) bool {
+	switch hook {
+	case LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookBeforeEnd, LifecycleHookPostEnd, LifecycleHookUpdateTask:
+		return true
+	default:
+		return false
+	}
+}
+
+func NormalizeLifecycleChains(chains map[LifecycleHook]string) (map[LifecycleHook]string, error) {
+	normalized := make(map[LifecycleHook]string, len(chains))
+	for hook, chainID := range chains {
+		if !IsLifecycleHook(hook) {
+			return nil, fmt.Errorf("%w: %q", ErrInvalidLifecycleHook, hook)
+		}
+		if normalizedID := strings.TrimSpace(chainID); normalizedID != "" {
+			normalized[hook] = normalizedID
+		}
+	}
+	return normalized, nil
+}
+
+func NormalizeLifecycleExecution(execution *LifecycleExecution) (*LifecycleExecution, error) {
+	if execution == nil {
+		return nil, nil
+	}
+	normalized := *execution
+	if !IsLifecycleHook(normalized.Hook) {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidLifecycleHook, normalized.Hook)
+	}
+	normalized.ChainID = strings.TrimSpace(normalized.ChainID)
+	normalized.CurrentCommandID = strings.TrimSpace(normalized.CurrentCommandID)
+	normalized.CurrentCommandName = strings.TrimSpace(normalized.CurrentCommandName)
+	normalized.Error = strings.TrimSpace(normalized.Error)
+	if normalized.ChainID == "" {
+		return nil, fmt.Errorf("生命周期执行记录缺少命令链")
+	}
+	if normalized.State != LifecycleExecutionRunning && normalized.State != LifecycleExecutionFailed {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidLifecycleState, normalized.State)
+	}
+	if normalized.CommandCount <= 0 || normalized.CurrentIndex <= 0 || normalized.CurrentIndex > normalized.CommandCount {
+		return nil, fmt.Errorf("生命周期执行进度无效")
+	}
+	return &normalized, nil
+}
+
+func (current Task) IsLifecycleLocked() bool {
+	return current.LifecycleExecution != nil && (current.LifecycleExecution.State == LifecycleExecutionRunning || current.LifecycleExecution.State == LifecycleExecutionFailed)
 }
 
 func (current Task) UpdateDetails(title, description, color string) (Task, error) {

@@ -4,7 +4,45 @@ export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
 export type StatusManagementMode = 'title-change' | 'http'
 export type ColorScheme = 'light' | 'dark'
 export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'command'
+export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'
+export type LifecycleExecutionState = 'running' | 'failed'
+export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace'
 export const defaultTaskColor = '#4f46e5'
+
+export const lifecycleHooks: Array<{id: LifecycleHook, label: string}> = [
+  {id: 'beforeStart', label: '开始前'},
+  {id: 'postStart', label: '开始后'},
+  {id: 'beforeEnd', label: '结束前'},
+  {id: 'postEnd', label: '结束后'},
+  {id: 'updateTask', label: '更新任务后'},
+]
+
+export interface LifecycleExecution {
+  hook: LifecycleHook
+  chainId: string
+  currentCommandId?: string
+  currentCommandName?: string
+  currentIndex: number
+  commandCount: number
+  state: LifecycleExecutionState
+  error?: string
+}
+
+export interface LifecycleCommand {
+  id: string
+  kind: LifecycleCommandKind
+  name: string
+  command?: string
+  arguments: string[]
+  applicableHooks: LifecycleHook[]
+}
+
+export interface LifecycleCommandChain {
+  id: string
+  name: string
+  commandIds: string[]
+  applicableHooks: LifecycleHook[]
+}
 
 export interface TaskRecord {
   id: string
@@ -12,11 +50,14 @@ export interface TaskRecord {
   description: string
   color?: string
   status: TaskStatus
+  shelved?: boolean
   createdAt: string
   completedAt?: string
   workspaceRoot?: string
-  workspacePath?: string
+	workspacePath?: string
 	extraInfo?: TaskExtraInfo[]
+  lifecycleChains?: Partial<Record<LifecycleHook, string>>
+  lifecycleExecution?: LifecycleExecution
   realtimeStatus?: RealtimeStatus
 }
 
@@ -108,6 +149,9 @@ export interface SettingsRecord {
 	statusManagementMode: StatusManagementMode
 	statusManagementHTTPPort: number
 	httpServiceEnabled: boolean
+  lifecycleCommands?: LifecycleCommand[]
+  lifecycleChains?: LifecycleCommandChain[]
+  lifecycleDefaultChains?: Partial<Record<LifecycleHook, string>>
 }
 
 export interface TaskMenuItem {

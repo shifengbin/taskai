@@ -1,6 +1,7 @@
 import {useMemo, useRef, useState} from 'react'
 import {
   Box,
+  Chip,
   Collapse,
   IconButton,
   List,
@@ -23,6 +24,7 @@ import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined'
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined'
+import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
 
@@ -76,6 +78,8 @@ interface TaskTreeProps {
   onRunMenuCommand?(taskID: string, itemID: string): void
   onStartTask(taskID: string): void
   onFinishTask(taskID: string): void
+  onRetryLifecycle?(taskID: string): void
+  onSetTaskShelved?(taskID: string, shelved: boolean): void
   onCloseTerminal?(terminal: TerminalRecord): void
   onReorderTasks?(taskID: string, targetTaskID: string, position: TaskDropPosition): void
 }
@@ -97,10 +101,13 @@ export function TaskTree({
   onRunMenuCommand,
   onStartTask,
   onFinishTask,
+  onRetryLifecycle,
+  onSetTaskShelved,
   onCloseTerminal,
   onReorderTasks,
 }: TaskTreeProps) {
   const [localExpandedTasks, setLocalExpandedTasks] = useState<Record<string, boolean>>({})
+  const [shelvedExpanded, setShelvedExpanded] = useState(false)
   const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null)
   const [draggedTaskID, setDraggedTaskID] = useState<string>()
   const [dragPreviewPosition, setDragPreviewPosition] = useState<TaskDragPreviewPosition>()
@@ -113,7 +120,15 @@ export function TaskTree({
       return byTask
     }, {})
   }, [terminals])
-  const visibleTasks = useMemo(() => tasks.filter((task) => task.status === activeStatus), [activeStatus, tasks])
+  const visibleTasks = useMemo(() => {
+    const matching = tasks.filter((task) => task.status === activeStatus)
+    if (activeStatus !== 'running') {
+      return matching
+    }
+    return [...matching.filter((task) => !task.shelved), ...matching.filter((task) => task.shelved)]
+  }, [activeStatus, tasks])
+  const shelvedTasks = useMemo(() => activeStatus === 'running' ? visibleTasks.filter((task) => task.shelved) : [], [activeStatus, visibleTasks])
+  const firstShelvedTaskID = shelvedTasks[0]?.id
   const taskCounts = useMemo(() => tasks.reduce<Record<TaskStatus, number>>((counts, task) => {
     counts[task.status] += 1
     return counts
@@ -144,6 +159,9 @@ export function TaskTree({
     if (!targetTaskID) {
       return undefined
     }
+    if (activeStatus === 'running' && tasks.find((task) => task.id === targetTaskID)?.shelved) {
+      return undefined
+    }
     const taskItem = pointerTarget.closest<HTMLElement>('[data-task-id]')
     if (!taskItem || taskItem.dataset.taskId !== targetTaskID) {
       return {taskID: targetTaskID, position: 'after'}
@@ -163,6 +181,10 @@ export function TaskTree({
   }
 
   const beginTaskPointerDrag = (event: React.PointerEvent<HTMLElement>, taskID: string) => {
+		const current = tasks.find((task) => task.id === taskID)
+		if (current?.lifecycleExecution || (activeStatus === 'running' && current?.shelved)) {
+			return
+		}
     suppressTaskClickRef.current = false
     if (event.button > 0 || (event.target as HTMLElement).closest('button')) {
       return
@@ -225,6 +247,9 @@ export function TaskTree({
 
   const requestContextMenu = (event: React.MouseEvent, task: TaskRecord) => {
     event.preventDefault()
+		if (task.lifecycleExecution) {
+			return
+		}
     setTaskMenu({taskID: task.id, position: {top: event.clientY - 6, left: event.clientX + 2}})
   }
 
@@ -244,7 +269,7 @@ export function TaskTree({
     setTaskMenu(null)
   }
 
-  const activeMenuItems = taskMenuTask ? menuItems.filter((item) => taskMenuTask.status === 'running' || item.kind === 'edit-task') : []
+  const activeMenuItems = taskMenuTask && !taskMenuTask.lifecycleExecution ? menuItems.filter((item) => taskMenuTask.status === 'running' || item.kind === 'edit-task') : []
 
   return (
     <Box component="nav" aria-label="任务和终端" sx={{height: '100%', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)'}}>
@@ -265,9 +290,27 @@ export function TaskTree({
           const isExpanded = expanded[task.id] ?? true
           const taskColor = task.color || defaultTaskColor
           const dropPosition = dropTarget?.taskID === task.id ? dropTarget.position : undefined
+			const execution = task.lifecycleExecution
+			const locked = Boolean(execution)
+			const executionLabel = execution ? `${lifecycleHookLabel(execution.hook)} · ${execution.currentCommandName || '命令'} ${execution.currentIndex}/${execution.commandCount}` : ''
+			const isShelvedTask = activeStatus === 'running' && Boolean(task.shelved)
+			const isFirstShelvedTask = task.id === firstShelvedTaskID
           return (
             <Box
               key={task.id}
+            >
+              {isFirstShelvedTask && (
+                <ListItemButton
+                  aria-label={shelvedExpanded ? '收起已搁置任务' : '展开已搁置任务'}
+                  onClick={() => setShelvedExpanded((current) => !current)}
+                  sx={{minHeight: 44, gap: 0.75, borderTop: 1, borderColor: 'divider'}}
+                >
+                  {shelvedExpanded ? <ExpandMoreIcon fontSize="small"/> : <ChevronRightIcon fontSize="small"/>}
+                  <ListItemText primary={`已搁置 (${shelvedTasks.length})`} slotProps={{primary: {noWrap: true, sx: {fontWeight: 600}}}}/>
+                </ListItemButton>
+              )}
+              {(!isShelvedTask || shelvedExpanded) && (
+                <Box
               data-task-container={task.id}
             >
               {dropPosition === 'before' && <TaskDropIndicator taskTitle={task.title} position={dropPosition}/>}
@@ -308,7 +351,7 @@ export function TaskTree({
                     outline: draggedTaskID === task.id ? '2px solid' : '2px solid transparent',
                     outlineColor: draggedTaskID === task.id ? 'primary.main' : 'transparent',
                     outlineOffset: -2,
-                    cursor: 'grab',
+                    cursor: locked ? 'not-allowed' : 'grab',
                     touchAction: 'none',
                     userSelect: 'none',
                     '&:active': {cursor: 'grabbing'},
@@ -334,46 +377,68 @@ export function TaskTree({
                     secondary: {noWrap: true},
                   }}
                 />
+						{execution && <Tooltip title={execution.error || '命令链正在执行'}>
+							<Chip label={executionLabel} size="small" color={execution.state === 'failed' ? 'error' : 'warning'} variant="outlined" sx={{maxWidth: 180, '& .MuiChip-label': {overflow: 'hidden', textOverflow: 'ellipsis'}}}/>
+						</Tooltip>}
                 {task.status === 'running' && !isExpanded && <TerminalStatusDot status={task.realtimeStatus ?? 'idle'}/>}
                 {task.status === 'pending' && (
                   <Tooltip title="执行">
-                    <IconButton
+						<span>
+							<IconButton
                       aria-label="执行"
                       size="small"
+						disabled={locked}
                       onClick={(event) => {
                         event.stopPropagation()
                         onStartTask(task.id)
                       }}
-                    >
-                      <PlayArrowOutlinedIcon fontSize="small"/>
-                    </IconButton>
+							>
+								<PlayArrowOutlinedIcon fontSize="small"/>
+							</IconButton>
+						</span>
                   </Tooltip>
                 )}
                 {task.status === 'running' && (
                   <Tooltip title="结束">
-                    <IconButton
+						<span>
+							<IconButton
                       aria-label="结束"
                       size="small"
+						disabled={locked}
                       onClick={(event) => {
                         event.stopPropagation()
                         onFinishTask(task.id)
                       }}
-                    >
-                      <TaskAltOutlinedIcon fontSize="small"/>
-                    </IconButton>
+							>
+								<TaskAltOutlinedIcon fontSize="small"/>
+							</IconButton>
+						</span>
                   </Tooltip>
                 )}
+						{execution?.state === 'failed' && onRetryLifecycle && (
+							<Tooltip title="从命令链首条命令重新执行">
+								<IconButton aria-label="重试命令链" size="small" color="error" onClick={(event) => {
+									event.stopPropagation()
+									onRetryLifecycle(task.id)
+								}}>
+									<ReplayOutlinedIcon fontSize="small"/>
+								</IconButton>
+							</Tooltip>
+						)}
                 <Tooltip title="任务操作">
-                  <IconButton
+						<span>
+							<IconButton
                     aria-label="任务操作"
                     size="small"
+						disabled={locked}
                     onClick={(event) => {
                       event.stopPropagation()
                       setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
                     }}
-                  >
-                    <MoreVertIcon fontSize="small"/>
-                  </IconButton>
+							>
+								<MoreVertIcon fontSize="small"/>
+							</IconButton>
+						</span>
                 </Tooltip>
                 </ListItemButton>
               </Tooltip>
@@ -426,6 +491,8 @@ export function TaskTree({
               </Collapse>
               {dropPosition === 'after' && <TaskDropIndicator taskTitle={task.title} position={dropPosition}/>}
             </Box>
+              )}
+            </Box>
           )
         })}
       </List>
@@ -446,9 +513,27 @@ export function TaskTree({
             <Typography component="span" sx={{ml: 1}}>{item.name}</Typography>
           </MenuItem>
         ))}
+        {taskMenuTask?.status === 'running' && !taskMenuTask.lifecycleExecution && (
+          <MenuItem onClick={() => {
+            onSetTaskShelved?.(taskMenuTask.id, !taskMenuTask.shelved)
+            setTaskMenu(null)
+          }}>
+            <Typography component="span">{taskMenuTask.shelved ? '取消搁置' : '搁置任务'}</Typography>
+          </MenuItem>
+        )}
       </Menu>
     </Box>
   )
+}
+
+function lifecycleHookLabel(hook: NonNullable<TaskRecord['lifecycleExecution']>['hook']): string {
+	switch (hook) {
+	case 'beforeStart': return '开始前'
+	case 'postStart': return '开始后'
+	case 'beforeEnd': return '结束前'
+	case 'postEnd': return '结束后'
+	case 'updateTask': return '更新后'
+	}
 }
 
 function TaskDropIndicator({taskTitle, position}: {taskTitle: string; position: TaskDropPosition}) {

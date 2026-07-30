@@ -37,6 +37,61 @@ function dispatchPointerEvent(target: Element, type: string, pointerId: number, 
 describe('TaskTree', () => {
   afterEach(cleanup)
 
+  it('在执行中列表末尾以默认收起的同级区域展示搁置任务', async () => {
+    const user = userEvent.setup()
+    const shelvedTask = {...runningTask, id: 'task-2', title: '暂缓发布', shelved: true}
+    render(
+      <TaskTree
+        tasks={[runningTask, shelvedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('整理发布说明')).toBeInTheDocument()
+    expect(screen.queryByText('暂缓发布')).not.toBeInTheDocument()
+    const toggle = screen.getByRole('button', {name: '展开已搁置任务'})
+    expect(toggle).toHaveTextContent('已搁置 (1)')
+
+    await user.click(toggle)
+    expect(screen.getByText('暂缓发布')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '收起已搁置任务'}))
+    expect(screen.queryByText('暂缓发布')).not.toBeInTheDocument()
+  })
+
+  it('为执行中任务的操作菜单提供搁置操作', async () => {
+    const user = userEvent.setup()
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    expect(screen.getByRole('menuitem', {name: '搁置任务'})).toBeInTheDocument()
+  })
+
   it('任务操作下拉菜单和右键菜单均可创建终端、打开任务文件夹或编辑任务，并可选择终端子节点', async () => {
     const user = userEvent.setup()
     const onCreateTerminal = vi.fn()
@@ -575,11 +630,49 @@ describe('TaskTree', () => {
     )
 
     await user.click(screen.getByRole('button', {name: '任务操作'}))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务', '搁置任务'])
     await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
     expect(onRunMenuCommand).toHaveBeenCalledWith('task-1', codexMenuItem.id)
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务', '搁置任务'])
+  })
+
+  it('显示失败命令链进度、禁用任务操作并允许从首命令重试', async () => {
+    const user = userEvent.setup()
+    const onRetryLifecycle = vi.fn()
+    const lockedTask: TaskRecord = {
+      ...runningTask,
+      lifecycleExecution: {
+        hook: 'postStart', chainId: 'chain-1', currentCommandId: 'deploy', currentCommandName: '部署项目',
+        currentIndex: 2, commandCount: 3, state: 'failed', error: '命令退出码 1',
+      },
+    }
+    render(
+      <TaskTree
+        tasks={[lockedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        onRetryLifecycle={onRetryLifecycle}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('开始后 · 部署项目 2/3')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '任务操作'})).toBeDisabled()
+    expect(screen.getByRole('button', {name: '结束'})).toBeDisabled()
+    await user.click(screen.getByRole('button', {name: '重试命令链'}))
+    expect(onRetryLifecycle).toHaveBeenCalledWith('task-1')
+
+    fireEvent.contextMenu(screen.getByText('整理发布说明'))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })

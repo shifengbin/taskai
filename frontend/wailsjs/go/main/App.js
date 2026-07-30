@@ -10,6 +10,10 @@ export function CloseTerminal(arg1, arg2) {
   return window['go']['main']['App']['CloseTerminal'](arg1, arg2);
 }
 
+export function CopyLifecycleCommandChain(arg1) {
+  return window['go']['main']['App']['CopyLifecycleCommandChain'](arg1);
+}
+
 export function CreateCommandTerminal(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['CreateCommandTerminal'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -20,6 +24,10 @@ export function CreateTask(arg1, arg2, arg3) {
 
 export function CreateTaskWithExtraInfo(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['CreateTaskWithExtraInfo'](arg1, arg2, arg3, arg4);
+}
+
+export function CreateTaskWithExtraInfoAndLifecycleChains(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['CreateTaskWithExtraInfoAndLifecycleChains'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function CreateTerminal(arg1, arg2, arg3) {
@@ -36,6 +44,14 @@ export function DeleteExtraInfoCatalogue(arg1) {
 
 export function DeleteExtraInfoTemplate(arg1) {
   return window['go']['main']['App']['DeleteExtraInfoTemplate'](arg1);
+}
+
+export function DeleteLifecycleCommand(arg1) {
+  return window['go']['main']['App']['DeleteLifecycleCommand'](arg1);
+}
+
+export function DeleteLifecycleCommandChain(arg1) {
+  return window['go']['main']['App']['DeleteLifecycleCommandChain'](arg1);
 }
 
 export function DetectShells() {
@@ -70,6 +86,14 @@ export function ListExtraInfos() {
   return window['go']['main']['App']['ListExtraInfos']();
 }
 
+export function ListLifecycleCommandChains() {
+  return window['go']['main']['App']['ListLifecycleCommandChains']();
+}
+
+export function ListLifecycleCommands() {
+  return window['go']['main']['App']['ListLifecycleCommands']();
+}
+
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
@@ -94,6 +118,10 @@ export function ResizeTerminal(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ResizeTerminal'](arg1, arg2, arg3, arg4);
 }
 
+export function RetryTaskLifecycleCommandChain(arg1) {
+  return window['go']['main']['App']['RetryTaskLifecycleCommandChain'](arg1);
+}
+
 export function RunTaskCommand(arg1, arg2, arg3) {
   return window['go']['main']['App']['RunTaskCommand'](arg1, arg2, arg3);
 }
@@ -110,12 +138,28 @@ export function SaveExtraInfoTemplate(arg1) {
   return window['go']['main']['App']['SaveExtraInfoTemplate'](arg1);
 }
 
+export function SaveLifecycleCommand(arg1) {
+  return window['go']['main']['App']['SaveLifecycleCommand'](arg1);
+}
+
+export function SaveLifecycleCommandChain(arg1) {
+  return window['go']['main']['App']['SaveLifecycleCommandChain'](arg1);
+}
+
+export function SaveLifecycleDefaultChain(arg1, arg2) {
+  return window['go']['main']['App']['SaveLifecycleDefaultChain'](arg1, arg2);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
 export function SelectTerminal(arg1, arg2) {
   return window['go']['main']['App']['SelectTerminal'](arg1, arg2);
+}
+
+export function SetTaskShelved(arg1, arg2) {
+  return window['go']['main']['App']['SetTaskShelved'](arg1, arg2);
 }
 
 export function StartTask(arg1) {
@@ -128,6 +172,10 @@ export function UpdateTask(arg1, arg2, arg3, arg4) {
 
 export function UpdateTaskWithExtraInfo(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['UpdateTaskWithExtraInfo'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function UpdateTaskWithExtraInfoAndLifecycleChains(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['UpdateTaskWithExtraInfoAndLifecycleChains'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function WriteTerminal(arg1, arg2, arg3) {

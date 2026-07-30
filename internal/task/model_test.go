@@ -2,6 +2,7 @@ package task
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,98 @@ func TestNewTaskStartsPendingWithConfiguredColor(t *testing.T) {
 	}
 	if task.WorkspacePath != "" {
 		t.Errorf("NewTask() WorkspacePath = %q, want empty", task.WorkspacePath)
+	}
+	if task.LifecycleChains == nil {
+		t.Fatal("NewTask() LifecycleChains = nil, want empty map")
+	}
+}
+
+func TestTaskPersistsShelvedFlagAndDefaultsLegacyData(t *testing.T) {
+	var legacy Task
+	if err := json.Unmarshal([]byte(`{"id":"task-1","status":"running"}`), &legacy); err != nil {
+		t.Fatalf("Unmarshal legacy task error = %v", err)
+	}
+	shelved := reflect.ValueOf(legacy).FieldByName("Shelved")
+	if !shelved.IsValid() {
+		t.Fatal("Task 缺少 Shelved 字段")
+	}
+	if shelved.Bool() {
+		t.Fatal("旧任务 Shelved = true，期望 false")
+	}
+
+	encoded, err := json.Marshal(Task{ID: "task-2", Status: StatusRunning})
+	if err != nil {
+		t.Fatalf("Marshal task error = %v", err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatalf("Unmarshal payload error = %v", err)
+	}
+	if string(payload["shelved"]) != "false" {
+		t.Fatalf("任务 JSON shelved = %s，期望 false", payload["shelved"])
+	}
+}
+
+func TestTaskLifecycleChainsAndExecutionNormalizeForPersistence(t *testing.T) {
+	chains, err := NormalizeLifecycleChains(map[LifecycleHook]string{
+		LifecycleHookBeforeStart: " prepare ",
+		LifecycleHookPostEnd:     "",
+	})
+	if err != nil {
+		t.Fatalf("NormalizeLifecycleChains() error = %v", err)
+	}
+	if got := chains[LifecycleHookBeforeStart]; got != "prepare" {
+		t.Fatalf("beforeStart 链 = %q，期望 prepare", got)
+	}
+	if _, found := chains[LifecycleHookPostEnd]; found {
+		t.Fatalf("空链选择未被移除: %#v", chains)
+	}
+
+	execution, err := NormalizeLifecycleExecution(&LifecycleExecution{
+		Hook:               LifecycleHookPostStart,
+		ChainID:            " chain-1 ",
+		CurrentCommandID:   " command-2 ",
+		CurrentCommandName: " 初始化仓库 ",
+		CurrentIndex:       2,
+		CommandCount:       3,
+		State:              LifecycleExecutionFailed,
+		Error:              " 命令退出码为 1 ",
+	})
+	if err != nil {
+		t.Fatalf("NormalizeLifecycleExecution() error = %v", err)
+	}
+	if execution.ChainID != "chain-1" || execution.CurrentCommandID != "command-2" || execution.CurrentCommandName != "初始化仓库" || execution.Error != "命令退出码为 1" {
+		t.Fatalf("执行记录未规范化: %#v", execution)
+	}
+	if execution.CurrentIndex != 2 || execution.CommandCount != 3 || !(Task{LifecycleExecution: execution}).IsLifecycleLocked() {
+		t.Fatalf("执行记录或锁定状态错误: %#v", execution)
+	}
+
+	encoded, err := json.Marshal(Task{
+		ID:                 "task-1",
+		LifecycleChains:    chains,
+		LifecycleExecution: execution,
+	})
+	if err != nil {
+		t.Fatalf("Marshal task error = %v", err)
+	}
+	if !strings.Contains(string(encoded), `"lifecycleChains":{"beforeStart":"prepare"}`) || !strings.Contains(string(encoded), `"lifecycleExecution"`) {
+		t.Fatalf("任务生命周期字段未持久化: %s", encoded)
+	}
+}
+
+func TestTaskLifecycleValidationRejectsUnknownHookAndInvalidProgress(t *testing.T) {
+	if _, err := NormalizeLifecycleChains(map[LifecycleHook]string{"unknown": "chain-1"}); err == nil {
+		t.Fatal("NormalizeLifecycleChains() error = nil，期望拒绝未知钩子")
+	}
+	if _, err := NormalizeLifecycleExecution(&LifecycleExecution{
+		Hook:         LifecycleHookBeforeEnd,
+		ChainID:      "chain-1",
+		CurrentIndex: 2,
+		CommandCount: 1,
+		State:        LifecycleExecutionRunning,
+	}); err == nil {
+		t.Fatal("NormalizeLifecycleExecution() error = nil，期望拒绝超出范围的执行进度")
 	}
 }
 

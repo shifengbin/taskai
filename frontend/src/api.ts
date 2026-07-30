@@ -3,6 +3,8 @@ import {
   CloseTerminal,
 	CreateTask,
 	CreateTaskWithExtraInfo,
+	CreateTaskWithExtraInfoAndLifecycleChains,
+	CopyLifecycleCommandChain,
 	CreateCommandTerminal,
 	CreateTerminal,
 	DetectShells,
@@ -12,11 +14,15 @@ import {
 	DeleteExtraInfoCatalogue,
 	DeleteExtraInfo,
 	DeleteExtraInfoTemplate,
+	DeleteLifecycleCommand,
+	DeleteLifecycleCommandChain,
   HasRunningTasks,
 	ListTasks,
 	ListExtraInfoCatalogues,
 	ListExtraInfos,
 	ListExtraInfoTemplates,
+	ListLifecycleCommandChains,
+	ListLifecycleCommands,
 	OpenTaskFolder,
   PrepareQuit,
   ReorderTasks,
@@ -27,23 +33,31 @@ import {
 	SaveExtraInfoCatalogue,
 	SaveExtraInfo,
 	SaveExtraInfoTemplate,
+	SaveLifecycleCommand,
+	SaveLifecycleCommandChain,
+	SaveLifecycleDefaultChain,
 	SelectTerminal,
+	SetTaskShelved,
 	StartTask,
+	RetryTaskLifecycleCommandChain,
 	UpdateTask,
 	UpdateTaskWithExtraInfo,
+	UpdateTaskWithExtraInfoAndLifecycleChains,
   WriteTerminal,
 } from '../wailsjs/go/main/App'
 import {settings as settingsModel} from '../wailsjs/go/models'
 import {task as taskModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
 	createTaskWithExtraInfo: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => CreateTaskWithExtraInfo(title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item))) as Promise<TaskRecord>,
+	createTaskWithExtraInfoAndLifecycleChains: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[], chains: Partial<Record<LifecycleHook, string>>) => CreateTaskWithExtraInfoAndLifecycleChains(title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), chains) as Promise<TaskRecord>,
   updateTask: (taskID: string, title: string, description: string, color: string) => UpdateTask(taskID, title, description, color) as Promise<TaskRecord>,
 	updateTaskWithExtraInfo: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => UpdateTaskWithExtraInfo(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item))) as Promise<TaskRecord>,
+	updateTaskWithExtraInfoAndLifecycleChains: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[], chains: Partial<Record<LifecycleHook, string>>) => UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), chains) as Promise<TaskRecord>,
   listTasks: () => ListTasks() as Promise<TaskRecord[]>,
 	listExtraInfoTemplates: async () => {
 		const templates = await ListExtraInfoTemplates()
@@ -63,11 +77,37 @@ export const api = {
 	},
 	saveExtraInfo: (info: ExtraInfo) => SaveExtraInfo(taskModel.ExtraInfo.createFrom(info)) as unknown as Promise<ExtraInfo>,
 	deleteExtraInfo: (infoID: string) => DeleteExtraInfo(infoID),
+	listLifecycleCommands: async () => {
+		const commands = await ListLifecycleCommands()
+		return Array.isArray(commands) ? commands as LifecycleCommand[] : []
+	},
+	saveLifecycleCommand: (command: LifecycleCommand) => SaveLifecycleCommand(command) as Promise<LifecycleCommand>,
+	deleteLifecycleCommand: (commandID: string) => DeleteLifecycleCommand(commandID),
+	listLifecycleCommandChains: async () => {
+		const chains = await ListLifecycleCommandChains()
+		return Array.isArray(chains) ? chains as LifecycleCommandChain[] : []
+	},
+	saveLifecycleCommandChain: (chain: LifecycleCommandChain) => SaveLifecycleCommandChain(chain) as Promise<LifecycleCommandChain>,
+	copyLifecycleCommandChain: (chainID: string) => CopyLifecycleCommandChain(chainID) as Promise<LifecycleCommandChain>,
+	deleteLifecycleCommandChain: (chainID: string) => DeleteLifecycleCommandChain(chainID),
+	saveLifecycleDefaultChain: (hook: LifecycleHook, chainID: string) => SaveLifecycleDefaultChain(hook, chainID) as Promise<SettingsRecord>,
 	reorderTasks: (status: TaskRecord['status'], taskIDs: string[]) => ReorderTasks(status, taskIDs) as Promise<TaskRecord[]>,
-  startTask: (taskID: string) => StartTask(taskID) as Promise<TaskRecord>,
+	setTaskShelved: (taskID: string, shelved: boolean) => SetTaskShelved(taskID, shelved) as Promise<TaskRecord[]>,
+	startTask: (taskID: string) => StartTask(taskID) as Promise<TaskRecord>,
+	retryTaskLifecycleCommandChain: (taskID: string) => RetryTaskLifecycleCommandChain(taskID) as Promise<TaskRecord>,
   finishTask: (taskID: string) => FinishTask(taskID) as Promise<TaskRecord>,
   getSettings: () => GetSettings() as Promise<SettingsRecord>,
-	saveSettings: (settings: SettingsRecord) => SaveSettings(settingsModel.Settings.createFrom(settings)) as Promise<SettingsRecord>,
+	saveSettings: (settings: SettingsRecord) => {
+		const payload = settingsModel.Settings.createFrom(settings)
+		if (settings.lifecycleCommands || settings.lifecycleChains || settings.lifecycleDefaultChains) {
+			Object.assign(payload, {
+				lifecycleCommands: settings.lifecycleCommands ?? [],
+				lifecycleChains: settings.lifecycleChains ?? [],
+				lifecycleDefaultChains: settings.lifecycleDefaultChains ?? {},
+			})
+		}
+		return SaveSettings(payload) as Promise<SettingsRecord>
+	},
 	detectShells: () => DetectShells() as Promise<string[]>,
   createTerminal: (taskID: string, columns: number, rows: number) => CreateTerminal(taskID, columns, rows) as Promise<TerminalRecord>,
   createCommandTerminal: (taskID: string, command: string, arguments_: string[], columns: number, rows: number) => CreateCommandTerminal(taskID, command, arguments_, columns, rows) as Promise<TerminalRecord>,
@@ -102,5 +142,9 @@ export const api = {
 	onTaskScriptError(listener: (message: string) => void) {
 		EventsOn('task-script:error', listener)
 		return () => EventsOff('task-script:error')
+	},
+	onLifecycleEvent(listener: (task: TaskRecord) => void) {
+		EventsOn('task-lifecycle:event', listener)
+		return () => EventsOff('task-lifecycle:event')
 	},
 }
