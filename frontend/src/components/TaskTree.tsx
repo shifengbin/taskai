@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useRef, useState} from 'react'
+import {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react'
 import {
   Box,
   Chip,
@@ -121,6 +121,7 @@ export function TaskTree({
   const [dropTarget, setDropTarget] = useState<TaskDropTarget>()
   const pointerDragRef = useRef<TaskPointerDrag>()
   const suppressTaskClickRef = useRef(false)
+  const taskListRef = useRef<HTMLUListElement | null>(null)
   const reducedMotion = useReducedMotion()
   const terminalsByTask = useMemo(() => {
     return terminals.reduce<Record<string, TerminalRecord[]>>((byTask, terminal) => {
@@ -144,6 +145,29 @@ export function TaskTree({
   const taskMenuTask = taskMenu ? tasks.find((task) => task.id === taskMenu.taskID) : undefined
   const draggedTask = draggedTaskID ? tasks.find((task) => task.id === draggedTaskID) : undefined
   const expanded = expandedTasks ?? localExpandedTasks
+
+  useLayoutEffect(() => {
+    if (activeStatus !== 'running' || !startedTaskFeedback) {
+      return
+    }
+    const taskList = taskListRef.current
+    const taskItem = Array.from(taskList?.querySelectorAll<HTMLElement>('[data-task-id]') ?? [])
+      .find((item) => item.dataset.taskId === startedTaskFeedback.taskID)
+    if (!taskList || !taskItem) {
+      return
+    }
+    const listBounds = taskList.getBoundingClientRect()
+    const taskBounds = taskItem.getBoundingClientRect()
+    const offset = taskBounds.top < listBounds.top
+      ? taskBounds.top - listBounds.top
+      : taskBounds.bottom > listBounds.bottom
+        ? taskBounds.bottom - listBounds.bottom
+        : 0
+    if (offset !== 0) {
+      taskList.scrollTop = Math.max(0, taskList.scrollTop + offset)
+    }
+  }, [activeStatus, startedTaskFeedback?.sequence])
+
   const toggleExpanded = (taskID: string) => {
     if (onToggleTaskExpanded) {
       onToggleTaskExpanded(taskID)
@@ -292,7 +316,7 @@ export function TaskTree({
         <Tab value="running" label={`执行中 (${taskCounts.running})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
         <Tab value="completed" label={`已完成 (${taskCounts.completed})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
       </Tabs>
-      <List data-testid="task-tree-list" disablePadding dense sx={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': {display: 'none'}}}>
+      <List ref={taskListRef} data-testid="task-tree-list" disablePadding dense sx={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': {display: 'none'}}}>
         {visibleTasks.map((task) => {
           const childTerminals = terminalsByTask[task.id] ?? []
           const isExpanded = expanded[task.id] ?? true

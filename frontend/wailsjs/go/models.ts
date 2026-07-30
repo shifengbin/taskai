@@ -41,6 +41,7 @@ export namespace settings {
 	    name: string;
 	    command?: string;
 	    arguments: string[];
+	    chainArgumentMode: string;
 	    documentation?: string;
 	    applicableHooks: string[];
 	
@@ -55,6 +56,7 @@ export namespace settings {
 	        this.name = source["name"];
 	        this.command = source["command"];
 	        this.arguments = source["arguments"];
+	        this.chainArgumentMode = source["chainArgumentMode"];
 	        this.documentation = source["documentation"];
 	        this.applicableHooks = source["applicableHooks"];
 	    }

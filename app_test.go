@@ -259,10 +259,10 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 	}
 }
 
-func TestLifecycleChainAppendsReferenceArgumentsToCommandArguments(t *testing.T) {
+func TestLifecycleChainAppendsSavedReferenceArgumentsWhenChainArgumentsAreDisabled(t *testing.T) {
 	_, commands, err := lifecycleChain(settings.Settings{
 		LifecycleCommands: []settings.LifecycleCommand{{
-			ID: "prepare", Kind: settings.LifecycleCommandKindCustom, Name: "准备", Command: "prepare", Arguments: []string{"--verbose"},
+			ID: "prepare", Kind: settings.LifecycleCommandKindCustom, Name: "准备", Command: "prepare", Arguments: []string{"--verbose"}, ChainArgumentMode: settings.LifecycleCommandChainArgumentModeDisabled,
 		}},
 		LifecycleChains: []settings.LifecycleCommandChain{{
 			ID: "chain", Name: "准备链", Commands: []settings.LifecycleCommandReference{{CommandID: "prepare", Arguments: []string{"--profile", "dev"}}},

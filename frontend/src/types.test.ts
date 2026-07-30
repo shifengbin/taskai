@@ -14,6 +14,7 @@ describe('clampTaskTreeWidth', () => {
       kind: 'git-clone',
       name: 'Git 仓库克隆',
       arguments: [],
+			chainArgumentMode: 'enabled',
       documentation: '参数：dir=<相对目录>（必填）',
       applicableHooks: ['beforeStart', 'beforeEnd', 'updateTask'],
     })
@@ -24,7 +25,8 @@ describe('clampTaskTreeWidth', () => {
       applicableHooks: ['beforeStart'],
     })
 
-    expect(command.documentation).toContain('dir=<相对目录>')
-    expect(chain.commands).toEqual([{commandId: 'system.lifecycle.git-clone', arguments: ['dir=repositories']}])
+		expect(command.documentation).toContain('dir=<相对目录>')
+		expect(command.chainArgumentMode).toBe('enabled')
+		expect(chain.commands).toEqual([{commandId: 'system.lifecycle.git-clone', arguments: ['dir=repositories']}])
   })
 })

@@ -398,6 +398,55 @@ func TestRepositoryMigratesLifecycleApplicableHooks(t *testing.T) {
 	}
 }
 
+func TestRepositoryMigratesLegacyLifecycleCommandChainArgumentMode(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [],
+  "settings": {
+    "workspaceRoot": "` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `",
+    "taskTreeWidth": 360,
+    "lifecycleCommands": [{"id":"legacy-command","kind":"custom","name":"旧命令","command":"echo","arguments":["--fixed"],"applicableHooks":["beforeStart"]}],
+    "lifecycleChains": [{"id":"legacy-chain","name":"旧链","commands":[{"commandId":"legacy-command","arguments":["--saved-extra"]}],"applicableHooks":["beforeStart"]}],
+    "lifecycleDefaultChains": {"beforeStart":"legacy-chain"}
+  }
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := data.Settings.LifecycleCommands[0].ChainArgumentMode; got != settings.LifecycleCommandChainArgumentModeEnabled {
+		t.Fatalf("旧命令链级参数模式 = %q，期望允许", got)
+	}
+	if got := data.Settings.LifecycleCommands[0].Arguments; !reflect.DeepEqual(got, []string{"--fixed"}) {
+		t.Fatalf("旧命令固定参数 = %#v", got)
+	}
+	if got := data.Settings.LifecycleChains[0].Commands[0].Arguments; !reflect.DeepEqual(got, []string{"--saved-extra"}) {
+		t.Fatalf("旧命令链追加参数 = %#v", got)
+	}
+
+	persisted, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var persistedData struct {
+		Settings struct {
+			LifecycleCommands []struct {
+				ChainArgumentMode settings.LifecycleCommandChainArgumentMode `json:"chainArgumentMode"`
+			} `json:"lifecycleCommands"`
+		} `json:"settings"`
+	}
+	if err := json.Unmarshal(persisted, &persistedData); err != nil {
+		t.Fatalf("Unmarshal persisted data error = %v", err)
+	}
+	if got := persistedData.Settings.LifecycleCommands[0].ChainArgumentMode; got != settings.LifecycleCommandChainArgumentModeEnabled {
+		t.Fatalf("持久化后的链级参数模式 = %q，期望允许", got)
+	}
+}
+
 func TestRepositoryPreservesLegacyChainWithoutCommonApplicableHook(t *testing.T) {
 	dataPath := filepath.Join(t.TempDir(), "state.json")
 	contents := []byte(`{
@@ -556,6 +605,37 @@ func TestRepositoryManagesLifecycleCommandsChainsAndDeletionConstraints(t *testi
 	}
 	if err := repository.DeleteLifecycleCommand(command.ID); err != nil {
 		t.Fatalf("DeleteLifecycleCommand() unreferenced command error = %v", err)
+	}
+}
+
+func TestRepositoryPreservesChainArgumentsWhenCommandDisablesChainArguments(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	command, err := repository.SaveLifecycleCommand(settings.LifecycleCommand{
+		Name: "部署", Command: "deploy", Arguments: []string{"--fixed"}, ChainArgumentMode: settings.LifecycleCommandChainArgumentModeEnabled,
+		ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommand() error = %v", err)
+	}
+	chain, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
+		Name: "部署链", Commands: []settings.LifecycleCommandReference{{CommandID: command.ID, Arguments: []string{"--saved-extra"}}},
+		ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
+	}
+
+	command.ChainArgumentMode = settings.LifecycleCommandChainArgumentModeDisabled
+	if _, err := repository.SaveLifecycleCommand(command); err != nil {
+		t.Fatalf("SaveLifecycleCommand() disabling chain arguments error = %v", err)
+	}
+	chain.Name = "禁用后仍可保存"
+	saved, err := repository.SaveLifecycleCommandChain(chain)
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommandChain() after disabling chain arguments error = %v", err)
+	}
+	if got := saved.Commands; !reflect.DeepEqual(got, []settings.LifecycleCommandReference{{CommandID: command.ID, Arguments: []string{"--saved-extra"}}}) {
+		t.Fatalf("禁用后保存的链级参数 = %#v", got)
 	}
 }
 

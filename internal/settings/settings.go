@@ -83,14 +83,22 @@ const (
 	LifecycleChainDeleteWorkspaceID   = "system.lifecycle-chain.delete-workspace"
 )
 
+type LifecycleCommandChainArgumentMode string
+
+const (
+	LifecycleCommandChainArgumentModeEnabled  LifecycleCommandChainArgumentMode = "enabled"
+	LifecycleCommandChainArgumentModeDisabled LifecycleCommandChainArgumentMode = "disabled"
+)
+
 type LifecycleCommand struct {
-	ID              string               `json:"id"`
-	Kind            LifecycleCommandKind `json:"kind"`
-	Name            string               `json:"name"`
-	Command         string               `json:"command,omitempty"`
-	Arguments       []string             `json:"arguments"`
-	Documentation   string               `json:"documentation,omitempty"`
-	ApplicableHooks []LifecycleHook      `json:"applicableHooks"`
+	ID                string                            `json:"id"`
+	Kind              LifecycleCommandKind              `json:"kind"`
+	Name              string                            `json:"name"`
+	Command           string                            `json:"command,omitempty"`
+	Arguments         []string                          `json:"arguments"`
+	ChainArgumentMode LifecycleCommandChainArgumentMode `json:"chainArgumentMode"`
+	Documentation     string                            `json:"documentation,omitempty"`
+	ApplicableHooks   []LifecycleHook                   `json:"applicableHooks"`
 }
 
 type LifecycleCommandReference struct {
@@ -269,11 +277,11 @@ func fixedTaskMenuItem(id string) TaskMenuItem {
 func fixedLifecycleCommand(id string) LifecycleCommand {
 	switch id {
 	case LifecycleCommandCreateWorkspaceID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录", Arguments: []string{}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}}
 	case LifecycleCommandDeleteWorkspaceID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindDeleteWorkspace, Name: "删除任务工作目录", Arguments: []string{}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindDeleteWorkspace, Name: "删除任务工作目录", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}}
 	case LifecycleCommandGitCloneID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, Documentation: "参数：dir=<相对目录>（必填）。每个内置 Git 项目将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数：dir=<相对目录>（必填）。每个内置 Git 项目将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
 	default:
 		return LifecycleCommand{}
 	}
@@ -380,6 +388,11 @@ func normalizeLifecycleCommands(commands []LifecycleCommand) ([]LifecycleCommand
 			return nil, fmt.Errorf("自定义生命周期命令名称和可执行命令不能为空")
 		}
 		command.Arguments = normalizeArguments(command.Arguments)
+		chainArgumentMode, err := normalizeLifecycleCommandChainArgumentMode(command.ChainArgumentMode)
+		if err != nil {
+			return nil, fmt.Errorf("自定义生命周期命令 %q 的链级参数模式无效: %w", command.Name, err)
+		}
+		command.ChainArgumentMode = chainArgumentMode
 		applicableHooks, err := normalizeLifecycleApplicableHooks(command.ApplicableHooks, allLifecycleHooks(), false)
 		if err != nil {
 			return nil, fmt.Errorf("自定义生命周期命令 %q 的适用范围无效: %w", command.Name, err)
@@ -393,6 +406,17 @@ func normalizeLifecycleCommands(commands []LifecycleCommand) ([]LifecycleCommand
 		}
 	}
 	return normalized, nil
+}
+
+func normalizeLifecycleCommandChainArgumentMode(mode LifecycleCommandChainArgumentMode) (LifecycleCommandChainArgumentMode, error) {
+	switch mode {
+	case "":
+		return LifecycleCommandChainArgumentModeEnabled, nil
+	case LifecycleCommandChainArgumentModeEnabled, LifecycleCommandChainArgumentModeDisabled:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("不支持的链级参数模式: %q", mode)
+	}
 }
 
 func normalizeLifecycleChains(chains []LifecycleCommandChain, commands []LifecycleCommand) ([]LifecycleCommandChain, error) {

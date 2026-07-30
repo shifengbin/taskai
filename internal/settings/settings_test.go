@@ -63,6 +63,15 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	if got := current.LifecycleDefaultChains[LifecycleHookPostEnd]; got != LifecycleChainDeleteWorkspaceID {
 		t.Fatalf("postEnd 默认链 = %q，期望 %q", got, LifecycleChainDeleteWorkspaceID)
 	}
+	if got := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandCreateWorkspaceID).ChainArgumentMode; got != LifecycleCommandChainArgumentModeDisabled {
+		t.Fatalf("创建工作目录命令的链级参数模式 = %q，期望禁止", got)
+	}
+	if got := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandDeleteWorkspaceID).ChainArgumentMode; got != LifecycleCommandChainArgumentModeDisabled {
+		t.Fatalf("删除工作目录命令的链级参数模式 = %q，期望禁止", got)
+	}
+	if got := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandGitCloneID).ChainArgumentMode; got != LifecycleCommandChainArgumentModeEnabled {
+		t.Fatalf("Git 仓库克隆命令的链级参数模式 = %q，期望允许", got)
+	}
 }
 
 func TestDefaultIncludesDocumentedGitCloneLifecycleCommand(t *testing.T) {
@@ -129,6 +138,50 @@ func TestValidateNormalizesLifecycleCommandReferences(t *testing.T) {
 	}
 	if !reflect.DeepEqual(chain["commands"], []any{map[string]any{"commandId": "prepare", "arguments": []any{"--profile", "dev"}}}) {
 		t.Fatalf("规范化后的命令引用 = %#v", chain["commands"])
+	}
+}
+
+func TestValidateNormalizesLifecycleCommandChainArgumentModes(t *testing.T) {
+	validated, err := Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		LifecycleCommands: []LifecycleCommand{
+			{ID: "legacy", Kind: LifecycleCommandKindCustom, Name: "旧命令", Command: "legacy", Arguments: []string{"--fixed"}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+			{ID: "disabled", Kind: LifecycleCommandKindCustom, Name: "固定命令", Command: "fixed", Arguments: []string{"--always"}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		},
+		LifecycleChains: []LifecycleCommandChain{{
+			ID: "chain", Name: "链", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+			Commands: []LifecycleCommandReference{
+				{CommandID: "legacy", Arguments: []string{"--legacy-extra"}},
+				{CommandID: "disabled", Arguments: []string{"--saved-extra"}},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if got := lifecycleCommandByID(validated.LifecycleCommands, "legacy").ChainArgumentMode; got != LifecycleCommandChainArgumentModeEnabled {
+		t.Fatalf("旧命令的链级参数模式 = %q，期望迁移为允许", got)
+	}
+	if got := lifecycleCommandByID(validated.LifecycleCommands, "disabled").ChainArgumentMode; got != LifecycleCommandChainArgumentModeDisabled {
+		t.Fatalf("显式禁止的链级参数模式 = %q", got)
+	}
+	if got := validated.LifecycleChains[0].Commands; !reflect.DeepEqual(got, []LifecycleCommandReference{
+		{CommandID: "legacy", Arguments: []string{"--legacy-extra"}},
+		{CommandID: "disabled", Arguments: []string{"--saved-extra"}},
+	}) {
+		t.Fatalf("链级追加参数被改写: %#v", got)
+	}
+
+	invalid := Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		LifecycleCommands: []LifecycleCommand{{
+			ID: "invalid", Kind: LifecycleCommandKindCustom, Name: "无效模式", Command: "echo", ChainArgumentMode: LifecycleCommandChainArgumentMode("unexpected"), ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+		}},
+	}
+	if _, err := Validate(invalid); err == nil || !strings.Contains(err.Error(), "参数模式") {
+		t.Fatalf("Validate() error = %v，期望拒绝未知链级参数模式", err)
 	}
 }
 

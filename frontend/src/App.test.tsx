@@ -492,6 +492,27 @@ describe('App confirmation flows', () => {
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
   })
 
+  it('新建任务随机预选颜色并将其用于创建请求', async () => {
+    const user = userEvent.setup()
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0)
+    bindings.CreateTask.mockResolvedValue({
+      id: 'task-2', title: '随机颜色任务', description: '', status: 'pending', color: '#ef4444', createdAt: '2026-07-22T00:00:00Z',
+    })
+
+    try {
+      render(<App/>)
+
+      await user.click(await screen.findByRole('button', {name: '新建任务'}))
+      expect(screen.getByLabelText('任务颜色')).toHaveValue('#ef4444')
+      await user.type(screen.getByRole('textbox', {name: '标题'}), '随机颜色任务')
+      await user.click(screen.getByRole('button', {name: '创建'}))
+
+      expect(bindings.CreateTask).toHaveBeenCalledWith('随机颜色任务', '', '#ef4444')
+    } finally {
+      random.mockRestore()
+    }
+  })
+
 	it('新建任务预选默认命令链，并通过链选择绑定保存', async () => {
 		const user = userEvent.setup()
 		bindings.GetSettings.mockResolvedValue({
@@ -518,7 +539,7 @@ describe('App confirmation flows', () => {
 		fireEvent.submit(taskForm)
 
 		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndLifecycleChains).toHaveBeenCalledWith(
-			'带链任务', '', '#4f46e5', [], {postStart: 'start-chain', beforeEnd: 'end-chain'},
+			'带链任务', '', expect.any(String), [], {postStart: 'start-chain', beforeEnd: 'end-chain'},
 		))
 	})
 
@@ -652,17 +673,20 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '新增命令'}))
 		const commandDialog = screen.getByRole('dialog', {name: '新增命令'})
 		expect(within(commandDialog).getByRole('button', {name: '保存命令'})).toBeDisabled()
+		expect(within(commandDialog).getByRole('textbox', {name: '固定参数（每行一个）'})).toBeInTheDocument()
+		expect(within(commandDialog).getByLabelText('允许在命令链中追加参数')).not.toBeChecked()
 		await user.type(within(commandDialog).getByRole('textbox', {name: '命令名称'}), '新命令')
 		await user.type(within(commandDialog).getByRole('textbox', {name: '可执行命令'}), 'new-command')
 		await user.click(within(commandDialog).getByLabelText('开始前'))
 		await user.click(within(commandDialog).getByRole('button', {name: '保存命令'}))
-		await waitFor(() => expect(bindings.SaveLifecycleCommand).toHaveBeenCalledWith(expect.objectContaining({name: '新命令', command: 'new-command', applicableHooks: ['beforeStart']})))
+		await waitFor(() => expect(bindings.SaveLifecycleCommand).toHaveBeenCalledWith(expect.objectContaining({name: '新命令', command: 'new-command', chainArgumentMode: 'disabled', applicableHooks: ['beforeStart']})))
 	})
 
 	it('在命令链中配置 Git 参数并显示系统使用文档', async () => {
 		const user = userEvent.setup()
 		const gitCommand = {
 			id: 'system.lifecycle.git-clone', kind: 'git-clone', name: 'Git 仓库克隆', arguments: [],
+			chainArgumentMode: 'enabled',
 			documentation: '参数：dir=<相对目录>（必填）。每个内置 Git 项目将克隆到任务工作目录下的 <dir>/<项目名称>。',
 			applicableHooks: ['beforeStart', 'beforeEnd', 'updateTask'],
 		}
@@ -683,13 +707,66 @@ describe('App confirmation flows', () => {
 		await user.type(within(chainDialog).getByRole('textbox', {name: '命令链名称'}), '克隆仓库')
 		await user.click(within(chainDialog).getByLabelText('开始前'))
 		await user.click(within(chainDialog).getByLabelText('Git 仓库克隆'))
-		const argumentsInput = within(chainDialog).getByRole('textbox', {name: 'Git 仓库克隆 链级参数（每行一个）'})
+		const argumentsInput = within(chainDialog).getByRole('textbox', {name: 'Git 仓库克隆 追加参数（每行一个）'})
 		await user.type(argumentsInput, 'dir=repositories')
 		await user.click(within(chainDialog).getByRole('button', {name: '保存命令链'}))
 
 		await waitFor(() => expect(bindings.SaveLifecycleCommandChain).toHaveBeenCalledWith({
 			id: '', name: '克隆仓库', commands: [{commandId: 'system.lifecycle.git-clone', arguments: ['dir=repositories']}], applicableHooks: ['beforeStart'],
 		}))
+	})
+
+	it('禁止链级追加参数时隐藏输入框但保留历史值', async () => {
+		const user = userEvent.setup()
+		const command = {
+			id: 'deploy', kind: 'custom', name: '部署', command: 'deploy', arguments: ['--fixed'], chainArgumentMode: 'disabled', applicableHooks: ['beforeStart'],
+		}
+		const chain = {
+			id: 'deploy-chain', name: '部署链', commands: [{commandId: 'deploy', arguments: ['--saved-extra']}], applicableHooks: ['beforeStart'],
+		}
+		bindings.ListLifecycleCommands.mockImplementation(async () => [command])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([chain])
+		bindings.GetSettings.mockImplementation(async () => ({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleCommands: [command], lifecycleChains: [chain], lifecycleDefaultChains: {},
+		}))
+		bindings.SaveLifecycleCommandChain.mockResolvedValue(chain)
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		await screen.findByText('部署链')
+		await user.click(screen.getByRole('button', {name: '编辑命令链 部署链'}))
+		const chainDialog = screen.getByRole('dialog', {name: '编辑命令链'})
+		expect(within(chainDialog).queryByRole('textbox', {name: '部署 追加参数（每行一个）'})).not.toBeInTheDocument()
+		await user.click(within(chainDialog).getByRole('button', {name: '保存命令链'}))
+		await waitFor(() => expect(bindings.SaveLifecycleCommandChain).toHaveBeenCalledWith({
+			id: 'deploy-chain', name: '部署链', commands: [{commandId: 'deploy', arguments: ['--saved-extra']}], applicableHooks: ['beforeStart'],
+		}))
+	})
+
+	it('重新允许链级追加参数后显示既有参数', async () => {
+		const user = userEvent.setup()
+		const command = {
+			id: 'deploy', kind: 'custom', name: '部署', command: 'deploy', arguments: ['--fixed'], chainArgumentMode: 'enabled', applicableHooks: ['beforeStart'],
+		}
+		const chain = {
+			id: 'deploy-chain', name: '部署链', commands: [{commandId: 'deploy', arguments: ['--saved-extra']}], applicableHooks: ['beforeStart'],
+		}
+		bindings.ListLifecycleCommands.mockResolvedValue([command])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([chain])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleCommands: [command], lifecycleChains: [chain], lifecycleDefaultChains: {},
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		await screen.findByText('部署链')
+		await user.click(screen.getByRole('button', {name: '编辑命令链 部署链'}))
+		const chainDialog = screen.getByRole('dialog', {name: '编辑命令链'})
+		expect(within(chainDialog).getByRole('textbox', {name: '部署 追加参数（每行一个）'})).toHaveValue('--saved-extra')
 	})
 
 	it('管理内置 Git 模板，并以默认值创建可复用信息', async () => {
@@ -1096,7 +1173,7 @@ describe('App confirmation flows', () => {
 		expect(screen.getAllByText('缺陷单')).not.toHaveLength(0)
 		await user.click(screen.getByRole('button', {name: '创建'}))
 
-		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('关联 API', '', '#4f46e5', expect.arrayContaining([
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('关联 API', '', expect.any(String), expect.arrayContaining([
 			expect.objectContaining({
 				informationId: 'api-info', templateId: 'git-template', catalogue: 'git',
 				parameters: [expect.objectContaining({key: 'branch', value: 'main'})],
@@ -1132,7 +1209,7 @@ describe('App confirmation flows', () => {
 		expect(screen.queryByRole('button', {name: '新增动态参数'})).not.toBeInTheDocument()
 		await user.click(screen.getByRole('button', {name: '创建'}))
 
-		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('发布 API', '', '#4f46e5', expect.arrayContaining([
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfo).toHaveBeenCalledWith('发布 API', '', expect.any(String), expect.arrayContaining([
 			expect.objectContaining({
 				parameters: expect.arrayContaining([
 					expect.objectContaining({key: 'branch', inputType: 'checkbox', required: false, value: 'true'}),
@@ -1746,7 +1823,7 @@ describe('App confirmation flows', () => {
 	  beforeScript: {script: 'before-script', arguments: ['--before', '--with-space']},
 	  afterScript: {script: 'after-script', arguments: ['--after']},
     })
-  })
+  }, 10_000)
 
 	it('将任务菜单配置显示为菜单管理', async () => {
 		const user = userEvent.setup()

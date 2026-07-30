@@ -773,14 +773,119 @@ describe('TaskTree', () => {
     expect(screen.getByText('处理发布反馈').closest('[data-task-id]')).not.toHaveAttribute('data-task-start-feedback')
   })
 
-  it('减少动态效果时将开始任务反馈替换为静态高亮', () => {
+  it('开始反馈时将列表下方被裁切的目标任务滚动到可视区域', () => {
+    const startedTask: TaskRecord = {...runningTask, id: 'task-2', title: '刚开始的发布任务'}
+    const renderTaskTree = (startedTaskFeedback?: {taskID: string, sequence: number}) => (
+      <TaskTree
+        tasks={[runningTask, startedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+        startedTaskFeedback={startedTaskFeedback}
+      />
+    )
+    const {rerender} = render(renderTaskTree())
+    const taskList = screen.getByTestId('task-tree-list')
+    const taskItem = screen.getByText('刚开始的发布任务').closest('[data-task-id]')
+    if (!taskItem) {
+      throw new Error('未找到刚开始的任务条目')
+    }
+    Object.defineProperty(taskList, 'scrollTop', {configurable: true, writable: true, value: 80})
+    vi.spyOn(taskList, 'getBoundingClientRect').mockReturnValue({top: 100, bottom: 200} as DOMRect)
+    vi.spyOn(taskItem, 'getBoundingClientRect').mockReturnValue({top: 210, bottom: 258} as DOMRect)
+
+    rerender(renderTaskTree({taskID: 'task-2', sequence: 1}))
+
+    expect(taskList.scrollTop).toBe(138)
+    expect(taskItem).toHaveAttribute('data-task-start-feedback', 'flash')
+  })
+
+  it('开始反馈时将列表上方被裁切的目标任务滚动到可视区域', () => {
+    const startedTask: TaskRecord = {...runningTask, id: 'task-2', title: '刚开始的发布任务'}
+    const renderTaskTree = (startedTaskFeedback?: {taskID: string, sequence: number}) => (
+      <TaskTree
+        tasks={[runningTask, startedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+        startedTaskFeedback={startedTaskFeedback}
+      />
+    )
+    const {rerender} = render(renderTaskTree())
+    const taskList = screen.getByTestId('task-tree-list')
+    const taskItem = screen.getByText('刚开始的发布任务').closest('[data-task-id]')
+    if (!taskItem) {
+      throw new Error('未找到刚开始的任务条目')
+    }
+    Object.defineProperty(taskList, 'scrollTop', {configurable: true, writable: true, value: 80})
+    vi.spyOn(taskList, 'getBoundingClientRect').mockReturnValue({top: 100, bottom: 200} as DOMRect)
+    vi.spyOn(taskItem, 'getBoundingClientRect').mockReturnValue({top: 60, bottom: 108} as DOMRect)
+
+    rerender(renderTaskTree({taskID: 'task-2', sequence: 1}))
+
+    expect(taskList.scrollTop).toBe(40)
+  })
+
+  it('开始反馈目标已完整可见或未渲染时保持列表滚动位置', () => {
+    const startedTask: TaskRecord = {...runningTask, id: 'task-2', title: '刚开始的发布任务'}
+    const renderTaskTree = (startedTaskFeedback?: {taskID: string, sequence: number}) => (
+      <TaskTree
+        tasks={[runningTask, startedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+        startedTaskFeedback={startedTaskFeedback}
+      />
+    )
+    const {rerender} = render(renderTaskTree())
+    const taskList = screen.getByTestId('task-tree-list')
+    const taskItem = screen.getByText('刚开始的发布任务').closest('[data-task-id]')
+    if (!taskItem) {
+      throw new Error('未找到刚开始的任务条目')
+    }
+    Object.defineProperty(taskList, 'scrollTop', {configurable: true, writable: true, value: 80})
+    vi.spyOn(taskList, 'getBoundingClientRect').mockReturnValue({top: 100, bottom: 200} as DOMRect)
+    vi.spyOn(taskItem, 'getBoundingClientRect').mockReturnValue({top: 120, bottom: 168} as DOMRect)
+
+    rerender(renderTaskTree({taskID: 'task-2', sequence: 1}))
+    expect(taskList.scrollTop).toBe(80)
+
+    rerender(renderTaskTree({taskID: 'missing-task', sequence: 2}))
+    expect(taskList.scrollTop).toBe(80)
+  })
+
+  it('减少动态效果时将列表外开始任务定位并替换为静态高亮', () => {
     const originalMatchMedia = window.matchMedia
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: vi.fn(() => ({matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn()})),
     })
     try {
-      render(
+      const renderTaskTree = (startedTaskFeedback?: {taskID: string, sequence: number}) => (
         <TaskTree
           tasks={[runningTask]}
           terminals={[]}
@@ -794,11 +899,23 @@ describe('TaskTree', () => {
           onFinishTask={vi.fn()}
           activeStatus="running"
           onChangeStatus={vi.fn()}
-          startedTaskFeedback={{taskID: 'task-1', sequence: 1}}
-        />,
+          startedTaskFeedback={startedTaskFeedback}
+        />
       )
+      const {rerender} = render(renderTaskTree())
+      const taskList = screen.getByTestId('task-tree-list')
+      const taskItem = screen.getByText('整理发布说明').closest('[data-task-id]')
+      if (!taskItem) {
+        throw new Error('未找到刚开始的任务条目')
+      }
+      Object.defineProperty(taskList, 'scrollTop', {configurable: true, writable: true, value: 80})
+      vi.spyOn(taskList, 'getBoundingClientRect').mockReturnValue({top: 100, bottom: 200} as DOMRect)
+      vi.spyOn(taskItem, 'getBoundingClientRect').mockReturnValue({top: 210, bottom: 258} as DOMRect)
 
-      expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-start-feedback', 'static')
+      rerender(renderTaskTree({taskID: 'task-1', sequence: 1}))
+
+      expect(taskList.scrollTop).toBe(138)
+      expect(taskItem).toHaveAttribute('data-task-start-feedback', 'static')
     } finally {
       Object.defineProperty(window, 'matchMedia', {configurable: true, value: originalMatchMedia})
     }

@@ -65,6 +65,7 @@ import {
   clampTaskTreeWidth,
   defaultTaskColor,
 	defaultTaskMenuItems,
+	randomTaskColor,
 	type ExtraInfo,
 	type ExtraInfoField,
 	type ExtraInfoParameterInputType,
@@ -296,7 +297,7 @@ export default function App() {
     setEditingTask(task)
     setDraftTitle(task?.title ?? '')
     setDraftDescription(task?.description ?? '')
-    setDraftColor(task?.color || defaultTaskColor)
+    setDraftColor(task ? task.color || defaultTaskColor : randomTaskColor())
 		setTaskExtraInfoDraft(task?.extraInfo ? cloneTaskExtraInfo(task.extraInfo) : [])
 		setTaskLifecycleChainsDraft({...task?.lifecycleChains ?? settings?.lifecycleDefaultChains ?? {}})
     setTaskDialogOpen(true)
@@ -1661,6 +1662,10 @@ function lifecycleChainAppliesTo(chain: LifecycleCommandChain, hook: LifecycleHo
 	return chain.applicableHooks.includes(hook)
 }
 
+function lifecycleCommandAllowsChainArguments(command?: LifecycleCommand) {
+	return command?.chainArgumentMode !== 'disabled'
+}
+
 function lifecycleHooksCover(availableHooks: LifecycleHook[], requiredHooks: LifecycleHook[]) {
 	return requiredHooks.every((hook) => availableHooks.includes(hook))
 }
@@ -1703,7 +1708,7 @@ function LifecycleManagement({
 			return
 		}
 		try {
-			await onSaveCommand({...commandDraft, name: commandDraft.name.trim(), command: commandDraft.command?.trim(), arguments: commandDraft.arguments.map((argument) => argument.trim()).filter(Boolean), applicableHooks: [...commandDraft.applicableHooks]})
+			await onSaveCommand({...commandDraft, name: commandDraft.name.trim(), command: commandDraft.command?.trim(), arguments: commandDraft.arguments.map((argument) => argument.trim()).filter(Boolean), chainArgumentMode: commandDraft.chainArgumentMode === 'enabled' ? 'enabled' : 'disabled', applicableHooks: [...commandDraft.applicableHooks]})
 			setCommandDraft(undefined)
 		} catch (error) {
 			onError(error)
@@ -1806,14 +1811,14 @@ function LifecycleManagement({
 		<Box sx={{display: 'grid', gap: 1.25, pt: 0.5, borderTop: 1, borderColor: 'divider'}}>
 			<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
 				<Box><Typography variant="subtitle2">命令库</Typography><Typography variant="caption" color="text.secondary">系统目录命令只读；自定义命令通过所选 Shell 执行。</Typography></Box>
-				<Button size="small" variant="contained" onClick={() => setCommandDraft({id: '', kind: 'custom', name: '', command: '', arguments: [], applicableHooks: []})}>新增命令</Button>
+				<Button size="small" variant="contained" onClick={() => setCommandDraft({id: '', kind: 'custom', name: '', command: '', arguments: [], chainArgumentMode: 'disabled', applicableHooks: []})}>新增命令</Button>
 			</Box>
 			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden'}}>
 				{commands.map((command, index) => <Box key={command.id} sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === commands.length - 1 ? 0 : 1, borderColor: 'divider'}}>
 					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{command.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{command.kind === 'custom' ? `${command.command}${command.arguments.length ? ` ${command.arguments.join(' ')}` : ''}` : '系统内置命令'}</Typography>{command.documentation && <Typography variant="caption" color="text.secondary" sx={{display: 'block', whiteSpace: 'pre-wrap'}}>{command.documentation}</Typography>}<Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(command.applicableHooks)}</Typography></Box>
 					<Box sx={{display: 'flex', alignItems: 'center', gap: 0.5}}>
 						<Chip size="small" label={command.kind === 'custom' ? '自定义' : '系统'} variant="outlined"/>
-						{command.kind === 'custom' && <Button size="small" onClick={() => setCommandDraft({...command, arguments: [...command.arguments], applicableHooks: [...command.applicableHooks]})}>编辑</Button>}
+						{command.kind === 'custom' && <Button size="small" aria-label={`编辑命令 ${command.name}`} onClick={() => setCommandDraft({...command, arguments: [...command.arguments], chainArgumentMode: command.chainArgumentMode === 'disabled' ? 'disabled' : 'enabled', applicableHooks: [...command.applicableHooks]})}>编辑</Button>}
 						{command.kind === 'custom' && <IconButton aria-label={`删除命令 ${command.name}`} color="error" size="small" onClick={() => void onDeleteCommand(command.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>}
 					</Box>
 				</Box>)}
@@ -1828,7 +1833,7 @@ function LifecycleManagement({
 			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden'}}>
 				{chains.map((chain, index) => <Box key={chain.id} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: 'minmax(0, 1fr) auto'}, gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === chains.length - 1 ? 0 : 1, borderColor: 'divider'}}>
 					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{chain.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{chain.commands.map((reference) => commandNames.get(reference.commandId) ?? '已删除命令').join(' → ')}</Typography><Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(chain.applicableHooks)}</Typography></Box>
-					<Box sx={{display: 'flex', justifyContent: 'flex-end', gap: 0.5, flexWrap: 'wrap'}}><Button size="small" onClick={() => setChainDraft({...chain, commands: chain.commands.map((reference) => ({...reference, arguments: [...reference.arguments]})), applicableHooks: [...chain.applicableHooks]})}>编辑</Button><Button size="small" onClick={() => void onCopyChain(chain.id).catch(onError)}>复制</Button><IconButton aria-label={`删除命令链 ${chain.name}`} color="error" size="small" onClick={() => void onDeleteChain(chain.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></Box>
+					<Box sx={{display: 'flex', justifyContent: 'flex-end', gap: 0.5, flexWrap: 'wrap'}}><Button size="small" aria-label={`编辑命令链 ${chain.name}`} onClick={() => setChainDraft({...chain, commands: chain.commands.map((reference) => ({...reference, arguments: [...reference.arguments]})), applicableHooks: [...chain.applicableHooks]})}>编辑</Button><Button size="small" onClick={() => void onCopyChain(chain.id).catch(onError)}>复制</Button><IconButton aria-label={`删除命令链 ${chain.name}`} color="error" size="small" onClick={() => void onDeleteChain(chain.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></Box>
 				</Box>)}
 			</Box>
 		</Box>
@@ -1838,7 +1843,8 @@ function LifecycleManagement({
 			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
 				<TextField autoFocus required label="命令名称" value={commandDraft?.name ?? ''} onChange={(event) => setCommandDraft((current) => current ? {...current, name: event.target.value} : current)}/>
 				<TextField required label="可执行命令" helperText="由任务设置中选定的 Shell 启动。" value={commandDraft?.command ?? ''} onChange={(event) => setCommandDraft((current) => current ? {...current, command: event.target.value} : current)}/>
-				<TextField multiline minRows={3} label="参数（每行一个）" value={commandDraft?.arguments.join('\n') ?? ''} onChange={(event) => setCommandDraft((current) => current ? {...current, arguments: event.target.value.split('\n')} : current)}/>
+				<TextField multiline minRows={3} label="固定参数（每行一个）" value={commandDraft?.arguments.join('\n') ?? ''} onChange={(event) => setCommandDraft((current) => current ? {...current, arguments: event.target.value.split('\n')} : current)}/>
+				<FormControlLabel control={<Checkbox checked={commandDraft?.chainArgumentMode === 'enabled'} onChange={(event) => setCommandDraft((current) => current ? {...current, chainArgumentMode: event.target.checked ? 'enabled' : 'disabled'} : current)}/>} label="允许在命令链中追加参数"/>
 				<Box sx={{display: 'grid', gap: 0.5}}><Typography variant="subtitle2">适用范围</Typography>{lifecycleHooks.map((hook) => <FormControlLabel key={hook.id} control={<Checkbox checked={Boolean(commandDraft?.applicableHooks.includes(hook.id))} onChange={(event) => toggleApplicableHook(hook.id, 'command', event.target.checked)}/>} label={hook.label}/>)}</Box>
 			</DialogContent>
 			<DialogActions><Button onClick={() => setCommandDraft(undefined)}>取消</Button><Button variant="contained" disabled={!commandDraft?.applicableHooks.length} onClick={() => void saveCommand()}>保存命令</Button></DialogActions>
@@ -1870,7 +1876,7 @@ function LifecycleManagement({
 							<Typography variant="body2">{index + 1}. {commandNames.get(reference.commandId) ?? '已删除命令'}</Typography>
 							<IconButton aria-label={`上移链命令 ${index + 1}`} size="small" disabled={index === 0} onClick={() => moveChainCommand(index, -1)}><ArrowUpwardOutlinedIcon fontSize="inherit"/></IconButton>
 							<IconButton aria-label={`下移链命令 ${index + 1}`} size="small" disabled={index === chainDraft.commands.length - 1} onClick={() => moveChainCommand(index, 1)}><ArrowDownwardOutlinedIcon fontSize="inherit"/></IconButton>
-							<TextField fullWidth multiline minRows={2} label={`${command?.name ?? '命令'} 链级参数（每行一个）`} value={reference.arguments.join('\n')} onChange={(event) => updateChainCommandArguments(index, event.target.value.split('\n'))} sx={{gridColumn: '1 / -1', cursor: 'text'}}/>
+							{lifecycleCommandAllowsChainArguments(command) && <TextField fullWidth multiline minRows={2} label={`${command?.name ?? '命令'} 追加参数（每行一个）`} value={reference.arguments.join('\n')} onChange={(event) => updateChainCommandArguments(index, event.target.value.split('\n'))} sx={{gridColumn: '1 / -1', cursor: 'text'}}/>}
 							{command?.documentation && <Typography variant="caption" color="text.secondary" sx={{gridColumn: '1 / -1', whiteSpace: 'pre-wrap'}}>{command.documentation}</Typography>}
 						</Box>
 						)
