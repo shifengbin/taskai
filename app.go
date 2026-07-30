@@ -572,12 +572,13 @@ func lifecycleChain(current settings.Settings, chainID string) (settings.Lifecyc
 	for _, command := range current.LifecycleCommands {
 		commandsByID[command.ID] = command
 	}
-	commands := make([]settings.LifecycleCommand, 0, len(chain.CommandIDs))
-	for _, commandID := range chain.CommandIDs {
-		command, found := commandsByID[commandID]
+	commands := make([]settings.LifecycleCommand, 0, len(chain.Commands))
+	for _, reference := range chain.Commands {
+		command, found := commandsByID[reference.CommandID]
 		if !found {
 			return settings.LifecycleCommandChain{}, nil, fmt.Errorf("命令链引用的命令已删除")
 		}
+		command.Arguments = append(append([]string(nil), command.Arguments...), reference.Arguments...)
 		commands = append(commands, command)
 	}
 	return chain, commands, nil

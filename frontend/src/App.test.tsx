@@ -235,6 +235,20 @@ describe('App confirmation flows', () => {
     expect(screen.queryByRole('status', {name: '正在加载任务工作台'})).not.toBeInTheDocument()
   })
 
+  it('为任务树保留可收缩的面板剩余高度', async () => {
+    render(<App/>)
+
+    const taskTree = await screen.findByRole('navigation', {name: '任务和终端'})
+    const taskTreeRegion = taskTree.parentElement
+    const taskPanel = taskTreeRegion?.parentElement
+    if (!taskTreeRegion || !taskPanel) {
+      throw new Error('未找到任务树的面板容器')
+    }
+
+    expect(taskPanel).toHaveStyle({display: 'grid', gridTemplateRows: '42px minmax(0, 1fr)', minHeight: '0'})
+    expect(taskTreeRegion).toHaveStyle({minHeight: '0'})
+  })
+
   it('额外信息模板接口返回空值时仍可渲染工作台并响应原生关闭请求', async () => {
     let closeRequested: (() => void) | undefined
     runtime.EventsOn.mockImplementation((eventName, listener) => {
@@ -356,8 +370,8 @@ describe('App confirmation flows', () => {
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
 			lifecycleChains: [
-				{id: 'start-chain', name: '启动准备', commandIds: ['system.lifecycle.create-workspace'], applicableHooks: ['postStart']},
-				{id: 'end-chain', name: '结束清理', commandIds: ['system.lifecycle.delete-workspace'], applicableHooks: ['beforeEnd']},
+				{id: 'start-chain', name: '启动准备', commands: [{commandId: 'system.lifecycle.create-workspace', arguments: []}], applicableHooks: ['postStart']},
+				{id: 'end-chain', name: '结束清理', commands: [{commandId: 'system.lifecycle.delete-workspace', arguments: []}], applicableHooks: ['beforeEnd']},
 			],
 			lifecycleDefaultChains: {postStart: 'start-chain', beforeEnd: 'end-chain'},
 		})
@@ -383,8 +397,8 @@ describe('App confirmation flows', () => {
 
 	it('按钩子范围筛选新建任务链，并在编辑任务时锁定链选择', async () => {
 		const user = userEvent.setup()
-		const beforeStartChain = {id: 'before-start-chain', name: '开始前准备', commandIds: ['prepare'], applicableHooks: ['beforeStart']}
-		const postStartChain = {id: 'post-start-chain', name: '开始后通知', commandIds: ['notify'], applicableHooks: ['postStart']}
+		const beforeStartChain = {id: 'before-start-chain', name: '开始前准备', commands: [{commandId: 'prepare', arguments: []}], applicableHooks: ['beforeStart']}
+		const postStartChain = {id: 'post-start-chain', name: '开始后通知', commands: [{commandId: 'notify', arguments: []}], applicableHooks: ['postStart']}
 		bindings.ListTasks.mockResolvedValue([{
 			id: 'task-scoped', title: '有范围的任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
 			lifecycleChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
@@ -425,8 +439,8 @@ describe('App confirmation flows', () => {
 
 	it('编辑未执行任务时可修改命令链', async () => {
 		const user = userEvent.setup()
-		const beforeStartChain = {id: 'before-start-chain', name: '开始前准备', commandIds: ['prepare'], applicableHooks: ['beforeStart']}
-		const postStartChain = {id: 'post-start-chain', name: '开始后通知', commandIds: ['notify'], applicableHooks: ['postStart']}
+		const beforeStartChain = {id: 'before-start-chain', name: '开始前准备', commands: [{commandId: 'prepare', arguments: []}], applicableHooks: ['beforeStart']}
+		const postStartChain = {id: 'post-start-chain', name: '开始后通知', commands: [{commandId: 'notify', arguments: []}], applicableHooks: ['postStart']}
 		bindings.ListTasks.mockResolvedValue([{
 			id: 'task-pending-chain', title: '待调整链任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
 			lifecycleChains: {beforeStart: beforeStartChain.id},
@@ -456,7 +470,7 @@ describe('App confirmation flows', () => {
 
 	it('编辑已完成任务时锁定命令链', async () => {
 		const user = userEvent.setup()
-		const postEndChain = {id: 'post-end-chain', name: '结束后清理', commandIds: ['cleanup'], applicableHooks: ['postEnd']}
+		const postEndChain = {id: 'post-end-chain', name: '结束后清理', commands: [{commandId: 'cleanup', arguments: []}], applicableHooks: ['postEnd']}
 		bindings.ListTasks.mockResolvedValue([{
 			id: 'task-completed-chain', title: '已完成链任务', description: '', status: 'completed', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
 			lifecycleChains: {postEnd: postEndChain.id},
@@ -516,6 +530,39 @@ describe('App confirmation flows', () => {
 		await user.click(within(commandDialog).getByLabelText('开始前'))
 		await user.click(within(commandDialog).getByRole('button', {name: '保存命令'}))
 		await waitFor(() => expect(bindings.SaveLifecycleCommand).toHaveBeenCalledWith(expect.objectContaining({name: '新命令', command: 'new-command', applicableHooks: ['beforeStart']})))
+	})
+
+	it('在命令链中配置 Git 参数并显示系统使用文档', async () => {
+		const user = userEvent.setup()
+		const gitCommand = {
+			id: 'system.lifecycle.git-clone', kind: 'git-clone', name: 'Git 仓库克隆', arguments: [],
+			documentation: '参数：dir=<相对目录>（必填）。每个内置 Git 项目将克隆到任务工作目录下的 <dir>/<项目名称>。',
+			applicableHooks: ['beforeStart', 'beforeEnd', 'updateTask'],
+		}
+		bindings.ListLifecycleCommands.mockResolvedValue([gitCommand])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleCommands: [gitCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+		})
+		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'git-chain'}))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		expect(await screen.findByText(/dir=<相对目录>/)).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '新增链'}))
+		const chainDialog = screen.getByRole('dialog', {name: '新增命令链'})
+		await user.type(within(chainDialog).getByRole('textbox', {name: '命令链名称'}), '克隆仓库')
+		await user.click(within(chainDialog).getByLabelText('开始前'))
+		await user.click(within(chainDialog).getByLabelText('Git 仓库克隆'))
+		const argumentsInput = within(chainDialog).getByRole('textbox', {name: 'Git 仓库克隆 链级参数（每行一个）'})
+		await user.type(argumentsInput, 'dir=repositories')
+		await user.click(within(chainDialog).getByRole('button', {name: '保存命令链'}))
+
+		await waitFor(() => expect(bindings.SaveLifecycleCommandChain).toHaveBeenCalledWith({
+			id: '', name: '克隆仓库', commands: [{commandId: 'system.lifecycle.git-clone', arguments: ['dir=repositories']}], applicableHooks: ['beforeStart'],
+		}))
 	})
 
 	it('管理内置 Git 模板，并以默认值创建可复用信息', async () => {

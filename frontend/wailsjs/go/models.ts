@@ -41,6 +41,7 @@ export namespace settings {
 	    name: string;
 	    command?: string;
 	    arguments: string[];
+	    documentation?: string;
 	    applicableHooks: string[];
 	
 	    static createFrom(source: any = {}) {
@@ -54,13 +55,29 @@ export namespace settings {
 	        this.name = source["name"];
 	        this.command = source["command"];
 	        this.arguments = source["arguments"];
+	        this.documentation = source["documentation"];
 	        this.applicableHooks = source["applicableHooks"];
+	    }
+	}
+	export class LifecycleCommandReference {
+	    commandId: string;
+	    arguments: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new LifecycleCommandReference(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.commandId = source["commandId"];
+	        this.arguments = source["arguments"];
 	    }
 	}
 	export class LifecycleCommandChain {
 	    id: string;
 	    name: string;
-	    commandIds: string[];
+	    commands: LifecycleCommandReference[];
+	    commandIds?: string[];
 	    applicableHooks: string[];
 	
 	    static createFrom(source: any = {}) {
@@ -71,10 +88,30 @@ export namespace settings {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.commands = this.convertValues(source["commands"], LifecycleCommandReference);
 	        this.commandIds = source["commandIds"];
 	        this.applicableHooks = source["applicableHooks"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
+	
 	export class TaskScript {
 	    script?: string;
 	    arguments?: string[];

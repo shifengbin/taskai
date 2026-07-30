@@ -272,7 +272,7 @@ export function TaskTree({
   const activeMenuItems = taskMenuTask && !taskMenuTask.lifecycleExecution ? menuItems.filter((item) => taskMenuTask.status === 'running' || item.kind === 'edit-task') : []
 
   return (
-    <Box component="nav" aria-label="任务和终端" sx={{height: '100%', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)'}}>
+    <Box component="nav" aria-label="任务和终端" sx={{height: '100%', minHeight: 0, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)'}}>
       <Tabs
         value={activeStatus}
         onChange={(_event, status: TaskStatus) => onChangeStatus(status)}
@@ -284,7 +284,7 @@ export function TaskTree({
         <Tab value="running" label={`执行中 (${taskCounts.running})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
         <Tab value="completed" label={`已完成 (${taskCounts.completed})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
       </Tabs>
-      <List disablePadding dense sx={{overflow: 'auto'}}>
+      <List data-testid="task-tree-list" disablePadding dense sx={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': {display: 'none'}}}>
         {visibleTasks.map((task) => {
           const childTerminals = terminalsByTask[task.id] ?? []
           const isExpanded = expanded[task.id] ?? true

@@ -74,9 +74,11 @@ const (
 	LifecycleCommandKindCustom          LifecycleCommandKind = "custom"
 	LifecycleCommandKindCreateWorkspace LifecycleCommandKind = "create-workspace"
 	LifecycleCommandKindDeleteWorkspace LifecycleCommandKind = "delete-workspace"
+	LifecycleCommandKindGitClone        LifecycleCommandKind = "git-clone"
 
 	LifecycleCommandCreateWorkspaceID = "system.lifecycle.create-workspace"
 	LifecycleCommandDeleteWorkspaceID = "system.lifecycle.delete-workspace"
+	LifecycleCommandGitCloneID        = "system.lifecycle.git-clone"
 	LifecycleChainCreateWorkspaceID   = "system.lifecycle-chain.create-workspace"
 	LifecycleChainDeleteWorkspaceID   = "system.lifecycle-chain.delete-workspace"
 )
@@ -87,14 +89,21 @@ type LifecycleCommand struct {
 	Name            string               `json:"name"`
 	Command         string               `json:"command,omitempty"`
 	Arguments       []string             `json:"arguments"`
+	Documentation   string               `json:"documentation,omitempty"`
 	ApplicableHooks []LifecycleHook      `json:"applicableHooks"`
 }
 
+type LifecycleCommandReference struct {
+	CommandID string   `json:"commandId"`
+	Arguments []string `json:"arguments"`
+}
+
 type LifecycleCommandChain struct {
-	ID              string          `json:"id"`
-	Name            string          `json:"name"`
-	CommandIDs      []string        `json:"commandIds"`
-	ApplicableHooks []LifecycleHook `json:"applicableHooks"`
+	ID              string                      `json:"id"`
+	Name            string                      `json:"name"`
+	Commands        []LifecycleCommandReference `json:"commands"`
+	CommandIDs      []string                    `json:"commandIds,omitempty"`
+	ApplicableHooks []LifecycleHook             `json:"applicableHooks"`
 }
 
 type TaskMenuItem struct {
@@ -150,13 +159,14 @@ func DefaultLifecycleCommands() []LifecycleCommand {
 	return []LifecycleCommand{
 		fixedLifecycleCommand(LifecycleCommandCreateWorkspaceID),
 		fixedLifecycleCommand(LifecycleCommandDeleteWorkspaceID),
+		fixedLifecycleCommand(LifecycleCommandGitCloneID),
 	}
 }
 
 func DefaultLifecycleChains() []LifecycleCommandChain {
 	return []LifecycleCommandChain{
-		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", CommandIDs: []string{LifecycleCommandCreateWorkspaceID}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
-		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", CommandIDs: []string{LifecycleCommandDeleteWorkspaceID}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
+		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
 	}
 }
 
@@ -262,6 +272,8 @@ func fixedLifecycleCommand(id string) LifecycleCommand {
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录", Arguments: []string{}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}}
 	case LifecycleCommandDeleteWorkspaceID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindDeleteWorkspace, Name: "删除任务工作目录", Arguments: []string{}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}}
+	case LifecycleCommandGitCloneID:
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, Documentation: "参数：dir=<相对目录>（必填）。每个内置 Git 项目将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
 	default:
 		return LifecycleCommand{}
 	}
@@ -344,8 +356,8 @@ func NormalizeLifecycle(next Settings) (Settings, error) {
 }
 
 func normalizeLifecycleCommands(commands []LifecycleCommand) ([]LifecycleCommand, error) {
-	normalized := make([]LifecycleCommand, 0, len(commands)+2)
-	seen := make(map[string]bool, len(commands)+2)
+	normalized := make([]LifecycleCommand, 0, len(commands)+3)
+	seen := make(map[string]bool, len(commands)+3)
 	for _, command := range commands {
 		command.ID = strings.TrimSpace(command.ID)
 		if command.ID == "" {
@@ -403,23 +415,28 @@ func normalizeLifecycleChains(chains []LifecycleCommandChain, commands []Lifecyc
 			return nil, fmt.Errorf("生命周期命令链 ID 重复: %q", chain.ID)
 		}
 		seen[chain.ID] = true
-		commandIDs := make([]string, 0, len(chain.CommandIDs))
-		for _, commandID := range chain.CommandIDs {
-			commandID = strings.TrimSpace(commandID)
-			if commandID == "" {
-				return nil, fmt.Errorf("生命周期命令链引用不存在的命令: %q", commandID)
+		references := chain.Commands
+		if references == nil && chain.CommandIDs != nil {
+			references = make([]LifecycleCommandReference, 0, len(chain.CommandIDs))
+			for _, commandID := range chain.CommandIDs {
+				references = append(references, LifecycleCommandReference{CommandID: commandID, Arguments: []string{}})
 			}
-			if _, found := knownCommands[commandID]; !found {
-				return nil, fmt.Errorf("生命周期命令链引用不存在的命令: %q", commandID)
-			}
-			commandIDs = append(commandIDs, commandID)
 		}
-		if len(commandIDs) == 0 {
+		normalizedReferences := make([]LifecycleCommandReference, 0, len(references))
+		for _, reference := range references {
+			normalizedReference, err := normalizeLifecycleCommandReference(reference, knownCommands)
+			if err != nil {
+				return nil, err
+			}
+			normalizedReferences = append(normalizedReferences, normalizedReference)
+		}
+		if len(normalizedReferences) == 0 {
 			return nil, fmt.Errorf("生命周期命令链必须包含命令")
 		}
-		chain.CommandIDs = commandIDs
+		chain.Commands = normalizedReferences
+		chain.CommandIDs = nil
 		if chain.ApplicableHooks == nil {
-			chain.ApplicableHooks = commonLifecycleHooks(commandIDs, knownCommands)
+			chain.ApplicableHooks = commonLifecycleHooks(normalizedReferences, knownCommands)
 		} else {
 			applicableHooks, err := normalizeLifecycleApplicableHooks(chain.ApplicableHooks, nil, true)
 			if err != nil {
@@ -427,9 +444,10 @@ func normalizeLifecycleChains(chains []LifecycleCommandChain, commands []Lifecyc
 			}
 			chain.ApplicableHooks = applicableHooks
 		}
-		for _, commandID := range commandIDs {
-			if !lifecycleHooksCover(knownCommands[commandID].ApplicableHooks, chain.ApplicableHooks) {
-				return nil, fmt.Errorf("生命周期命令链 %q 引用的命令 %q 不适用于全部链范围", chain.Name, knownCommands[commandID].Name)
+		for _, reference := range normalizedReferences {
+			command := knownCommands[reference.CommandID]
+			if !lifecycleHooksCover(command.ApplicableHooks, chain.ApplicableHooks) {
+				return nil, fmt.Errorf("生命周期命令链 %q 引用的命令 %q 不适用于全部链范围", chain.Name, command.Name)
 			}
 		}
 		normalized = append(normalized, chain)
@@ -508,10 +526,57 @@ func normalizeLifecycleApplicableHooks(hooks, legacyHooks []LifecycleHook, allow
 	return normalized, nil
 }
 
-func commonLifecycleHooks(commandIDs []string, commands map[string]LifecycleCommand) []LifecycleHook {
+func normalizeLifecycleCommandReference(reference LifecycleCommandReference, commands map[string]LifecycleCommand) (LifecycleCommandReference, error) {
+	reference.CommandID = strings.TrimSpace(reference.CommandID)
+	if reference.CommandID == "" {
+		return LifecycleCommandReference{}, fmt.Errorf("生命周期命令链引用不存在的命令: %q", reference.CommandID)
+	}
+	command, found := commands[reference.CommandID]
+	if !found {
+		return LifecycleCommandReference{}, fmt.Errorf("生命周期命令链引用不存在的命令: %q", reference.CommandID)
+	}
+	reference.Arguments = normalizeArguments(reference.Arguments)
+	if command.Kind == LifecycleCommandKindGitClone {
+		arguments, err := normalizeGitCloneArguments(reference.Arguments)
+		if err != nil {
+			return LifecycleCommandReference{}, err
+		}
+		reference.Arguments = arguments
+	}
+	return reference, nil
+}
+
+func normalizeGitCloneArguments(arguments []string) ([]string, error) {
+	if len(arguments) != 1 {
+		return nil, fmt.Errorf("Git 仓库克隆命令必须配置唯一的 dir 参数")
+	}
+	key, directory, found := strings.Cut(arguments[0], "=")
+	if !found || strings.TrimSpace(key) != "dir" {
+		return nil, fmt.Errorf("Git 仓库克隆命令参数必须使用 dir=<相对目录>")
+	}
+	directory = strings.TrimSpace(directory)
+	if directory == "" || filepath.IsAbs(directory) {
+		return nil, fmt.Errorf("Git 仓库克隆命令的 dir 参数无效")
+	}
+	directory = filepath.Clean(directory)
+	if directory == ".." || strings.HasPrefix(directory, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("Git 仓库克隆命令的 dir 参数无效")
+	}
+	return []string{"dir=" + directory}, nil
+}
+
+func GitCloneDirectory(arguments []string) (string, error) {
+	normalized, err := normalizeGitCloneArguments(arguments)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(normalized[0], "dir="), nil
+}
+
+func commonLifecycleHooks(references []LifecycleCommandReference, commands map[string]LifecycleCommand) []LifecycleHook {
 	common := allLifecycleHooks()
-	for _, commandID := range commandIDs {
-		commandHooks := commands[commandID].ApplicableHooks
+	for _, reference := range references {
+		commandHooks := commands[reference.CommandID].ApplicableHooks
 		filtered := make([]LifecycleHook, 0, len(common))
 		for _, hook := range common {
 			if lifecycleHookIncluded(commandHooks, hook) {

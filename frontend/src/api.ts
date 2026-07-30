@@ -87,7 +87,7 @@ export const api = {
 		const chains = await ListLifecycleCommandChains()
 		return Array.isArray(chains) ? chains as LifecycleCommandChain[] : []
 	},
-	saveLifecycleCommandChain: (chain: LifecycleCommandChain) => SaveLifecycleCommandChain(chain) as Promise<LifecycleCommandChain>,
+	saveLifecycleCommandChain: (chain: LifecycleCommandChain) => SaveLifecycleCommandChain(settingsModel.LifecycleCommandChain.createFrom(chain)) as Promise<LifecycleCommandChain>,
 	copyLifecycleCommandChain: (chainID: string) => CopyLifecycleCommandChain(chainID) as Promise<LifecycleCommandChain>,
 	deleteLifecycleCommandChain: (chainID: string) => DeleteLifecycleCommandChain(chainID),
 	saveLifecycleDefaultChain: (hook: LifecycleHook, chainID: string) => SaveLifecycleDefaultChain(hook, chainID) as Promise<SettingsRecord>,

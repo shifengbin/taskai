@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -44,10 +45,10 @@ func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	current := Default(t.TempDir())
 
-	if len(current.LifecycleCommands) != 2 {
-		t.Fatalf("默认生命周期命令数量 = %d，期望 2", len(current.LifecycleCommands))
+	if len(current.LifecycleCommands) != 3 {
+		t.Fatalf("默认生命周期命令数量 = %d，期望 3", len(current.LifecycleCommands))
 	}
-	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID {
+	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID {
 		t.Fatalf("默认生命周期命令 = %#v", current.LifecycleCommands)
 	}
 	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
@@ -61,6 +62,96 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	}
 	if got := current.LifecycleDefaultChains[LifecycleHookPostEnd]; got != LifecycleChainDeleteWorkspaceID {
 		t.Fatalf("postEnd 默认链 = %q，期望 %q", got, LifecycleChainDeleteWorkspaceID)
+	}
+}
+
+func TestDefaultIncludesDocumentedGitCloneLifecycleCommand(t *testing.T) {
+	current := Default(t.TempDir())
+	encoded, err := json.Marshal(current.LifecycleCommands)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var commands []map[string]any
+	if err := json.Unmarshal(encoded, &commands); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	for _, command := range commands {
+		if command["id"] != "system.lifecycle.git-clone" {
+			continue
+		}
+		if command["kind"] != "git-clone" {
+			t.Fatalf("Git 系统命令类型 = %#v", command)
+		}
+		if command["documentation"] == "" {
+			t.Fatalf("Git 系统命令缺少使用文档: %#v", command)
+		}
+		if !reflect.DeepEqual(command["applicableHooks"], []any{"beforeStart", "beforeEnd", "updateTask"}) {
+			t.Fatalf("Git 系统命令适用范围 = %#v", command["applicableHooks"])
+		}
+		return
+	}
+	t.Fatal("Default() 未提供 Git 仓库克隆系统命令")
+}
+
+func TestValidateNormalizesLifecycleCommandReferences(t *testing.T) {
+	contents, err := json.Marshal(map[string]any{
+		"workspaceRoot": filepath.Join(t.TempDir(), "workspaces"),
+		"taskTreeWidth": DefaultTaskTreeWidth,
+		"lifecycleCommands": []map[string]any{{
+			"id": "prepare", "kind": "custom", "name": "准备", "command": "prepare", "arguments": []string{"--verbose"}, "applicableHooks": []LifecycleHook{LifecycleHookBeforeStart},
+		}},
+		"lifecycleChains": []map[string]any{{
+			"id": "chain", "name": "准备链", "commands": []map[string]any{{"commandId": "prepare", "arguments": []string{" --profile ", "dev"}}}, "applicableHooks": []LifecycleHook{LifecycleHookBeforeStart},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var next Settings
+	if err := json.Unmarshal(contents, &next); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	validated, err := Validate(next)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	encoded, err := json.Marshal(validated.LifecycleChains[0])
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var chain map[string]any
+	if err := json.Unmarshal(encoded, &chain); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if _, found := chain["commandIds"]; found {
+		t.Fatalf("规范化后的命令链仍保存 commandIds: %#v", chain)
+	}
+	if !reflect.DeepEqual(chain["commands"], []any{map[string]any{"commandId": "prepare", "arguments": []any{"--profile", "dev"}}}) {
+		t.Fatalf("规范化后的命令引用 = %#v", chain["commands"])
+	}
+}
+
+func TestValidateRejectsGitCloneReferenceWithoutSingleValidDir(t *testing.T) {
+	base := Settings{WorkspaceRoot: t.TempDir(), TaskTreeWidth: DefaultTaskTreeWidth}
+	contents, err := json.Marshal(map[string]any{
+		"workspaceRoot": base.WorkspaceRoot,
+		"taskTreeWidth": base.TaskTreeWidth,
+		"lifecycleChains": []map[string]any{{
+			"id": "clone", "name": "克隆", "commands": []map[string]any{{"commandId": "system.lifecycle.git-clone", "arguments": []string{"dir=../outside"}}}, "applicableHooks": []LifecycleHook{LifecycleHookBeforeStart},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var next Settings
+	if err := json.Unmarshal(contents, &next); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	_, err = Validate(next)
+	if err == nil || !strings.Contains(err.Error(), "dir") {
+		t.Fatalf("Validate() error = %v，期望拒绝无效 dir", err)
 	}
 }
 
@@ -91,7 +182,7 @@ func TestValidateNormalizesLifecycleCommandsChainsAndDefaults(t *testing.T) {
 	if create == nil || create.Kind != LifecycleCommandKindCreateWorkspace || create.Name == "被篡改" || create.Command != "" {
 		t.Fatalf("创建目录内置命令 = %#v", create)
 	}
-	if len(validated.LifecycleChains) != 1 || validated.LifecycleChains[0].ID != "chain-prepare" || !reflect.DeepEqual(validated.LifecycleChains[0].CommandIDs, []string{"custom-prepare", LifecycleCommandCreateWorkspaceID}) {
+	if len(validated.LifecycleChains) != 1 || validated.LifecycleChains[0].ID != "chain-prepare" || !reflect.DeepEqual(validated.LifecycleChains[0].Commands, []LifecycleCommandReference{{CommandID: "custom-prepare", Arguments: []string{}}, {CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}) {
 		t.Fatalf("生命周期链 = %#v", validated.LifecycleChains)
 	}
 	if got := validated.LifecycleDefaultChains[LifecycleHookBeforeStart]; got != "chain-prepare" {

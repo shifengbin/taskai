@@ -353,6 +353,44 @@ describe('TaskTree', () => {
     expect(onChangeStatus).toHaveBeenCalledWith('running')
   })
 
+  it.each(['pending', 'running', 'completed'] as const)('在%s状态下使用可收缩的无滚动条列表并保留任务选择', async (activeStatus) => {
+    const user = userEvent.setup()
+    const onSelectTask = vi.fn()
+    const visibleTasks = Array.from({length: 12}, (_, index) => ({
+      ...runningTask,
+      id: `task-${index + 1}`,
+      title: `${activeStatus}任务 ${index + 1}`,
+      status: activeStatus,
+    }))
+    render(
+      <TaskTree
+        tasks={visibleTasks}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={onSelectTask}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus={activeStatus}
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const taskList = screen.getByTestId('task-tree-list')
+    expect(taskList).toHaveStyle({minHeight: '0'})
+    expect(taskList).toHaveStyle({overflowX: 'hidden'})
+    expect(taskList).toHaveStyle({overflowY: 'auto'})
+    expect(taskList).toHaveStyle({scrollbarWidth: 'none'})
+
+    taskList.scrollTop = 48
+    fireEvent.scroll(taskList)
+    await user.click(screen.getByText(`${activeStatus}任务 12`))
+    expect(onSelectTask).toHaveBeenCalledWith(expect.objectContaining({id: 'task-12'}))
+  })
+
   it('异常退出终端以状态点表示异常状态，并允许关闭', async () => {
     const user = userEvent.setup()
     const onCloseTerminal = vi.fn()

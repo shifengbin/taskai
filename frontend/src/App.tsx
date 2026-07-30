@@ -813,7 +813,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         </AppBar>
 
         <Box sx={{display: 'grid', gridTemplateColumns: `${treeWidth}px 6px minmax(0, 1fr)`, minHeight: 0}}>
-          <Box sx={{minWidth: 0, borderRight: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
+          <Box sx={{minWidth: 0, minHeight: 0, display: 'grid', gridTemplateRows: '42px minmax(0, 1fr)', borderRight: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
             <Box sx={{height: 42, display: 'flex', alignItems: 'center', px: 1.25, borderBottom: 1, borderColor: 'divider'}}>
               <Typography variant="overline" color="text.secondary">任务与终端</Typography>
               <Box sx={{flex: 1}}/>
@@ -835,7 +835,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 </IconButton>
               </Tooltip>
             </Box>
-            <Box sx={{height: 'calc(100% - 42px)'}}>
+            <Box sx={{minHeight: 0}}>
               <TaskTree
                 tasks={tasks}
                 terminals={terminals}
@@ -1679,7 +1679,15 @@ function LifecycleManagement({
 			return
 		}
 		try {
-			await onSaveChain({...chainDraft, name: chainDraft.name.trim(), commandIds: chainDraft.commandIds.filter(Boolean), applicableHooks: [...chainDraft.applicableHooks]})
+			await onSaveChain({
+				...chainDraft,
+				name: chainDraft.name.trim(),
+				commands: chainDraft.commands.filter((reference) => reference.commandId).map((reference) => ({
+					commandId: reference.commandId,
+					arguments: reference.arguments.map((argument) => argument.trim()).filter(Boolean),
+				})),
+				applicableHooks: [...chainDraft.applicableHooks],
+			})
 			setChainDraft(undefined)
 		} catch (error) {
 			onError(error)
@@ -1689,8 +1697,21 @@ function LifecycleManagement({
 	const toggleChainCommand = (commandID: string, checked: boolean) => {
 		setChainDraft((current) => current ? {
 			...current,
-			commandIds: checked ? [...current.commandIds, commandID] : current.commandIds.filter((currentID) => currentID !== commandID),
+			commands: checked
+				? [...current.commands, {commandId: commandID, arguments: []}]
+				: current.commands.filter((reference) => reference.commandId !== commandID),
 		} : current)
+	}
+
+	const updateChainCommandArguments = (index: number, referenceArguments: string[]) => {
+		setChainDraft((current) => {
+			if (!current || index < 0 || index >= current.commands.length) {
+				return current
+			}
+			const commands = [...current.commands]
+			commands[index] = {...commands[index], arguments: referenceArguments}
+			return {...current, commands}
+		})
 	}
 
 	const toggleApplicableHook = (hook: LifecycleHook, target: 'command' | 'chain', checked: boolean) => {
@@ -1702,20 +1723,20 @@ function LifecycleManagement({
 		setChainDraft((current) => current ? {...current, applicableHooks: update(current.applicableHooks)} : current)
 	}
 
-	const incompatibleChainCommandIDs = chainDraft?.commandIds.filter((commandID) => {
-		const command = commandsByID.get(commandID)
+	const incompatibleChainCommands = chainDraft?.commands.filter((reference) => {
+		const command = commandsByID.get(reference.commandId)
 		return !command || !lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks)
 	}) ?? []
 
 	const moveChainCommand = (index: number, offset: number) => {
 		setChainDraft((current) => {
-			if (!current || index + offset < 0 || index + offset >= current.commandIds.length) {
+			if (!current || index + offset < 0 || index + offset >= current.commands.length) {
 				return current
 			}
-			const commandIds = [...current.commandIds]
-			const [commandID] = commandIds.splice(index, 1)
-			commandIds.splice(index + offset, 0, commandID)
-			return {...current, commandIds}
+			const commands = [...current.commands]
+			const [command] = commands.splice(index, 1)
+			commands.splice(index + offset, 0, command)
+			return {...current, commands}
 		})
 	}
 
@@ -1724,13 +1745,13 @@ function LifecycleManagement({
 			return
 		}
 		setChainDraft((current) => {
-			if (!current || fromIndex < 0 || toIndex < 0 || fromIndex >= current.commandIds.length || toIndex >= current.commandIds.length) {
+			if (!current || fromIndex < 0 || toIndex < 0 || fromIndex >= current.commands.length || toIndex >= current.commands.length) {
 				return current
 			}
-			const commandIds = [...current.commandIds]
-			const [commandID] = commandIds.splice(fromIndex, 1)
-			commandIds.splice(toIndex, 0, commandID)
-			return {...current, commandIds}
+			const commands = [...current.commands]
+			const [command] = commands.splice(fromIndex, 1)
+			commands.splice(toIndex, 0, command)
+			return {...current, commands}
 		})
 	}
 
@@ -1753,7 +1774,7 @@ function LifecycleManagement({
 			</Box>
 			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden'}}>
 				{commands.map((command, index) => <Box key={command.id} sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === commands.length - 1 ? 0 : 1, borderColor: 'divider'}}>
-					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{command.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{command.kind === 'custom' ? `${command.command}${command.arguments.length ? ` ${command.arguments.join(' ')}` : ''}` : '系统内置目录操作'}</Typography><Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(command.applicableHooks)}</Typography></Box>
+					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{command.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{command.kind === 'custom' ? `${command.command}${command.arguments.length ? ` ${command.arguments.join(' ')}` : ''}` : '系统内置命令'}</Typography>{command.documentation && <Typography variant="caption" color="text.secondary" sx={{display: 'block', whiteSpace: 'pre-wrap'}}>{command.documentation}</Typography>}<Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(command.applicableHooks)}</Typography></Box>
 					<Box sx={{display: 'flex', alignItems: 'center', gap: 0.5}}>
 						<Chip size="small" label={command.kind === 'custom' ? '自定义' : '系统'} variant="outlined"/>
 						{command.kind === 'custom' && <Button size="small" onClick={() => setCommandDraft({...command, arguments: [...command.arguments], applicableHooks: [...command.applicableHooks]})}>编辑</Button>}
@@ -1766,12 +1787,12 @@ function LifecycleManagement({
 		<Box sx={{display: 'grid', gap: 1.25, pt: 0.5, borderTop: 1, borderColor: 'divider'}}>
 			<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
 				<Box><Typography variant="subtitle2">命令链</Typography><Typography variant="caption" color="text.secondary">同一条链可被多个钩子和任务复用，修改将在下次执行或重试时生效。</Typography></Box>
-				<Button size="small" variant="contained" onClick={() => setChainDraft({id: '', name: '', commandIds: [], applicableHooks: []})}>新增链</Button>
+				<Button size="small" variant="contained" onClick={() => setChainDraft({id: '', name: '', commands: [], applicableHooks: []})}>新增链</Button>
 			</Box>
 			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden'}}>
 				{chains.map((chain, index) => <Box key={chain.id} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: 'minmax(0, 1fr) auto'}, gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === chains.length - 1 ? 0 : 1, borderColor: 'divider'}}>
-					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{chain.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{chain.commandIds.map((commandID) => commandNames.get(commandID) ?? '已删除命令').join(' → ')}</Typography><Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(chain.applicableHooks)}</Typography></Box>
-					<Box sx={{display: 'flex', justifyContent: 'flex-end', gap: 0.5, flexWrap: 'wrap'}}><Button size="small" onClick={() => setChainDraft({...chain, commandIds: [...chain.commandIds], applicableHooks: [...chain.applicableHooks]})}>编辑</Button><Button size="small" onClick={() => void onCopyChain(chain.id).catch(onError)}>复制</Button><IconButton aria-label={`删除命令链 ${chain.name}`} color="error" size="small" onClick={() => void onDeleteChain(chain.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></Box>
+					<Box sx={{minWidth: 0}}><Typography variant="body2" sx={{fontWeight: 700}} noWrap>{chain.name}</Typography><Typography variant="caption" color="text.secondary" noWrap>{chain.commands.map((reference) => commandNames.get(reference.commandId) ?? '已删除命令').join(' → ')}</Typography><Typography variant="caption" color="text.secondary" sx={{display: 'block'}}>适用：{lifecycleHooksLabel(chain.applicableHooks)}</Typography></Box>
+					<Box sx={{display: 'flex', justifyContent: 'flex-end', gap: 0.5, flexWrap: 'wrap'}}><Button size="small" onClick={() => setChainDraft({...chain, commands: chain.commands.map((reference) => ({...reference, arguments: [...reference.arguments]})), applicableHooks: [...chain.applicableHooks]})}>编辑</Button><Button size="small" onClick={() => void onCopyChain(chain.id).catch(onError)}>复制</Button><IconButton aria-label={`删除命令链 ${chain.name}`} color="error" size="small" onClick={() => void onDeleteChain(chain.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></Box>
 				</Box>)}
 			</Box>
 		</Box>
@@ -1792,13 +1813,15 @@ function LifecycleManagement({
 			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
 				<TextField autoFocus required label="命令链名称" value={chainDraft?.name ?? ''} onChange={(event) => setChainDraft((current) => current ? {...current, name: event.target.value} : current)}/>
 				<Box sx={{display: 'grid', gap: 0.5}}><Typography variant="subtitle2">适用范围</Typography>{lifecycleHooks.map((hook) => <FormControlLabel key={hook.id} control={<Checkbox checked={Boolean(chainDraft?.applicableHooks.includes(hook.id))} onChange={(event) => toggleApplicableHook(hook.id, 'chain', event.target.checked)}/>} label={hook.label}/>)}</Box>
-				<Box sx={{display: 'grid', gap: 0.5}}><Typography variant="subtitle2">可用命令</Typography>{chainDraft?.applicableHooks.length ? commands.filter((command) => lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks) || chainDraft.commandIds.includes(command.id)).map((command) => <FormControlLabel key={command.id} control={<Checkbox checked={Boolean(chainDraft.commandIds.includes(command.id))} onChange={(event) => toggleChainCommand(command.id, event.target.checked)}/>} label={`${command.name}${lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks) ? '' : '（与当前范围不匹配）'}`}/>) : <Typography variant="body2" color="text.secondary">请先选择命令链适用范围。</Typography>}</Box>
-				{incompatibleChainCommandIDs.length > 0 && <Typography variant="body2" color="error">请移除与当前范围不匹配的命令后再保存。</Typography>}
+				<Box sx={{display: 'grid', gap: 0.5}}><Typography variant="subtitle2">可用命令</Typography>{chainDraft?.applicableHooks.length ? commands.filter((command) => lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks) || chainDraft.commands.some((reference) => reference.commandId === command.id)).map((command) => <FormControlLabel key={command.id} control={<Checkbox checked={Boolean(chainDraft.commands.some((reference) => reference.commandId === command.id))} onChange={(event) => toggleChainCommand(command.id, event.target.checked)}/>} label={`${command.name}${lifecycleHooksCover(command.applicableHooks, chainDraft.applicableHooks) ? '' : '（与当前范围不匹配）'}`}/>) : <Typography variant="body2" color="text.secondary">请先选择命令链适用范围。</Typography>}</Box>
+				{incompatibleChainCommands.length > 0 && <Typography variant="body2" color="error">请移除与当前范围不匹配的命令后再保存。</Typography>}
 				<Box sx={{display: 'grid', gap: 0.5}}>
 					<Typography variant="subtitle2">执行顺序</Typography>
-					{chainDraft?.commandIds.length ? chainDraft.commandIds.map((commandID, index) => (
+					{chainDraft?.commands.length ? chainDraft.commands.map((reference, index) => {
+						const command = commandsByID.get(reference.commandId)
+						return (
 						<Box
-							key={`${commandID}-${index}`}
+							key={`${reference.commandId}-${index}`}
 							draggable
 							onDragStart={(event) => event.dataTransfer.setData('text/plain', String(index))}
 							onDragOver={(event) => event.preventDefault()}
@@ -1806,16 +1829,19 @@ function LifecycleManagement({
 								const fromIndex = Number(event.dataTransfer.getData('text/plain'))
 								moveChainCommandTo(fromIndex, index)
 							}}
-							sx={{display: 'flex', alignItems: 'center', gap: 0.5, border: 1, borderColor: 'divider', borderRadius: 1, px: 1, cursor: 'grab', '&:active': {cursor: 'grabbing'}}}
+							sx={{display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', gap: 0.5, alignItems: 'center', border: 1, borderColor: 'divider', borderRadius: 1, p: 1, cursor: 'grab', '&:active': {cursor: 'grabbing'}}}
 						>
-							<Typography variant="body2" sx={{flex: 1}}>{index + 1}. {commandNames.get(commandID) ?? '已删除命令'}</Typography>
+							<Typography variant="body2">{index + 1}. {commandNames.get(reference.commandId) ?? '已删除命令'}</Typography>
 							<IconButton aria-label={`上移链命令 ${index + 1}`} size="small" disabled={index === 0} onClick={() => moveChainCommand(index, -1)}><ArrowUpwardOutlinedIcon fontSize="inherit"/></IconButton>
-							<IconButton aria-label={`下移链命令 ${index + 1}`} size="small" disabled={index === chainDraft.commandIds.length - 1} onClick={() => moveChainCommand(index, 1)}><ArrowDownwardOutlinedIcon fontSize="inherit"/></IconButton>
+							<IconButton aria-label={`下移链命令 ${index + 1}`} size="small" disabled={index === chainDraft.commands.length - 1} onClick={() => moveChainCommand(index, 1)}><ArrowDownwardOutlinedIcon fontSize="inherit"/></IconButton>
+							<TextField fullWidth multiline minRows={2} label={`${command?.name ?? '命令'} 链级参数（每行一个）`} value={reference.arguments.join('\n')} onChange={(event) => updateChainCommandArguments(index, event.target.value.split('\n'))} sx={{gridColumn: '1 / -1', cursor: 'text'}}/>
+							{command?.documentation && <Typography variant="caption" color="text.secondary" sx={{gridColumn: '1 / -1', whiteSpace: 'pre-wrap'}}>{command.documentation}</Typography>}
 						</Box>
-					)) : <Typography variant="body2" color="text.secondary">至少选择一个命令。</Typography>}
+						)
+					}) : <Typography variant="body2" color="text.secondary">至少选择一个命令。</Typography>}
 				</Box>
 			</DialogContent>
-			<DialogActions><Button onClick={() => setChainDraft(undefined)}>取消</Button><Button variant="contained" disabled={!chainDraft?.applicableHooks.length || !chainDraft.commandIds.length || incompatibleChainCommandIDs.length > 0} onClick={() => void saveChain()}>保存命令链</Button></DialogActions>
+			<DialogActions><Button onClick={() => setChainDraft(undefined)}>取消</Button><Button variant="contained" disabled={!chainDraft?.applicableHooks.length || !chainDraft.commands.length || incompatibleChainCommands.length > 0} onClick={() => void saveChain()}>保存命令链</Button></DialogActions>
 		</Dialog>
 	</Box>
 }

@@ -268,6 +268,23 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 	}
 }
 
+func TestLifecycleChainAppendsReferenceArgumentsToCommandArguments(t *testing.T) {
+	_, commands, err := lifecycleChain(settings.Settings{
+		LifecycleCommands: []settings.LifecycleCommand{{
+			ID: "prepare", Kind: settings.LifecycleCommandKindCustom, Name: "准备", Command: "prepare", Arguments: []string{"--verbose"},
+		}},
+		LifecycleChains: []settings.LifecycleCommandChain{{
+			ID: "chain", Name: "准备链", Commands: []settings.LifecycleCommandReference{{CommandID: "prepare", Arguments: []string{"--profile", "dev"}}},
+		}},
+	}, "chain")
+	if err != nil {
+		t.Fatalf("lifecycleChain() error = %v", err)
+	}
+	if len(commands) != 1 || !reflect.DeepEqual(commands[0].Arguments, []string{"--verbose", "--profile", "dev"}) {
+		t.Fatalf("合并后的命令参数 = %#v", commands)
+	}
+}
+
 func configureLifecycleFailure(t *testing.T, app *App, hook task.LifecycleHook) {
 	t.Helper()
 	current, err := app.GetSettings()

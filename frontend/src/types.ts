@@ -6,7 +6,7 @@ export type ColorScheme = 'light' | 'dark'
 export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'command'
 export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'
 export type LifecycleExecutionState = 'running' | 'failed'
-export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace'
+export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace' | 'git-clone'
 export const defaultTaskColor = '#4f46e5'
 
 export const lifecycleHooks: Array<{id: LifecycleHook, label: string}> = [
@@ -34,13 +34,19 @@ export interface LifecycleCommand {
   name: string
   command?: string
   arguments: string[]
+  documentation?: string
   applicableHooks: LifecycleHook[]
+}
+
+export interface LifecycleCommandReference {
+  commandId: string
+  arguments: string[]
 }
 
 export interface LifecycleCommandChain {
   id: string
   name: string
-  commandIds: string[]
+  commands: LifecycleCommandReference[]
   applicableHooks: LifecycleHook[]
 }
 

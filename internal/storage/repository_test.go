@@ -324,7 +324,7 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(data.Settings.LifecycleCommands) != 2 || len(data.Settings.LifecycleChains) != 2 {
+	if len(data.Settings.LifecycleCommands) != 3 || len(data.Settings.LifecycleChains) != 2 {
 		t.Fatalf("生命周期设置迁移 = %#v", data.Settings)
 	}
 	if got := data.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
@@ -352,6 +352,17 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	}
 	if !jsonContainsKey(persistedData["settings"], "lifecycleCommands") || !jsonContainsKey(persistedData["settings"], "lifecycleChains") {
 		t.Fatalf("迁移结果未持久化生命周期设置: %s", persisted)
+	}
+	var persistedSettings map[string]json.RawMessage
+	if err := json.Unmarshal(persistedData["settings"], &persistedSettings); err != nil {
+		t.Fatalf("Unmarshal persisted settings error = %v", err)
+	}
+	var persistedChains []map[string]json.RawMessage
+	if err := json.Unmarshal(persistedSettings["lifecycleChains"], &persistedChains); err != nil {
+		t.Fatalf("Unmarshal persisted chains error = %v", err)
+	}
+	if len(persistedChains) != 2 || persistedChains[0]["commands"] == nil || persistedChains[0]["commandIds"] != nil {
+		t.Fatalf("迁移后的命令链结构 = %#v", persistedChains)
 	}
 }
 
@@ -457,19 +468,19 @@ func TestRepositoryManagesLifecycleCommandsChainsAndDeletionConstraints(t *testi
 		t.Fatalf("保存的生命周期命令 = %#v", command)
 	}
 	chain, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
-		Name: "开始前准备", CommandIDs: []string{command.ID}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+		Name: "开始前准备", Commands: []settings.LifecycleCommandReference{{CommandID: command.ID, Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
 	})
 	if err != nil {
 		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
 	}
-	if chain.ID == "" || len(chain.CommandIDs) != 1 {
+	if chain.ID == "" || !reflect.DeepEqual(chain.Commands, []settings.LifecycleCommandReference{{CommandID: command.ID, Arguments: []string{}}}) {
 		t.Fatalf("保存的生命周期链 = %#v", chain)
 	}
 	copy, err := repository.CopyLifecycleCommandChain(chain.ID)
 	if err != nil {
 		t.Fatalf("CopyLifecycleCommandChain() error = %v", err)
 	}
-	if copy.ID == chain.ID || !reflect.DeepEqual(copy.CommandIDs, chain.CommandIDs) {
+	if copy.ID == chain.ID || !reflect.DeepEqual(copy.Commands, chain.Commands) {
 		t.Fatalf("复制的生命周期链 = %#v，源链 = %#v", copy, chain)
 	}
 
@@ -492,7 +503,7 @@ func TestRepositoryManagesLifecycleCommandsChainsAndDeletionConstraints(t *testi
 		t.Fatal("DeleteLifecycleCommandChain() error = nil，期望拒绝删除被未执行任务引用的链")
 	}
 	if _, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
-		ID: chain.ID, Name: chain.Name, CommandIDs: chain.CommandIDs, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookPostStart},
+		ID: chain.ID, Name: chain.Name, Commands: chain.Commands, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookPostStart},
 	}); err == nil {
 		t.Fatal("SaveLifecycleCommandChain() error = nil，期望拒绝缩小未执行任务引用链的适用范围")
 	}

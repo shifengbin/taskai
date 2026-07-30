@@ -474,8 +474,8 @@ func (repository *Repository) DeleteLifecycleCommand(id string) error {
 		return fmt.Errorf("系统内置生命周期命令不可删除")
 	}
 	for _, chain := range data.Settings.LifecycleChains {
-		for _, commandID := range chain.CommandIDs {
-			if commandID == id {
+		for _, reference := range chain.Commands {
+			if reference.CommandID == id {
 				return fmt.Errorf("生命周期命令 %q 仍被命令链 %q 引用", id, chain.Name)
 			}
 		}
@@ -551,7 +551,10 @@ func (repository *Repository) CopyLifecycleCommandChain(id string) (settings.Lif
 		return settings.LifecycleCommandChain{}, err
 	}
 	copy.Name = copy.Name + " 副本"
-	copy.CommandIDs = append([]string(nil), copy.CommandIDs...)
+	copy.Commands = append([]settings.LifecycleCommandReference(nil), copy.Commands...)
+	for index := range copy.Commands {
+		copy.Commands[index].Arguments = append([]string(nil), copy.Commands[index].Arguments...)
+	}
 	return repository.SaveLifecycleCommandChain(copy)
 }
 
