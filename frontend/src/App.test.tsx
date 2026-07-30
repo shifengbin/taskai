@@ -67,6 +67,7 @@ vi.mock('./components/TerminalView', async () => {
 })
 
 import App from './App'
+import type {TaskRecord} from './types'
 
 const fixedTaskMenuItems = [
   {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
@@ -124,6 +125,132 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '结束'}))
     await user.click(screen.getByRole('button', {name: '结束并删除'}))
     expect(bindings.FinishTask).toHaveBeenCalledWith('task-1')
+  })
+
+  it('结束执行中的任务后保持当前任务标签', async () => {
+    const user = userEvent.setup()
+    let resolveFinishTask: ((task: TaskRecord) => void) | undefined
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'running',
+    })
+    bindings.FinishTask.mockImplementation(() => new Promise<TaskRecord>((resolve) => { resolveFinishTask = resolve }))
+    render(<App/>)
+
+    const runningTab = await screen.findByRole('tab', {name: /执行中/})
+    await user.click(screen.getByRole('button', {name: '结束'}))
+    await user.click(screen.getByRole('button', {name: '结束并删除'}))
+    await waitFor(() => expect(bindings.FinishTask).toHaveBeenCalledWith('task-1'))
+    if (!resolveFinishTask) {
+      throw new Error('结束任务绑定未等待返回')
+    }
+    const finishTaskResolver = resolveFinishTask
+
+    await act(async () => {
+      finishTaskResolver({
+        id: 'task-1', title: '清理临时文件', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z',
+      })
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: '结束任务？'})).not.toBeInTheDocument())
+    expect(runningTab).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', {name: /已完成/})).toHaveAttribute('aria-selected', 'false')
+    expect(bindings.SaveSettings).not.toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'completed'}))
+  })
+
+  it('生命周期事件结束任务后保持当前任务标签', async () => {
+    const user = userEvent.setup()
+    let lifecycleEventListener: ((task: TaskRecord) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-lifecycle:event') {
+        lifecycleEventListener = listener
+      }
+    })
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'running',
+    })
+    render(<App/>)
+
+    const runningTab = await screen.findByRole('tab', {name: /执行中/})
+    await user.click(screen.getByText('清理临时文件'))
+    if (!lifecycleEventListener) {
+      throw new Error('未注册生命周期事件监听器')
+    }
+
+    act(() => lifecycleEventListener?.({
+      id: 'task-1', title: '清理临时文件', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z',
+    }))
+
+    expect(runningTab).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', {name: /已完成/})).toHaveAttribute('aria-selected', 'false')
+    expect(bindings.SaveSettings).not.toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'completed'}))
+  })
+
+  it('开始任务后切换到执行中并突出目标任务', async () => {
+    const user = userEvent.setup()
+    bindings.ListTasks.mockResolvedValue([{
+      id: 'task-1', title: '清理临时文件', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+    }])
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'pending',
+    })
+    bindings.StartTask.mockResolvedValue({
+      id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '执行'}))
+
+    await waitFor(() => expect(screen.getByRole('tab', {name: /执行中/})).toHaveAttribute('aria-selected', 'true'))
+    expect(within(screen.getByRole('navigation', {name: '任务和终端'})).getByText('清理临时文件').closest('[data-task-id]')).toHaveAttribute('data-task-start-feedback', 'flash')
+    expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'running'}))
+  })
+
+  it('开始结果仍为未执行时不切换任务标签或显示反馈', async () => {
+    const user = userEvent.setup()
+    bindings.ListTasks.mockResolvedValue([{
+      id: 'task-1', title: '清理临时文件', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+    }])
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'pending',
+    })
+    bindings.StartTask.mockResolvedValue({
+      id: 'task-1', title: '清理临时文件', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '执行'}))
+    await waitFor(() => expect(bindings.StartTask).toHaveBeenCalledWith('task-1'))
+
+    expect(screen.getByRole('tab', {name: /未执行/})).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', {name: /执行中/})).toHaveAttribute('aria-selected', 'false')
+    expect(within(screen.getByRole('navigation', {name: '任务和终端'})).getByText('清理临时文件').closest('[data-task-id]')).not.toHaveAttribute('data-task-start-feedback')
+    expect(bindings.SaveSettings).not.toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'running'}))
+  })
+
+  it('开始任务失败时不切换任务标签或显示反馈', async () => {
+    const user = userEvent.setup()
+    bindings.ListTasks.mockResolvedValue([{
+      id: 'task-1', title: '清理临时文件', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+    }])
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskStatus: 'pending',
+    })
+    bindings.StartTask.mockRejectedValue(new Error('启动失败'))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '执行'}))
+
+    expect(await screen.findByText('启动失败')).toBeInTheDocument()
+    expect(screen.getByRole('tab', {name: /未执行/})).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', {name: /执行中/})).toHaveAttribute('aria-selected', 'false')
+    expect(within(screen.getByRole('navigation', {name: '任务和终端'})).getByText('清理临时文件').closest('[data-task-id]')).not.toHaveAttribute('data-task-start-feedback')
+    expect(bindings.SaveSettings).not.toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'running'}))
   })
 
   it('退出前确认会保留任务状态，只请求关闭终端', async () => {
@@ -1103,6 +1230,92 @@ describe('App confirmation flows', () => {
 
     expect(bindings.UpdateTask).toHaveBeenCalledWith('task-1', '更新后的临时文件', '已补充说明', '#22c55e')
     await screen.findByText('更新后的临时文件')
+  })
+
+  it('更新任务启动命令链后立即关闭编辑窗，并按事件展示后续步骤', async () => {
+    const user = userEvent.setup()
+    let lifecycleEventListener: ((task: TaskRecord) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-lifecycle:event') {
+        lifecycleEventListener = listener
+      }
+    })
+    bindings.UpdateTask.mockResolvedValue({
+      id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+      lifecycleExecution: {
+        runId: 'update-run-1', revision: 1, hook: 'updateTask', chainId: 'update-chain',
+        currentCommandId: 'prepare', currentCommandName: '准备环境', currentIndex: 1, commandCount: 2, state: 'running',
+      },
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByText('更新后 · 准备环境 1/2')).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '任务操作'})).toBeDisabled()
+    expect(screen.queryByRole('button', {name: '重试命令链'})).not.toBeInTheDocument()
+
+    if (!lifecycleEventListener) {
+      throw new Error('未注册生命周期事件监听器')
+    }
+    act(() => lifecycleEventListener?.({
+      id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+      lifecycleExecution: {
+        runId: 'update-run-1', revision: 2, hook: 'updateTask', chainId: 'update-chain',
+        currentCommandId: 'deploy', currentCommandName: '部署服务', currentIndex: 2, commandCount: 2, state: 'running',
+      },
+    }))
+
+    expect(await screen.findByText('更新后 · 部署服务 2/2')).toBeInTheDocument()
+  })
+
+  it('开始前命令链完成后自动切换到执行中任务标签', async () => {
+    const user = userEvent.setup()
+    let lifecycleEventListener: ((task: TaskRecord) => void) | undefined
+		let resolveStartTask: ((task: TaskRecord) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-lifecycle:event') {
+        lifecycleEventListener = listener
+      }
+    })
+    bindings.ListTasks.mockResolvedValue([{
+      id: 'task-1', title: '清理临时文件', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+    }])
+    bindings.StartTask.mockImplementation(() => new Promise<TaskRecord>((resolve) => { resolveStartTask = resolve }))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '执行'}))
+		await waitFor(() => expect(bindings.StartTask).toHaveBeenCalledWith('task-1'))
+
+    if (!lifecycleEventListener) {
+      throw new Error('未注册生命周期事件监听器')
+    }
+    act(() => lifecycleEventListener?.({
+      id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+      lifecycleExecution: {
+        runId: 'post-start-run', revision: 1, hook: 'postStart', chainId: 'post-start-chain',
+        currentCommandId: 'notify', currentCommandName: '发送通知', currentIndex: 1, commandCount: 1, state: 'running',
+      },
+    }))
+		if (!resolveStartTask) {
+			throw new Error('开始任务绑定未等待返回')
+		}
+		const startTaskResolver = resolveStartTask
+		startTaskResolver({
+			id: 'task-1', title: '清理临时文件', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleExecution: {
+				runId: 'before-start-run', revision: 1, hook: 'beforeStart', chainId: 'start-chain',
+				currentCommandId: 'prepare', currentCommandName: '准备环境', currentIndex: 1, commandCount: 1, state: 'running',
+			},
+		})
+
+    await waitFor(() => expect(screen.getByRole('tab', {name: /执行中/})).toHaveAttribute('aria-selected', 'true'))
+    expect(screen.getByText('开始后 · 发送通知 1/1')).toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', {name: '任务和终端'})).getByText('清理临时文件').closest('[data-task-id]')).toHaveAttribute('data-task-start-feedback', 'flash')
   })
 
   it('终端退出后不再显示右侧终端视图', async () => {

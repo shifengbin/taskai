@@ -25,9 +25,11 @@ import (
 )
 
 type App struct {
-	mu         sync.RWMutex
-	ctx        context.Context
-	allowClose bool
+	mu               sync.RWMutex
+	ctx              context.Context
+	allowClose       bool
+	lifecycleLockMu  sync.Mutex
+	lifecycleTaskMux map[string]*sync.Mutex
 
 	repository             *storage.Repository
 	tasks                  *lifecycle.Service
@@ -71,13 +73,14 @@ func newApp(dataDirectory string) *App {
 	defaults := settings.Default(dataDirectory)
 	repository := storage.New(filepath.Join(dataDirectory, "tasks.json"), defaults)
 	app := &App{
-		repository:      repository,
-		directoryOpener: openDirectory,
-		commandRunner:   runTaskCommand,
-		commandStarter:  startTaskCommand,
-		scriptRunner:    runTaskScript,
-		scriptStarter:   startTaskScript,
-		endingTasks:     make(map[string]bool),
+		repository:       repository,
+		directoryOpener:  openDirectory,
+		commandRunner:    runTaskCommand,
+		commandStarter:   startTaskCommand,
+		scriptRunner:     runTaskScript,
+		scriptStarter:    startTaskScript,
+		endingTasks:      make(map[string]bool),
+		lifecycleTaskMux: make(map[string]*sync.Mutex),
 	}
 	app.realtime = realtime.New(realtime.Options{Publish: app.publishRealtimeStatusEvent})
 	app.statusHTTP = realtime.NewHTTPServer(realtime.HTTPServerOptions{
@@ -175,6 +178,9 @@ func (app *App) SetTaskShelved(taskID string, shelved bool) ([]task.Task, error)
 }
 
 func (app *App) UpdateTask(taskID, title, description, color string) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
 	current, err := app.tasks.GetTask(taskID)
 	if err != nil {
 		return task.Task{}, err
@@ -189,13 +195,13 @@ func (app *App) UpdateTask(taskID, title, description, color string) (task.Task,
 	if updated.Status != task.StatusRunning {
 		return updated, nil
 	}
-	if failed, err := app.runLifecycleHook(updated, task.LifecycleHookUpdateTask); err != nil {
-		return failed, nil
-	}
-	return app.tasks.GetTask(taskID)
+	return app.scheduleLifecycleHookLocked(updated, task.LifecycleHookUpdateTask)
 }
 
 func (app *App) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
 	current, err := app.tasks.GetTask(taskID)
 	if err != nil {
 		return task.Task{}, err
@@ -210,13 +216,13 @@ func (app *App) UpdateTaskWithExtraInfo(taskID, title, description, color string
 	if updated.Status != task.StatusRunning {
 		return updated, nil
 	}
-	if failed, err := app.runLifecycleHook(updated, task.LifecycleHookUpdateTask); err != nil {
-		return failed, nil
-	}
-	return app.tasks.GetTask(taskID)
+	return app.scheduleLifecycleHookLocked(updated, task.LifecycleHookUpdateTask)
 }
 
 func (app *App) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
 	current, err := app.tasks.GetTask(taskID)
 	if err != nil {
 		return task.Task{}, err
@@ -337,7 +343,17 @@ func lifecycleChainAppliesTo(chain settings.LifecycleCommandChain, hook task.Lif
 	return false
 }
 
+type lifecycleRun struct {
+	task      task.Task
+	hook      task.LifecycleHook
+	execution task.LifecycleExecution
+	request   lifecycle.CommandChainRequest
+}
+
 func (app *App) StartTask(taskID string) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
 	current, err := app.tasks.GetTask(taskID)
 	if err != nil {
 		return task.Task{}, err
@@ -349,21 +365,16 @@ func (app *App) StartTask(taskID string) (task.Task, error) {
 	if err != nil {
 		return task.Task{}, err
 	}
-	if failed, err := app.runLifecycleHook(prepared, task.LifecycleHookBeforeStart); err != nil {
-		return failed, nil
+	if app.hasLifecycleChain(prepared, task.LifecycleHookBeforeStart) {
+		return app.scheduleLifecycleHookLocked(prepared, task.LifecycleHookBeforeStart)
 	}
-	started, err := app.tasks.CommitStartTask(prepared)
-	if err != nil {
-		return task.Task{}, err
-	}
-	app.realtime.RegisterTask(started.ID)
-	if failed, err := app.runLifecycleHook(started, task.LifecycleHookPostStart); err != nil {
-		return failed, nil
-	}
-	return app.tasks.GetTask(taskID)
+	return app.commitStartAndSchedulePostLocked(prepared)
 }
 
 func (app *App) FinishTask(taskID string) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
 	current, err := app.tasks.GetTask(taskID)
 	if err != nil {
 		return task.Task{}, err
@@ -371,13 +382,74 @@ func (app *App) FinishTask(taskID string) (task.Task, error) {
 	if current.IsLifecycleLocked() {
 		return task.Task{}, fmt.Errorf("任务正在执行命令链，暂不能结束执行")
 	}
-	if failed, err := app.runLifecycleHook(current, task.LifecycleHookBeforeEnd); err != nil {
-		return failed, nil
+	if app.hasLifecycleChain(current, task.LifecycleHookBeforeEnd) {
+		return app.scheduleLifecycleHookLocked(current, task.LifecycleHookBeforeEnd)
 	}
-	return app.finishTaskAfterBeforeEnd(taskID)
+	return app.finishTaskAndSchedulePostLocked(taskID)
 }
 
-func (app *App) finishTaskAfterBeforeEnd(taskID string) (task.Task, error) {
+func (app *App) RetryTaskLifecycleCommandChain(taskID string) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
+	current, err := app.tasks.GetTask(taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	if current.LifecycleExecution == nil || current.LifecycleExecution.State != task.LifecycleExecutionFailed {
+		return task.Task{}, fmt.Errorf("任务没有可重试的命令链")
+	}
+	hook := current.LifecycleExecution.Hook
+	if !app.hasLifecycleChain(current, hook) {
+		return task.Task{}, fmt.Errorf("任务没有可重试的命令链")
+	}
+
+	switch hook {
+	case task.LifecycleHookBeforeStart:
+		if current.Status != task.StatusPending {
+			return task.Task{}, fmt.Errorf("开始前命令链只能在未执行任务上重试")
+		}
+		prepared, err := app.tasks.PrepareStartTask(taskID)
+		if err != nil {
+			return task.Task{}, err
+		}
+		return app.scheduleLifecycleHookLocked(prepared, hook)
+	case task.LifecycleHookPostStart:
+		if current.Status != task.StatusRunning {
+			return task.Task{}, fmt.Errorf("开始后命令链只能在执行中任务上重试")
+		}
+	case task.LifecycleHookBeforeEnd:
+		if current.Status != task.StatusRunning {
+			return task.Task{}, fmt.Errorf("结束前命令链只能在执行中任务上重试")
+		}
+	case task.LifecycleHookPostEnd:
+		if current.Status != task.StatusCompleted {
+			return task.Task{}, fmt.Errorf("结束后命令链只能在已完成任务上重试")
+		}
+	case task.LifecycleHookUpdateTask:
+		if current.Status != task.StatusRunning {
+			return task.Task{}, fmt.Errorf("更新命令链只能在执行中任务上重试")
+		}
+	default:
+		return task.Task{}, fmt.Errorf("不支持的命令链钩子: %q", hook)
+	}
+	return app.scheduleLifecycleHookLocked(current, hook)
+}
+
+func (app *App) commitStartAndSchedulePostLocked(prepared task.Task) (task.Task, error) {
+	started, err := app.tasks.CommitStartTask(prepared)
+	if err != nil {
+		return task.Task{}, err
+	}
+	app.realtime.RegisterTask(started.ID)
+	if app.hasLifecycleChain(started, task.LifecycleHookPostStart) {
+		return app.scheduleLifecycleHookLocked(started, task.LifecycleHookPostStart)
+	}
+	app.publishLifecycleTask(started)
+	return started, nil
+}
+
+func (app *App) finishTaskAndSchedulePostLocked(taskID string) (task.Task, error) {
 	app.mu.Lock()
 	app.endingTasks[taskID] = true
 	app.mu.Unlock()
@@ -391,79 +463,15 @@ func (app *App) finishTaskAfterBeforeEnd(taskID string) (task.Task, error) {
 	if err != nil {
 		return task.Task{}, err
 	}
-	if failed, err := app.runLifecycleHook(finished, task.LifecycleHookPostEnd); err != nil {
-		return failed, nil
+	if app.hasLifecycleChain(finished, task.LifecycleHookPostEnd) {
+		return app.scheduleLifecycleHookLocked(finished, task.LifecycleHookPostEnd)
 	}
-	return app.tasks.GetTask(taskID)
+	app.publishLifecycleTask(finished)
+	return finished, nil
 }
 
-func (app *App) RetryTaskLifecycleCommandChain(taskID string) (task.Task, error) {
-	current, err := app.tasks.GetTask(taskID)
-	if err != nil {
-		return task.Task{}, err
-	}
-	if current.LifecycleExecution == nil || current.LifecycleExecution.State != task.LifecycleExecutionFailed {
-		return task.Task{}, fmt.Errorf("任务没有可重试的命令链")
-	}
-
-	switch current.LifecycleExecution.Hook {
-	case task.LifecycleHookBeforeStart:
-		if current.Status != task.StatusPending {
-			return task.Task{}, fmt.Errorf("开始前命令链只能在未执行任务上重试")
-		}
-		prepared, err := app.tasks.PrepareStartTask(taskID)
-		if err != nil {
-			return task.Task{}, err
-		}
-		if failed, err := app.runLifecycleHook(prepared, task.LifecycleHookBeforeStart); err != nil {
-			return failed, nil
-		}
-		started, err := app.tasks.CommitStartTask(prepared)
-		if err != nil {
-			return task.Task{}, err
-		}
-		app.realtime.RegisterTask(started.ID)
-		if failed, err := app.runLifecycleHook(started, task.LifecycleHookPostStart); err != nil {
-			return failed, nil
-		}
-		return app.tasks.GetTask(taskID)
-	case task.LifecycleHookPostStart:
-		if current.Status != task.StatusRunning {
-			return task.Task{}, fmt.Errorf("开始后命令链只能在执行中任务上重试")
-		}
-		if failed, err := app.runLifecycleHook(current, task.LifecycleHookPostStart); err != nil {
-			return failed, nil
-		}
-	case task.LifecycleHookBeforeEnd:
-		if current.Status != task.StatusRunning {
-			return task.Task{}, fmt.Errorf("结束前命令链只能在执行中任务上重试")
-		}
-		if failed, err := app.runLifecycleHook(current, task.LifecycleHookBeforeEnd); err != nil {
-			return failed, nil
-		}
-		return app.finishTaskAfterBeforeEnd(taskID)
-	case task.LifecycleHookPostEnd:
-		if current.Status != task.StatusCompleted {
-			return task.Task{}, fmt.Errorf("结束后命令链只能在已完成任务上重试")
-		}
-		if failed, err := app.runLifecycleHook(current, task.LifecycleHookPostEnd); err != nil {
-			return failed, nil
-		}
-	case task.LifecycleHookUpdateTask:
-		if current.Status != task.StatusRunning {
-			return task.Task{}, fmt.Errorf("更新命令链只能在执行中任务上重试")
-		}
-		if failed, err := app.runLifecycleHook(current, task.LifecycleHookUpdateTask); err != nil {
-			return failed, nil
-		}
-	default:
-		return task.Task{}, fmt.Errorf("不支持的命令链钩子: %q", current.LifecycleExecution.Hook)
-	}
-	return app.tasks.GetTask(taskID)
-}
-
-func (app *App) runLifecycleHook(current task.Task, hook task.LifecycleHook) (task.Task, error) {
-	chainID := current.LifecycleChains[hook]
+func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.LifecycleHook) (task.Task, error) {
+	chainID := strings.TrimSpace(current.LifecycleChains[hook])
 	if chainID == "" {
 		return current, nil
 	}
@@ -471,90 +479,191 @@ func (app *App) runLifecycleHook(current task.Task, hook task.LifecycleHook) (ta
 	if err != nil {
 		return task.Task{}, err
 	}
-	chain, commands, err := lifecycleChain(data.Settings, chainID)
-	if err != nil {
-		return app.failLifecycleHook(current.ID, hook, chainID, "", 1, 1, err)
-	}
-	execution := &task.LifecycleExecution{
+	execution := task.LifecycleExecution{
+		RunID:        task.NewLifecycleExecutionRunID(),
+		Revision:     1,
 		Hook:         hook,
-		ChainID:      chain.ID,
+		ChainID:      chainID,
 		CurrentIndex: 1,
-		CommandCount: len(commands),
+		CommandCount: 1,
 		State:        task.LifecycleExecutionRunning,
 	}
-	if len(commands) > 0 {
+	chain, commands, chainErr := lifecycleChain(data.Settings, chainID)
+	if chainErr == nil {
+		execution.ChainID = chain.ID
+		execution.CommandCount = len(commands)
 		execution.CurrentCommandID = commands[0].ID
 		execution.CurrentCommandName = commands[0].Name
 	}
-	if updated, err := app.tasks.UpdateLifecycleExecution(current.ID, execution); err != nil {
-		return task.Task{}, err
-	} else {
-		app.publishLifecycleTask(updated)
-	}
-	inputTask, err := app.tasks.GetTask(current.ID)
+	updated, err := app.tasks.UpdateLifecycleExecution(current.ID, &execution)
 	if err != nil {
 		return task.Task{}, err
+	}
+	app.publishLifecycleTask(updated)
+	if chainErr != nil {
+		return app.failLifecycleRun(current.ID, execution, chainErr)
+	}
+
+	inputTask, err := app.tasks.GetTask(current.ID)
+	if err != nil {
+		return app.failLifecycleRun(current.ID, execution, err)
 	}
 	input, err := lifecycle.BuildCommandInput(app.realtimeTaskResource(inputTask, true), app.statusHTTP.APIURL())
 	if err != nil {
-		return app.failLifecycleHook(current.ID, hook, chain.ID, execution.CurrentCommandID, execution.CurrentIndex, execution.CommandCount, err)
+		return app.failLifecycleRun(current.ID, execution, err)
 	}
 	directory := current.WorkspacePath
 	if hook == task.LifecycleHookPostEnd {
 		directory = current.WorkspaceRoot
 	}
-	_, err = app.lifecycleCommandRunner.Run(lifecycle.CommandChainRequest{
-		Task:          current,
-		Directory:     directory,
-		WorkspaceRoot: current.WorkspaceRoot,
-		WorkspacePath: current.WorkspacePath,
-		ShellPath:     data.Settings.ShellPath,
-		Environment:   app.taskCommandEnvironment(current.ID),
-		Input:         input,
-		Commands:      commands,
-		OnProgress: func(index, count int, command settings.LifecycleCommand) {
-			execution.CurrentIndex = index
-			execution.CommandCount = count
-			execution.CurrentCommandID = command.ID
-			execution.CurrentCommandName = command.Name
-			if updated, updateErr := app.tasks.UpdateLifecycleExecution(current.ID, execution); updateErr == nil {
-				app.publishLifecycleTask(updated)
-			}
+	run := lifecycleRun{
+		task:      current,
+		hook:      hook,
+		execution: execution,
+		request: lifecycle.CommandChainRequest{
+			Task:          current,
+			Directory:     directory,
+			WorkspaceRoot: current.WorkspaceRoot,
+			WorkspacePath: current.WorkspacePath,
+			ShellPath:     data.Settings.ShellPath,
+			Environment:   append([]string(nil), app.taskCommandEnvironment(current.ID)...),
+			Input:         append([]byte(nil), input...),
+			Commands:      copyLifecycleCommands(commands),
 		},
-	})
-	if err != nil {
-		return app.failLifecycleHook(current.ID, hook, chain.ID, execution.CurrentCommandID, execution.CurrentIndex, execution.CommandCount, err)
 	}
-	updated, err := app.tasks.UpdateLifecycleExecution(current.ID, nil)
-	if err != nil {
-		return task.Task{}, err
-	}
-	app.publishLifecycleTask(updated)
+	go app.executeLifecycleRun(run)
 	return updated, nil
 }
 
-func (app *App) failLifecycleHook(taskID string, hook task.LifecycleHook, chainID, commandID string, index, count int, cause error) (task.Task, error) {
-	if index <= 0 {
-		index = 1
+func (app *App) executeLifecycleRun(run lifecycleRun) {
+	execution := run.execution
+	request := run.request
+	request.OnProgress = func(index, count int, command settings.LifecycleCommand) {
+		next := execution
+		next.Revision++
+		next.CurrentIndex = index
+		next.CommandCount = count
+		next.CurrentCommandID = command.ID
+		next.CurrentCommandName = command.Name
+		updated, applied, err := app.tasks.UpdateLifecycleExecutionIfNewer(run.task.ID, &next)
+		if err != nil || !applied {
+			return
+		}
+		execution = next
+		app.publishLifecycleTask(updated)
 	}
-	if count <= 0 {
-		count = 1
+	_, err := app.lifecycleCommandRunner.Run(request)
+	if err != nil {
+		_, _ = app.failLifecycleRun(run.task.ID, execution, err)
+		return
 	}
-	failed := &task.LifecycleExecution{
-		Hook:             hook,
-		ChainID:          chainID,
-		CurrentCommandID: commandID,
-		CurrentIndex:     index,
-		CommandCount:     count,
-		State:            task.LifecycleExecutionFailed,
-		Error:            cause.Error(),
+	app.continueLifecycleRun(run, execution)
+}
+
+func (app *App) continueLifecycleRun(run lifecycleRun, execution task.LifecycleExecution) {
+	unlock := app.lockLifecycleTask(run.task.ID)
+	defer unlock()
+
+	current, err := app.tasks.GetTask(run.task.ID)
+	if err != nil || !isCurrentLifecycleExecution(current, execution) {
+		return
 	}
-	updated, err := app.tasks.UpdateLifecycleExecution(taskID, failed)
+
+	switch run.hook {
+	case task.LifecycleHookBeforeStart:
+		started, err := app.tasks.CommitStartTask(run.task)
+		if err != nil {
+			_, _ = app.failLifecycleRun(run.task.ID, execution, err)
+			return
+		}
+		app.realtime.RegisterTask(started.ID)
+		app.scheduleNextLifecycleHookLocked(started, task.LifecycleHookPostStart, execution)
+	case task.LifecycleHookBeforeEnd:
+		finished, err := app.finishTaskAndSchedulePostStateLocked(run.task.ID)
+		if err != nil {
+			_, _ = app.failLifecycleRun(run.task.ID, execution, err)
+			return
+		}
+		app.scheduleNextLifecycleHookLocked(finished, task.LifecycleHookPostEnd, execution)
+	default:
+		app.clearLifecycleRun(run.task.ID, execution)
+	}
+}
+
+func (app *App) finishTaskAndSchedulePostStateLocked(taskID string) (task.Task, error) {
+	app.mu.Lock()
+	app.endingTasks[taskID] = true
+	app.mu.Unlock()
+	finished, err := app.tasks.FinishTask(taskID)
+	if err == nil {
+		app.realtime.RemoveTask(taskID)
+	}
+	app.mu.Lock()
+	delete(app.endingTasks, taskID)
+	app.mu.Unlock()
+	return finished, err
+}
+
+func (app *App) scheduleNextLifecycleHookLocked(current task.Task, hook task.LifecycleHook, previous task.LifecycleExecution) {
+	if app.hasLifecycleChain(current, hook) {
+		if _, err := app.scheduleLifecycleHookLocked(current, hook); err != nil {
+			_, _ = app.failLifecycleRun(current.ID, previous, err)
+		}
+		return
+	}
+	app.clearLifecycleRun(current.ID, previous)
+}
+
+func (app *App) failLifecycleRun(taskID string, execution task.LifecycleExecution, cause error) (task.Task, error) {
+	failed := execution
+	failed.Revision++
+	failed.State = task.LifecycleExecutionFailed
+	failed.Error = cause.Error()
+	updated, applied, err := app.tasks.UpdateLifecycleExecutionIfNewer(taskID, &failed)
 	if err != nil {
 		return task.Task{}, err
 	}
-	app.publishLifecycleTask(updated)
-	return updated, cause
+	if applied {
+		app.publishLifecycleTask(updated)
+	}
+	return updated, nil
+}
+
+func (app *App) clearLifecycleRun(taskID string, execution task.LifecycleExecution) {
+	updated, applied, err := app.tasks.ClearLifecycleExecutionIfCurrent(taskID, execution.RunID, execution.Revision)
+	if err == nil && applied {
+		app.publishLifecycleTask(updated)
+	}
+}
+
+func (app *App) hasLifecycleChain(current task.Task, hook task.LifecycleHook) bool {
+	return strings.TrimSpace(current.LifecycleChains[hook]) != ""
+}
+
+func (app *App) lockLifecycleTask(taskID string) func() {
+	app.lifecycleLockMu.Lock()
+	lock := app.lifecycleTaskMux[taskID]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		app.lifecycleTaskMux[taskID] = lock
+	}
+	app.lifecycleLockMu.Unlock()
+	lock.Lock()
+	return lock.Unlock
+}
+
+func isCurrentLifecycleExecution(current task.Task, execution task.LifecycleExecution) bool {
+	return current.LifecycleExecution != nil && current.LifecycleExecution.RunID == execution.RunID && current.LifecycleExecution.Revision == execution.Revision
+}
+
+func copyLifecycleCommands(commands []settings.LifecycleCommand) []settings.LifecycleCommand {
+	copy := make([]settings.LifecycleCommand, len(commands))
+	for index, command := range commands {
+		copy[index] = command
+		copy[index].Arguments = append([]string(nil), command.Arguments...)
+		copy[index].ApplicableHooks = append([]settings.LifecycleHook(nil), command.ApplicableHooks...)
+	}
+	return copy
 }
 
 func lifecycleChain(current settings.Settings, chainID string) (settings.LifecycleCommandChain, []settings.LifecycleCommand, error) {

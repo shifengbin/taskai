@@ -48,6 +48,8 @@ const (
 )
 
 type LifecycleExecution struct {
+	RunID              string                  `json:"runId,omitempty"`
+	Revision           int                     `json:"revision,omitempty"`
 	Hook               LifecycleHook           `json:"hook"`
 	ChainID            string                  `json:"chainId"`
 	CurrentCommandID   string                  `json:"currentCommandId,omitempty"`
@@ -176,6 +178,7 @@ func NormalizeLifecycleExecution(execution *LifecycleExecution) (*LifecycleExecu
 	if !IsLifecycleHook(normalized.Hook) {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidLifecycleHook, normalized.Hook)
 	}
+	normalized.RunID = strings.TrimSpace(normalized.RunID)
 	normalized.ChainID = strings.TrimSpace(normalized.ChainID)
 	normalized.CurrentCommandID = strings.TrimSpace(normalized.CurrentCommandID)
 	normalized.CurrentCommandName = strings.TrimSpace(normalized.CurrentCommandName)
@@ -189,7 +192,14 @@ func NormalizeLifecycleExecution(execution *LifecycleExecution) (*LifecycleExecu
 	if normalized.CommandCount <= 0 || normalized.CurrentIndex <= 0 || normalized.CurrentIndex > normalized.CommandCount {
 		return nil, fmt.Errorf("生命周期执行进度无效")
 	}
+	if normalized.Revision < 0 || (normalized.RunID == "" && normalized.Revision != 0) || (normalized.RunID != "" && normalized.Revision == 0) {
+		return nil, fmt.Errorf("生命周期执行版本无效")
+	}
 	return &normalized, nil
+}
+
+func NewLifecycleExecutionRunID() string {
+	return newID()
 }
 
 func (current Task) IsLifecycleLocked() bool {

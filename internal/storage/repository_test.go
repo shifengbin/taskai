@@ -432,7 +432,7 @@ func TestRepositoryMarksInterruptedLifecycleExecutionAsFailed(t *testing.T) {
   "tasks": [{
     "id":"running","title":"执行中","color":"#4f46e5","status":"running","extraInfo":[],
     "lifecycleChains":{"postStart":"chain"},
-    "lifecycleExecution":{"hook":"postStart","chainId":"chain","currentIndex":1,"commandCount":1,"state":"running"}
+    "lifecycleExecution":{"runId":"restart-run","revision":4,"hook":"postStart","chainId":"chain","currentCommandId":"command","currentCommandName":"初始化工作区","currentIndex":1,"commandCount":1,"state":"running"}
   }],
   "settings": {"workspaceRoot":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `","taskTreeWidth":360,
     "lifecycleCommands":[{"id":"command","kind":"custom","name":"命令","command":"echo","arguments":[]}],
@@ -448,8 +448,44 @@ func TestRepositoryMarksInterruptedLifecycleExecutionAsFailed(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	execution := data.Tasks[0].LifecycleExecution
-	if execution == nil || execution.State != task.LifecycleExecutionFailed || execution.Error == "" {
+	if execution == nil || execution.State != task.LifecycleExecutionFailed || execution.Error == "" || execution.RunID != "restart-run" || execution.Revision != 4 || execution.CurrentCommandName != "初始化工作区" {
 		t.Fatalf("中断执行记录 = %#v", execution)
+	}
+}
+
+func TestRepositoryKeepsInProcessLifecycleExecutionRunning(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("首次 Load() error = %v", err)
+	}
+	created, err := task.NewTask("运行中的任务", "", task.DefaultColor, time.Now())
+	if err != nil {
+		t.Fatalf("NewTask() error = %v", err)
+	}
+	created.LifecycleExecution = &task.LifecycleExecution{
+		RunID:              "in-process-run",
+		Revision:           1,
+		Hook:               task.LifecycleHookPostStart,
+		ChainID:            "chain",
+		CurrentCommandID:   "command",
+		CurrentCommandName: "初始化工作区",
+		CurrentIndex:       1,
+		CommandCount:       1,
+		State:              task.LifecycleExecutionRunning,
+	}
+	data.Tasks = append(data.Tasks, created)
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	loaded, err := repository.Load()
+	if err != nil {
+		t.Fatalf("再次 Load() error = %v", err)
+	}
+	execution := loaded.Tasks[0].LifecycleExecution
+	if execution == nil || execution.State != task.LifecycleExecutionRunning || execution.RunID != "in-process-run" || execution.CurrentCommandName != "初始化工作区" {
+		t.Fatalf("进程内运行记录被错误迁移: %#v", execution)
 	}
 }
 

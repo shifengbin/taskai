@@ -705,6 +705,7 @@ describe('TaskTree', () => {
     )
 
     expect(screen.getByText('开始后 · 部署项目 2/3')).toBeInTheDocument()
+    expect(screen.getByText('开始后 · 部署项目 2/3').closest('.MuiChip-root')).toHaveClass('MuiChip-colorError')
     expect(screen.getByRole('button', {name: '任务操作'})).toBeDisabled()
     expect(screen.getByRole('button', {name: '结束'})).toBeDisabled()
     await user.click(screen.getByRole('button', {name: '重试命令链'}))
@@ -712,5 +713,94 @@ describe('TaskTree', () => {
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('运行中的命令链仅显示当前步骤并锁定任务操作，不显示重试', () => {
+    const lockedTask: TaskRecord = {
+      ...runningTask,
+      lifecycleExecution: {
+        runId: 'run-1', revision: 1,
+        hook: 'updateTask', chainId: 'chain-1', currentCommandId: 'prepare', currentCommandName: '准备环境',
+        currentIndex: 1, commandCount: 3, state: 'running',
+      },
+    }
+    render(
+      <TaskTree
+        tasks={[lockedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        onRetryLifecycle={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('更新后 · 准备环境 1/3')).toBeInTheDocument()
+    expect(screen.getByText('更新后 · 准备环境 1/3').closest('.MuiChip-root')).toHaveClass('MuiChip-colorWarning')
+    expect(screen.getByRole('button', {name: '任务操作'})).toBeDisabled()
+    expect(screen.getByRole('button', {name: '结束'})).toBeDisabled()
+    expect(screen.queryByRole('button', {name: '重试命令链'})).not.toBeInTheDocument()
+  })
+
+  it('仅为刚开始的目标任务显示快速反馈', () => {
+    const otherTask: TaskRecord = {...runningTask, id: 'task-2', title: '处理发布反馈'}
+    render(
+      <TaskTree
+        tasks={[runningTask, otherTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+        startedTaskFeedback={{taskID: 'task-1', sequence: 1}}
+      />,
+    )
+
+    expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-start-feedback', 'flash')
+    expect(screen.getByText('处理发布反馈').closest('[data-task-id]')).not.toHaveAttribute('data-task-start-feedback')
+  })
+
+  it('减少动态效果时将开始任务反馈替换为静态高亮', () => {
+    const originalMatchMedia = window.matchMedia
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn()})),
+    })
+    try {
+      render(
+        <TaskTree
+          tasks={[runningTask]}
+          terminals={[]}
+          selectedTerminalId={undefined}
+          onSelectTask={vi.fn()}
+          onSelectTerminal={vi.fn()}
+          onCreateTerminal={vi.fn()}
+          onEditTask={vi.fn()}
+          onOpenTaskFolder={vi.fn()}
+          onStartTask={vi.fn()}
+          onFinishTask={vi.fn()}
+          activeStatus="running"
+          onChangeStatus={vi.fn()}
+          startedTaskFeedback={{taskID: 'task-1', sequence: 1}}
+        />,
+      )
+
+      expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-start-feedback', 'static')
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {configurable: true, value: originalMatchMedia})
+    }
   })
 })

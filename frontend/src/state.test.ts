@@ -6,6 +6,7 @@ import {
   bufferPendingRealtimeStatusEvent,
   bufferPendingTerminalEvent,
   clearTaskTerminalTracking,
+	mergeLifecycleTask,
   mergePendingTerminalEvents,
   parseTerminalEventTitle,
 	registerTerminal,
@@ -15,6 +16,68 @@ import {
 import {clampTaskTreeWidth, type TaskRecord, type TerminalRecord} from './types'
 
 describe('终端状态路由', () => {
+	 it('保留同一命令链运行批次中版本更高的进度，避免旧绑定返回覆盖事件', () => {
+		const current: TaskRecord[] = [{
+			id: 'task-a', title: '发布服务', description: '', status: 'running', createdAt: '2026-07-30T00:00:00Z',
+			lifecycleExecution: {
+				runId: 'run-1', revision: 2, hook: 'updateTask', chainId: 'update-chain',
+				currentCommandId: 'deploy', currentCommandName: '部署服务', currentIndex: 2, commandCount: 3, state: 'running',
+			},
+		}]
+		const staleBindingResult: TaskRecord = {
+			...current[0],
+			lifecycleExecution: {
+				runId: 'run-1', revision: 1, hook: 'updateTask', chainId: 'update-chain',
+				currentCommandId: 'prepare', currentCommandName: '准备环境', currentIndex: 1, commandCount: 3, state: 'running',
+			},
+		}
+
+		expect(mergeLifecycleTask(current, staleBindingResult)[0].lifecycleExecution).toMatchObject({
+			runId: 'run-1', revision: 2, currentCommandName: '部署服务', currentIndex: 2,
+		})
+	})
+
+	it('命令链已清空后仍忽略同一运行的延迟快照', () => {
+		const current: TaskRecord[] = [{
+			id: 'task-a', title: '发布服务', description: '', status: 'running', createdAt: '2026-07-30T00:00:00Z',
+			lifecycleExecution: {
+				runId: 'run-1', revision: 2, hook: 'updateTask', chainId: 'update-chain',
+				currentCommandId: 'deploy', currentCommandName: '部署服务', currentIndex: 2, commandCount: 2, state: 'running',
+			},
+		}]
+		const cleared = mergeLifecycleTask(current, {...current[0], lifecycleExecution: undefined})
+		const staleBindingResult: TaskRecord = {
+			...current[0],
+			lifecycleExecution: {
+				runId: 'run-1', revision: 1, hook: 'updateTask', chainId: 'update-chain',
+				currentCommandId: 'prepare', currentCommandName: '准备环境', currentIndex: 1, commandCount: 2, state: 'running',
+			},
+		}
+
+		expect(mergeLifecycleTask(cleared, staleBindingResult)[0].lifecycleExecution).toBeUndefined()
+	})
+
+	it('新的重试运行可以替换旧运行的失败快照', () => {
+		const current: TaskRecord[] = [{
+			id: 'task-a', title: '发布服务', description: '', status: 'running', createdAt: '2026-07-30T00:00:00Z',
+			lifecycleExecution: {
+				runId: 'failed-run', revision: 2, hook: 'updateTask', chainId: 'update-chain',
+				currentCommandId: 'deploy', currentCommandName: '部署服务', currentIndex: 2, commandCount: 2, state: 'failed', error: '退出码 1',
+			},
+		}]
+		const retrying: TaskRecord = {
+			...current[0],
+			lifecycleExecution: {
+				runId: 'retry-run', revision: 1, hook: 'updateTask', chainId: 'update-chain',
+				currentCommandId: 'prepare', currentCommandName: '准备环境', currentIndex: 1, commandCount: 2, state: 'running',
+			},
+		}
+
+		expect(mergeLifecycleTask(current, retrying)[0].lifecycleExecution).toMatchObject({
+			runId: 'retry-run', state: 'running', currentCommandName: '准备环境',
+		})
+	})
+
   it('只将输出和退出状态应用到对应终端', () => {
     const terminals: TerminalRecord[] = [
       {id: 'one', taskId: 'task-a', state: 'active'},

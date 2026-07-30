@@ -1,4 +1,4 @@
-import {useMemo, useRef, useState} from 'react'
+import {useEffect, useMemo, useRef, useState} from 'react'
 import {
   Box,
   Chip,
@@ -61,6 +61,11 @@ interface TaskDragPreviewPosition {
   y: number
 }
 
+export interface TaskStartFeedback {
+  taskID: string
+  sequence: number
+}
+
 interface TaskTreeProps {
   tasks: TaskRecord[]
   terminals: TerminalRecord[]
@@ -68,6 +73,7 @@ interface TaskTreeProps {
   activeStatus: TaskStatus
   expandedTasks?: Record<string, boolean>
   selectedTerminalId?: string
+  startedTaskFeedback?: TaskStartFeedback
   onChangeStatus(status: TaskStatus): void
   onToggleTaskExpanded?(taskID: string): void
   onSelectTask(task: TaskRecord): void
@@ -91,6 +97,7 @@ export function TaskTree({
   activeStatus,
   expandedTasks,
   selectedTerminalId,
+  startedTaskFeedback,
   onChangeStatus,
   onToggleTaskExpanded,
   onSelectTask,
@@ -114,6 +121,7 @@ export function TaskTree({
   const [dropTarget, setDropTarget] = useState<TaskDropTarget>()
   const pointerDragRef = useRef<TaskPointerDrag>()
   const suppressTaskClickRef = useRef(false)
+  const reducedMotion = useReducedMotion()
   const terminalsByTask = useMemo(() => {
     return terminals.reduce<Record<string, TerminalRecord[]>>((byTask, terminal) => {
       byTask[terminal.taskId] = [...(byTask[terminal.taskId] ?? []), terminal]
@@ -291,10 +299,13 @@ export function TaskTree({
           const taskColor = task.color || defaultTaskColor
           const dropPosition = dropTarget?.taskID === task.id ? dropTarget.position : undefined
 			const execution = task.lifecycleExecution
-			const locked = Boolean(execution)
-			const executionLabel = execution ? `${lifecycleHookLabel(execution.hook)} · ${execution.currentCommandName || '命令'} ${execution.currentIndex}/${execution.commandCount}` : ''
-			const isShelvedTask = activeStatus === 'running' && Boolean(task.shelved)
-			const isFirstShelvedTask = task.id === firstShelvedTaskID
+				const locked = Boolean(execution)
+				const executionLabel = execution ? `${lifecycleHookLabel(execution.hook)} · ${execution.currentCommandName || '命令'} ${execution.currentIndex}/${execution.commandCount}` : ''
+				const isShelvedTask = activeStatus === 'running' && Boolean(task.shelved)
+				const isFirstShelvedTask = task.id === firstShelvedTaskID
+          const startFeedbackMode = task.status === 'running' && startedTaskFeedback?.taskID === task.id
+            ? reducedMotion ? 'static' : 'flash'
+            : undefined
           return (
             <Box
               key={task.id}
@@ -321,6 +332,7 @@ export function TaskTree({
               >
                 <ListItemButton
                   data-task-id={task.id}
+						data-task-start-feedback={startFeedbackMode}
                   onClick={(event) => {
                     if (suppressTaskClickRef.current) {
                       suppressTaskClickRef.current = false
@@ -349,9 +361,17 @@ export function TaskTree({
                     bgcolor: `${taskColor}14`,
                     opacity: draggedTaskID === task.id ? 0.5 : 1,
                     outline: draggedTaskID === task.id ? '2px solid' : '2px solid transparent',
-                    outlineColor: draggedTaskID === task.id ? 'primary.main' : 'transparent',
-                    outlineOffset: -2,
-                    cursor: locked ? 'not-allowed' : 'grab',
+						outlineColor: draggedTaskID === task.id ? 'primary.main' : 'transparent',
+						outlineOffset: -2,
+						...(startFeedbackMode === 'static' && {boxShadow: `inset 0 0 0 2px ${taskColor}`}),
+						...(startFeedbackMode === 'flash' && {
+							animation: 'taskai-task-start-feedback 350ms ease-in-out 2',
+							'@keyframes taskai-task-start-feedback': {
+								'0%, 100%': {boxShadow: `inset 0 0 0 0 ${taskColor}`, backgroundColor: `${taskColor}14`},
+								'50%': {boxShadow: `inset 0 0 0 2px ${taskColor}`, backgroundColor: `${taskColor}2e`},
+							},
+						}),
+						cursor: locked ? 'not-allowed' : 'grab',
                     touchAction: 'none',
                     userSelect: 'none',
                     '&:active': {cursor: 'grabbing'},
@@ -534,6 +554,26 @@ function lifecycleHookLabel(hook: NonNullable<TaskRecord['lifecycleExecution']>[
 	case 'postEnd': return '结束后'
 	case 'updateTask': return '更新后'
 	}
+}
+
+function useReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(() => readReducedMotionPreference())
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    if (!mediaQuery) {
+      return
+    }
+    const update = () => setReducedMotion(mediaQuery.matches)
+    mediaQuery.addEventListener('change', update)
+    return () => mediaQuery.removeEventListener('change', update)
+  }, [])
+
+  return reducedMotion
+}
+
+function readReducedMotionPreference(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 }
 
 function TaskDropIndicator({taskTitle, position}: {taskTitle: string; position: TaskDropPosition}) {

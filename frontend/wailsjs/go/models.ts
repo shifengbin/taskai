@@ -371,6 +371,8 @@ export namespace task {
 		}
 	}
 	export class LifecycleExecution {
+	    runId?: string;
+	    revision?: number;
 	    hook: string;
 	    chainId: string;
 	    currentCommandId?: string;
@@ -386,6 +388,8 @@ export namespace task {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.revision = source["revision"];
 	        this.hook = source["hook"];
 	        this.chainId = source["chainId"];
 	        this.currentCommandId = source["currentCommandId"];

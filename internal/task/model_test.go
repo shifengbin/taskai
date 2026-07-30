@@ -86,6 +86,8 @@ func TestTaskLifecycleChainsAndExecutionNormalizeForPersistence(t *testing.T) {
 	execution, err := NormalizeLifecycleExecution(&LifecycleExecution{
 		Hook:               LifecycleHookPostStart,
 		ChainID:            " chain-1 ",
+		RunID:              " run-7 ",
+		Revision:           2,
 		CurrentCommandID:   " command-2 ",
 		CurrentCommandName: " 初始化仓库 ",
 		CurrentIndex:       2,
@@ -96,7 +98,7 @@ func TestTaskLifecycleChainsAndExecutionNormalizeForPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeLifecycleExecution() error = %v", err)
 	}
-	if execution.ChainID != "chain-1" || execution.CurrentCommandID != "command-2" || execution.CurrentCommandName != "初始化仓库" || execution.Error != "命令退出码为 1" {
+	if execution.ChainID != "chain-1" || execution.RunID != "run-7" || execution.Revision != 2 || execution.CurrentCommandID != "command-2" || execution.CurrentCommandName != "初始化仓库" || execution.Error != "命令退出码为 1" {
 		t.Fatalf("执行记录未规范化: %#v", execution)
 	}
 	if execution.CurrentIndex != 2 || execution.CommandCount != 3 || !(Task{LifecycleExecution: execution}).IsLifecycleLocked() {
@@ -111,8 +113,21 @@ func TestTaskLifecycleChainsAndExecutionNormalizeForPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal task error = %v", err)
 	}
-	if !strings.Contains(string(encoded), `"lifecycleChains":{"beforeStart":"prepare"}`) || !strings.Contains(string(encoded), `"lifecycleExecution"`) {
+	if !strings.Contains(string(encoded), `"lifecycleChains":{"beforeStart":"prepare"}`) || !strings.Contains(string(encoded), `"runId":"run-7"`) || !strings.Contains(string(encoded), `"revision":2`) {
 		t.Fatalf("任务生命周期字段未持久化: %s", encoded)
+	}
+
+	legacy, err := NormalizeLifecycleExecution(&LifecycleExecution{
+		Hook:               LifecycleHookPostStart,
+		ChainID:            "chain-1",
+		CurrentCommandID:   "command-1",
+		CurrentCommandName: "旧命令",
+		CurrentIndex:       1,
+		CommandCount:       1,
+		State:              LifecycleExecutionFailed,
+	})
+	if err != nil || legacy.RunID != "" || legacy.Revision != 0 {
+		t.Fatalf("旧版执行记录兼容失败: execution=%#v, err=%v", legacy, err)
 	}
 }
 

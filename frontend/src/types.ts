@@ -18,6 +18,8 @@ export const lifecycleHooks: Array<{id: LifecycleHook, label: string}> = [
 ]
 
 export interface LifecycleExecution {
+  runId?: string
+  revision?: number
   hook: LifecycleHook
   chainId: string
   currentCommandId?: string
@@ -26,6 +28,11 @@ export interface LifecycleExecution {
   commandCount: number
   state: LifecycleExecutionState
   error?: string
+}
+
+export interface LifecycleExecutionWatermark {
+  runId: string
+  revision: number
 }
 
 export interface LifecycleCommand {
@@ -64,6 +71,7 @@ export interface TaskRecord {
 	extraInfo?: TaskExtraInfo[]
   lifecycleChains?: Partial<Record<LifecycleHook, string>>
   lifecycleExecution?: LifecycleExecution
+  lifecycleExecutionWatermark?: LifecycleExecutionWatermark
   realtimeStatus?: RealtimeStatus
 }
 

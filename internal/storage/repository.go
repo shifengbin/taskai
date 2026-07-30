@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"taskai/internal/settings"
 	"taskai/internal/task"
@@ -24,8 +25,10 @@ type Data struct {
 
 // Repository persists all application state in one JSON document.
 type Repository struct {
-	path            string
-	defaultSettings settings.Settings
+	path             string
+	defaultSettings  settings.Settings
+	loadMu           sync.Mutex
+	startupRecovered bool
 }
 
 func New(path string, defaultSettings settings.Settings) *Repository {
@@ -33,15 +36,19 @@ func New(path string, defaultSettings settings.Settings) *Repository {
 }
 
 func (repository *Repository) Load() (Data, error) {
+	repository.loadMu.Lock()
+	defer repository.loadMu.Unlock()
+
 	contents, err := os.ReadFile(repository.path)
 	if os.IsNotExist(err) {
-		data, _, normalizeErr := normalizeData(defaultData(repository.defaultSettings))
+		data, _, normalizeErr := normalizeData(defaultData(repository.defaultSettings), false)
 		if normalizeErr != nil {
 			return Data{}, normalizeErr
 		}
 		if err := repository.Save(data); err != nil {
 			return Data{}, err
 		}
+		repository.startupRecovered = true
 		return data, nil
 	}
 	if err != nil {
@@ -53,7 +60,7 @@ func (repository *Repository) Load() (Data, error) {
 		return Data{}, fmt.Errorf("decode data file: %w", err)
 	}
 
-	normalized, changed, err := normalizeData(data)
+	normalized, changed, err := normalizeData(data, !repository.startupRecovered)
 	if err != nil {
 		return Data{}, err
 	}
@@ -62,6 +69,7 @@ func (repository *Repository) Load() (Data, error) {
 			return Data{}, err
 		}
 	}
+	repository.startupRecovered = true
 	return normalized, nil
 }
 
@@ -75,7 +83,7 @@ func defaultData(defaultSettings settings.Settings) Data {
 	}
 }
 
-func normalizeData(data Data) (Data, bool, error) {
+func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, error) {
 	changed := false
 	lifecycleSettings, err := settings.NormalizeLifecycle(data.Settings)
 	if err != nil {
@@ -162,7 +170,7 @@ func normalizeData(data Data) (Data, bool, error) {
 		if err != nil {
 			return Data{}, false, fmt.Errorf("validate task extra info: %w", err)
 		}
-		lifecycleNormalized, lifecycleChanged, err := normalizeTaskLifecycle(normalized, data.Settings.LifecycleDefaultChains)
+		lifecycleNormalized, lifecycleChanged, err := normalizeTaskLifecycle(normalized, data.Settings.LifecycleDefaultChains, recoverInterruptedLifecycle)
 		if err != nil {
 			return Data{}, false, fmt.Errorf("normalize task lifecycle: %w", err)
 		}
@@ -180,7 +188,7 @@ func normalizeData(data Data) (Data, bool, error) {
 	return data, changed, nil
 }
 
-func normalizeTaskLifecycle(current task.Task, defaults map[task.LifecycleHook]string) (task.Task, bool, error) {
+func normalizeTaskLifecycle(current task.Task, defaults map[task.LifecycleHook]string, recoverInterruptedLifecycle bool) (task.Task, bool, error) {
 	changed := false
 	if current.LifecycleChains == nil {
 		current.LifecycleChains = defaultLifecycleChainsForTask(current.Status, defaults)
@@ -200,7 +208,7 @@ func normalizeTaskLifecycle(current task.Task, defaults map[task.LifecycleHook]s
 	if err != nil {
 		return task.Task{}, false, err
 	}
-	if normalizedExecution != nil && normalizedExecution.State == task.LifecycleExecutionRunning {
+	if recoverInterruptedLifecycle && normalizedExecution != nil && normalizedExecution.State == task.LifecycleExecutionRunning {
 		normalizedExecution.State = task.LifecycleExecutionFailed
 		if normalizedExecution.Error == "" {
 			normalizedExecution.Error = "应用重启中断命令链执行"
@@ -401,7 +409,7 @@ func normalizeDataForSave(data Data) (Data, bool, error) {
 	if data.ExtraInfoTemplates == nil {
 		data.ExtraInfoTemplates = []task.ExtraInfoTemplate{}
 	}
-	return normalizeData(data)
+	return normalizeData(data, false)
 }
 
 func (repository *Repository) SaveSettings(next settings.Settings) (settings.Settings, error) {

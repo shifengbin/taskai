@@ -2,6 +2,8 @@ package lifecycle
 
 import (
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"taskai/internal/settings"
@@ -15,9 +17,10 @@ type TerminalCloser interface {
 }
 
 type Service struct {
-	repository *storage.Repository
-	closer     TerminalCloser
-	now        func() time.Time
+	repository           *storage.Repository
+	closer               TerminalCloser
+	now                  func() time.Time
+	lifecycleExecutionMu sync.Mutex
 }
 
 func New(repository *storage.Repository, closer TerminalCloser, now func() time.Time) *Service {
@@ -286,6 +289,72 @@ func (service *Service) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title,
 }
 
 func (service *Service) UpdateLifecycleExecution(taskID string, execution *task.LifecycleExecution) (task.Task, error) {
+	service.lifecycleExecutionMu.Lock()
+	defer service.lifecycleExecutionMu.Unlock()
+
+	return service.updateLifecycleExecution(taskID, execution)
+}
+
+func (service *Service) UpdateLifecycleExecutionIfNewer(taskID string, execution *task.LifecycleExecution) (task.Task, bool, error) {
+	normalized, err := task.NormalizeLifecycleExecution(execution)
+	if err != nil {
+		return task.Task{}, false, err
+	}
+	if normalized.RunID == "" || normalized.Revision == 0 {
+		return task.Task{}, false, fmt.Errorf("条件更新生命周期执行记录需要运行标识和版本")
+	}
+
+	service.lifecycleExecutionMu.Lock()
+	defer service.lifecycleExecutionMu.Unlock()
+
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, false, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return task.Task{}, false, err
+	}
+	current := data.Tasks[index].LifecycleExecution
+	if current == nil || current.RunID != normalized.RunID || current.Revision >= normalized.Revision {
+		return data.Tasks[index], false, nil
+	}
+	data.Tasks[index].LifecycleExecution = normalized
+	if err := service.repository.Save(data); err != nil {
+		return task.Task{}, false, err
+	}
+	return data.Tasks[index], true, nil
+}
+
+func (service *Service) ClearLifecycleExecutionIfCurrent(taskID, runID string, revision int) (task.Task, bool, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" || revision <= 0 {
+		return task.Task{}, false, fmt.Errorf("条件清除生命周期执行记录需要运行标识和版本")
+	}
+
+	service.lifecycleExecutionMu.Lock()
+	defer service.lifecycleExecutionMu.Unlock()
+
+	data, err := service.repository.Load()
+	if err != nil {
+		return task.Task{}, false, err
+	}
+	index, err := taskIndex(data.Tasks, taskID)
+	if err != nil {
+		return task.Task{}, false, err
+	}
+	current := data.Tasks[index].LifecycleExecution
+	if current == nil || current.RunID != runID || current.Revision != revision {
+		return data.Tasks[index], false, nil
+	}
+	data.Tasks[index].LifecycleExecution = nil
+	if err := service.repository.Save(data); err != nil {
+		return task.Task{}, false, err
+	}
+	return data.Tasks[index], true, nil
+}
+
+func (service *Service) updateLifecycleExecution(taskID string, execution *task.LifecycleExecution) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err

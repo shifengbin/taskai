@@ -43,7 +43,7 @@ import UnfoldLessOutlinedIcon from '@mui/icons-material/UnfoldLessOutlined'
 import UnfoldMoreOutlinedIcon from '@mui/icons-material/UnfoldMoreOutlined'
 
 import {api} from './api'
-import {TaskTree} from './components/TaskTree'
+import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalView} from './components/TerminalView'
 import {
 	applyRealtimeStatusToTasks,
@@ -52,6 +52,7 @@ import {
 	bufferPendingRealtimeStatusEvent,
   bufferPendingTerminalEvent,
   clearTaskTerminalTracking,
+	mergeLifecycleTask,
   mergePendingTerminalEvents,
   parseTerminalEventTitle,
   registerTerminal,
@@ -124,6 +125,7 @@ export default function App() {
   const [taskMenuItemEditorTab, setTaskMenuItemEditorTab] = useState<'basic' | 'scripts'>('basic')
   const [scriptHelpAnchor, setScriptHelpAnchor] = useState<HTMLElement>()
   const [message, setMessage] = useState<string>()
+  const [startedTaskFeedback, setStartedTaskFeedback] = useState<TaskStartFeedback>()
   const dragging = useRef(false)
   const currentTreeWidth = useRef(treeWidth)
   const terminalTitleParserStates = useRef(new Map<string, TerminalTitleParserState>())
@@ -131,8 +133,31 @@ export default function App() {
   const registeredTerminalKeys = useRef(new Set<string>())
   const finishedTerminalTaskIDs = useRef(new Set<string>())
   const terminalTitleValues = useRef(new Map<string, string>())
-  const latestRealtimeStatusVersion = useRef(0)
+	const latestRealtimeStatusVersion = useRef(0)
+	const lifecycleStatusTargets = useRef(new Map<string, TaskStatus>())
+	const startFeedbackSequence = useRef(0)
+	const startFeedbackTimeout = useRef<ReturnType<typeof setTimeout>>()
 	const initializedExtraInfoGroups = useRef(false)
+
+	const showStartedTaskFeedback = (taskID: string) => {
+		if (startFeedbackTimeout.current) {
+			clearTimeout(startFeedbackTimeout.current)
+		}
+		const feedback = {taskID, sequence: ++startFeedbackSequence.current}
+		setStartedTaskFeedback(feedback)
+		startFeedbackTimeout.current = setTimeout(() => {
+			setStartedTaskFeedback((current) => current?.sequence === feedback.sequence ? undefined : current)
+			startFeedbackTimeout.current = undefined
+		}, 700)
+	}
+
+	const activateStartedTask = (taskID: string) => {
+		lifecycleStatusTargets.current.delete(taskID)
+		showStartedTaskFeedback(taskID)
+		if (activeTaskStatus !== 'running') {
+			void changeActiveTaskStatus('running')
+		}
+	}
 
   useEffect(() => {
     void (async () => {
@@ -178,6 +203,9 @@ export default function App() {
       registeredTerminalKeys.current.clear()
       finishedTerminalTaskIDs.current.clear()
       terminalTitleValues.current.clear()
+			if (startFeedbackTimeout.current) {
+				clearTimeout(startFeedbackTimeout.current)
+			}
     }
   }, [])
 
@@ -188,8 +216,12 @@ export default function App() {
   useEffect(() => api.onRealtimeStatusError((message) => setMessage(message)), [])
 
 	useEffect(() => api.onLifecycleEvent((updated) => {
-		setTasks((current) => replaceTask(current, updated))
-	}), [])
+		setTasks((current) => mergeLifecycleTask(current, updated))
+		const targetStatus = lifecycleStatusTargets.current.get(updated.id)
+		if (targetStatus === 'running' && updated.status === 'running') {
+			activateStartedTask(updated.id)
+		}
+	}), [activeTaskStatus, settings])
 
 	useEffect(() => {
 		if (initializedExtraInfoGroups.current || extraInfoTemplates.length === 0) {
@@ -306,7 +338,7 @@ export default function App() {
 					: hasExtraInfo
 						? await api.updateTaskWithExtraInfo(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
 						: await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
-        setTasks((current) => replaceTask(current, updated))
+        setTasks((current) => mergeLifecycleTask(current, updated))
       } else {
 			const hasLifecycleChainSelection = Object.keys(taskLifecycleChainsDraft).length > 0
 			const created = hasLifecycleChainSelection
@@ -448,13 +480,17 @@ export default function App() {
 	}
 
   const startTask = async (taskID: string) => {
+		lifecycleStatusTargets.current.set(taskID, 'running')
+		setSelectedTaskID(taskID)
+		setSelectedTerminalID(undefined)
     try {
       const started = await api.startTask(taskID)
-      setTasks((current) => replaceTask(current, started))
-      void changeActiveTaskStatus('running')
-      setSelectedTaskID(taskID)
-      setSelectedTerminalID(undefined)
+      setTasks((current) => mergeLifecycleTask(current, started))
+      if (started.status === 'running') {
+			activateStartedTask(taskID)
+      }
     } catch (error) {
+		lifecycleStatusTargets.current.delete(taskID)
       showError(error, setMessage)
     }
   }
@@ -462,7 +498,7 @@ export default function App() {
 	const retryLifecycleChain = async (taskID: string) => {
 		try {
 			const updated = await api.retryTaskLifecycleCommandChain(taskID)
-			setTasks((current) => replaceTask(current, updated))
+			setTasks((current) => mergeLifecycleTask(current, updated))
 		} catch (error) {
 			showError(error, setMessage)
 		}
@@ -509,8 +545,7 @@ export default function App() {
     }
     try {
       const completed = await api.finishTask(finishTask.id)
-      setTasks((current) => replaceTask(current, completed))
-      void changeActiveTaskStatus('completed')
+      setTasks((current) => mergeLifecycleTask(current, completed))
       finishedTerminalTaskIDs.current.add(finishTask.id)
       clearTaskTerminalTracking(finishTask.id, terminalTitleParserStates.current, pendingTerminalEvents.current, registeredTerminalKeys.current)
       setTerminals((current) => current.filter((terminal) => terminal.taskId !== finishTask.id))
@@ -843,6 +878,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 activeStatus={activeTaskStatus}
                 expandedTasks={expandedTasks}
                 selectedTerminalId={selectedTerminalID}
+                startedTaskFeedback={startedTaskFeedback}
                 onChangeStatus={(status) => void changeActiveTaskStatus(status)}
                 onToggleTaskExpanded={toggleTaskExpanded}
                 onSelectTask={(task) => {
@@ -1995,10 +2031,6 @@ function TaskDetail({task}: {task?: TaskRecord}) {
       )}
     </Box>
   )
-}
-
-function replaceTask(tasks: TaskRecord[], next: TaskRecord): TaskRecord[] {
-  return tasks.map((task) => task.id === next.id ? next : task)
 }
 
 function createExtraInfoTemplateDraft(catalogue: string): ExtraInfoTemplate {

@@ -1,4 +1,4 @@
-import type {RealtimeStatusEvent, TaskRecord, TerminalEvent, TerminalRecord} from './types'
+import type {LifecycleExecution, LifecycleExecutionWatermark, RealtimeStatusEvent, TaskRecord, TerminalEvent, TerminalRecord} from './types'
 import {
   createTerminalTitleParserState,
   parseTerminalTitleOutput,
@@ -15,6 +15,52 @@ export interface PendingTerminalEvent {
 export interface RealtimeStatusUpdate {
   tasks: TaskRecord[]
   terminals: TerminalRecord[]
+}
+
+export function mergeLifecycleTask(tasks: TaskRecord[], incoming: TaskRecord): TaskRecord[] {
+  return tasks.map((current) => current.id === incoming.id ? mergeLifecycleTaskRecord(current, incoming) : current)
+}
+
+function mergeLifecycleTaskRecord(current: TaskRecord, incoming: TaskRecord): TaskRecord {
+  const currentExecution = current.lifecycleExecution
+  const incomingExecution = incoming.lifecycleExecution
+  const currentWatermark = lifecycleExecutionWatermark(current)
+  if (!incomingExecution || !incomingExecution.runId) {
+    return currentWatermark ? {...incoming, lifecycleExecutionWatermark: currentWatermark} : incoming
+  }
+  const incomingWatermark = watermarkFromExecution(incomingExecution)
+  if (!currentWatermark) {
+    return {...incoming, lifecycleExecutionWatermark: incomingWatermark}
+  }
+  if (currentWatermark.runId === incomingWatermark.runId) {
+    if (currentWatermark.revision > incomingWatermark.revision || (!currentExecution && currentWatermark.revision === incomingWatermark.revision)) {
+      return current
+    }
+    return {...incoming, lifecycleExecutionWatermark: incomingWatermark}
+  }
+  if (currentExecution?.state === 'running') {
+    // 仅允许生命周期的正常前置钩子到后置钩子切换，避免旧绑定返回覆盖新运行。
+    if (incomingExecution.state === 'failed' || (incomingExecution.state === 'running' && !isLifecycleHookSuccessor(currentExecution, incomingExecution))) {
+      return current
+    }
+  }
+  return {...incoming, lifecycleExecutionWatermark: incomingWatermark}
+}
+
+function isLifecycleHookSuccessor(current: LifecycleExecution, incoming: LifecycleExecution): boolean {
+  return (current.hook === 'beforeStart' && incoming.hook === 'postStart') ||
+    (current.hook === 'beforeEnd' && incoming.hook === 'postEnd')
+}
+
+function lifecycleExecutionWatermark(task: TaskRecord): LifecycleExecutionWatermark | undefined {
+  if (task.lifecycleExecution?.runId) {
+    return watermarkFromExecution(task.lifecycleExecution)
+  }
+  return task.lifecycleExecutionWatermark
+}
+
+function watermarkFromExecution(execution: LifecycleExecution): LifecycleExecutionWatermark {
+  return {runId: execution.runId ?? '', revision: execution.revision ?? 0}
 }
 
 export function applyRealtimeStatusEvent(

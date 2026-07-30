@@ -261,6 +261,62 @@ func TestServicePersistsTaskLifecycleExecution(t *testing.T) {
 	}
 }
 
+func TestServiceConditionallyUpdatesLifecycleExecutionByRunAndRevision(t *testing.T) {
+	service, _, _ := newService(t)
+	created, err := service.CreateTask("执行命令链", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	initial := &task.LifecycleExecution{
+		RunID:              "run-current",
+		Revision:           1,
+		Hook:               task.LifecycleHookPostStart,
+		ChainID:            "chain-1",
+		CurrentCommandID:   "command-1",
+		CurrentCommandName: "初始化",
+		CurrentIndex:       1,
+		CommandCount:       2,
+		State:              task.LifecycleExecutionRunning,
+	}
+	if _, err := service.UpdateLifecycleExecution(created.ID, initial); err != nil {
+		t.Fatalf("UpdateLifecycleExecution() error = %v", err)
+	}
+
+	progressed := *initial
+	progressed.Revision = 2
+	progressed.CurrentCommandID = "command-2"
+	progressed.CurrentCommandName = "安装依赖"
+	progressed.CurrentIndex = 2
+	updated, applied, err := service.UpdateLifecycleExecutionIfNewer(created.ID, &progressed)
+	if err != nil || !applied || updated.LifecycleExecution == nil || updated.LifecycleExecution.Revision != 2 {
+		t.Fatalf("UpdateLifecycleExecutionIfNewer() = (%#v, %t, %v)", updated.LifecycleExecution, applied, err)
+	}
+
+	stale := *initial
+	stale.CurrentCommandName = "过期进度"
+	updated, applied, err = service.UpdateLifecycleExecutionIfNewer(created.ID, &stale)
+	if err != nil || applied || updated.LifecycleExecution == nil || updated.LifecycleExecution.CurrentCommandName != "安装依赖" {
+		t.Fatalf("低版本更新不应覆盖当前记录: (%#v, %t, %v)", updated.LifecycleExecution, applied, err)
+	}
+
+	otherRun := progressed
+	otherRun.RunID = "run-retry"
+	otherRun.Revision = 3
+	updated, applied, err = service.UpdateLifecycleExecutionIfNewer(created.ID, &otherRun)
+	if err != nil || applied || updated.LifecycleExecution == nil || updated.LifecycleExecution.RunID != "run-current" {
+		t.Fatalf("旧运行不应覆盖新运行: (%#v, %t, %v)", updated.LifecycleExecution, applied, err)
+	}
+
+	updated, applied, err = service.ClearLifecycleExecutionIfCurrent(created.ID, "run-current", 1)
+	if err != nil || applied || updated.LifecycleExecution == nil {
+		t.Fatalf("旧版本清除不应生效: (%#v, %t, %v)", updated.LifecycleExecution, applied, err)
+	}
+	updated, applied, err = service.ClearLifecycleExecutionIfCurrent(created.ID, "run-current", 2)
+	if err != nil || !applied || updated.LifecycleExecution != nil {
+		t.Fatalf("当前版本清除失败: (%#v, %t, %v)", updated.LifecycleExecution, applied, err)
+	}
+}
+
 func TestServiceReordersTasksWithinStatusAndPersistsOrder(t *testing.T) {
 	service, repository, _ := newService(t)
 	first, err := service.CreateTask("第一个待办", "", task.DefaultColor)

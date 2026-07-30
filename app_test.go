@@ -56,10 +56,7 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 		t.Fatalf("任务树宽度 = %d，期望 460", updatedSettings.TaskTreeWidth)
 	}
 
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 	if started.Status != task.StatusRunning || started.WorkspaceRoot != updatedSettings.WorkspaceRoot {
 		t.Fatalf("开始任务快照错误: %#v", started)
 	}
@@ -85,17 +82,12 @@ func TestAppRegistersRunningTaskAndClearsRealtimeStatusWhenFinished(t *testing.T
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 	if got := app.realtime.Snapshot(); len(got.Tasks) != 1 || got.Tasks[0].TaskID != started.ID {
 		t.Fatalf("开始任务后的实时状态 = %#v", got)
 	}
 
-	if _, err := app.FinishTask(started.ID); err != nil {
-		t.Fatalf("结束任务: %v", err)
-	}
+	finishTaskAndWait(t, app, started.ID)
 	if got := app.realtime.Snapshot(); len(got.Tasks) != 0 {
 		t.Fatalf("结束任务后的实时状态 = %#v，期望清理", got)
 	}
@@ -125,10 +117,12 @@ func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	updated, err := app.StartTask(created.ID)
-	if err != nil {
+	if _, err := app.StartTask(created.ID); err != nil {
 		t.Fatalf("StartTask() error = %v", err)
 	}
+	updated := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.Status == task.StatusPending && current.LifecycleExecution != nil && current.LifecycleExecution.Hook == task.LifecycleHookBeforeStart && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
 	if updated.Status != task.StatusPending || updated.LifecycleExecution == nil || updated.LifecycleExecution.Hook != task.LifecycleHookBeforeStart || updated.LifecycleExecution.State != task.LifecycleExecutionFailed {
 		t.Fatalf("beforeStart 失败后的任务 = %#v", updated)
 	}
@@ -141,10 +135,12 @@ func TestAppPostStartFailureKeepsTaskRunning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	updated, err := app.StartTask(created.ID)
-	if err != nil {
+	if _, err := app.StartTask(created.ID); err != nil {
 		t.Fatalf("StartTask() error = %v", err)
 	}
+	updated := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.Status == task.StatusRunning && current.LifecycleExecution != nil && current.LifecycleExecution.Hook == task.LifecycleHookPostStart && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
 	if updated.Status != task.StatusRunning || updated.LifecycleExecution == nil || updated.LifecycleExecution.Hook != task.LifecycleHookPostStart || updated.LifecycleExecution.State != task.LifecycleExecutionFailed {
 		t.Fatalf("postStart 失败后的任务 = %#v", updated)
 	}
@@ -157,13 +153,13 @@ func TestAppBeforeEndFailureKeepsTaskRunning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	if _, err := app.StartTask(created.ID); err != nil {
-		t.Fatalf("StartTask() error = %v", err)
-	}
-	updated, err := app.FinishTask(created.ID)
-	if err != nil {
+	startTaskAndWait(t, app, created.ID)
+	if _, err := app.FinishTask(created.ID); err != nil {
 		t.Fatalf("FinishTask() error = %v", err)
 	}
+	updated := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.Status == task.StatusRunning && current.LifecycleExecution != nil && current.LifecycleExecution.Hook == task.LifecycleHookBeforeEnd && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
 	if updated.Status != task.StatusRunning || updated.LifecycleExecution == nil || updated.LifecycleExecution.Hook != task.LifecycleHookBeforeEnd || updated.LifecycleExecution.State != task.LifecycleExecutionFailed {
 		t.Fatalf("beforeEnd 失败后的任务 = %#v", updated)
 	}
@@ -176,13 +172,13 @@ func TestAppPostEndFailureKeepsTaskCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	if _, err := app.StartTask(created.ID); err != nil {
-		t.Fatalf("StartTask() error = %v", err)
-	}
-	updated, err := app.FinishTask(created.ID)
-	if err != nil {
+	startTaskAndWait(t, app, created.ID)
+	if _, err := app.FinishTask(created.ID); err != nil {
 		t.Fatalf("FinishTask() error = %v", err)
 	}
+	updated := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.Status == task.StatusCompleted && current.LifecycleExecution != nil && current.LifecycleExecution.Hook == task.LifecycleHookPostEnd && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
 	if updated.Status != task.StatusCompleted || updated.LifecycleExecution == nil || updated.LifecycleExecution.Hook != task.LifecycleHookPostEnd || updated.LifecycleExecution.State != task.LifecycleExecutionFailed {
 		t.Fatalf("postEnd 失败后的任务 = %#v", updated)
 	}
@@ -195,13 +191,13 @@ func TestAppUpdateTaskFailureDoesNotRollbackSavedDetails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	if _, err := app.StartTask(created.ID); err != nil {
-		t.Fatalf("StartTask() error = %v", err)
-	}
-	updated, err := app.UpdateTask(created.ID, "已保存的标题", "", task.DefaultColor)
-	if err != nil {
+	startTaskAndWait(t, app, created.ID)
+	if _, err := app.UpdateTask(created.ID, "已保存的标题", "", task.DefaultColor); err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
+	updated := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.Title == "已保存的标题" && current.Status == task.StatusRunning && current.LifecycleExecution != nil && current.LifecycleExecution.Hook == task.LifecycleHookUpdateTask && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
 	if updated.Title != "已保存的标题" || updated.Status != task.StatusRunning || updated.LifecycleExecution == nil || updated.LifecycleExecution.Hook != task.LifecycleHookUpdateTask || updated.LifecycleExecution.State != task.LifecycleExecutionFailed {
 		t.Fatalf("updateTask 失败后的任务 = %#v", updated)
 	}
@@ -250,19 +246,14 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("StartTask() error = %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 	if got, want := directories["before"], started.WorkspacePath; got != want {
 		t.Fatalf("beforeStart 工作目录 = %q，期望 %q", got, want)
 	}
 	if baseURL == "" || baseURL != app.statusHTTP.APIURL() {
 		t.Fatalf("beforeStart baseURL = %q，HTTP 服务 = %q", baseURL, app.statusHTTP.APIURL())
 	}
-	if _, err := app.FinishTask(created.ID); err != nil {
-		t.Fatalf("FinishTask() error = %v", err)
-	}
+	finishTaskAndWait(t, app, created.ID)
 	if got, want := directories["post"], started.WorkspaceRoot; got != want {
 		t.Fatalf("postEnd 工作目录 = %q，期望根目录 %q", got, want)
 	}
@@ -341,19 +332,16 @@ func TestAppRunsUpdateTaskHookOnlyForRunningTask(t *testing.T) {
 		t.Fatalf("未执行任务更新命令次数 = %d，期望 0", calls)
 	}
 
-	if _, err := app.StartTask(created.ID); err != nil {
-		t.Fatalf("StartTask() error = %v", err)
-	}
+	startTaskAndWait(t, app, created.ID)
 	if _, err := app.UpdateTask(created.ID, "执行中任务", "", task.DefaultColor); err != nil {
 		t.Fatalf("更新执行中任务: %v", err)
 	}
+	waitForTask(t, app, created.ID, func(current task.Task) bool { return current.LifecycleExecution == nil })
 	if calls != 1 {
 		t.Fatalf("执行中任务更新命令次数 = %d，期望 1", calls)
 	}
 
-	if _, err := app.FinishTask(created.ID); err != nil {
-		t.Fatalf("FinishTask() error = %v", err)
-	}
+	finishTaskAndWait(t, app, created.ID)
 	if _, err := app.UpdateTask(created.ID, "已完成任务", "", task.DefaultColor); err != nil {
 		t.Fatalf("更新已完成任务: %v", err)
 	}
@@ -392,10 +380,12 @@ func TestAppRetriesFailedLifecycleChainFromFirstCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	failed, err := app.StartTask(created.ID)
-	if err != nil {
+	if _, err := app.StartTask(created.ID); err != nil {
 		t.Fatalf("StartTask() error = %v", err)
 	}
+	failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.LifecycleExecution != nil && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
 	if failed.LifecycleExecution == nil || failed.LifecycleExecution.State != task.LifecycleExecutionFailed {
 		t.Fatalf("失败记录 = %#v", failed.LifecycleExecution)
 	}
@@ -404,15 +394,298 @@ func TestAppRetriesFailedLifecycleChainFromFirstCommand(t *testing.T) {
 	}
 
 	fail = false
-	retried, err := app.RetryTaskLifecycleCommandChain(created.ID)
-	if err != nil {
+	if _, err := app.RetryTaskLifecycleCommandChain(created.ID); err != nil {
 		t.Fatalf("RetryTaskLifecycleCommandChain() error = %v", err)
 	}
+	retried := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+	})
 	if retried.Status != task.StatusRunning || retried.LifecycleExecution != nil {
 		t.Fatalf("重试后的任务 = %#v", retried)
 	}
 	if calls != 2 {
 		t.Fatalf("命令执行次数 = %d，期望从第一个命令重试后为 2", calls)
+	}
+}
+
+func TestAppSchedulesLifecycleCommandChainsInBackground(t *testing.T) {
+	t.Run("开始任务", func(t *testing.T) {
+		app := newApp(t.TempDir())
+		chainID, entered, release := configureBlockingLifecycleHook(t, app, task.LifecycleHookBeforeStart)
+		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookBeforeStart, chainID)
+
+		returned := invokeWhileLifecycleCommandBlocks(t, func() (task.Task, error) {
+			return app.StartTask(created.ID)
+		}, entered, release)
+		if returned.Status != task.StatusPending || returned.LifecycleExecution == nil || returned.LifecycleExecution.State != task.LifecycleExecutionRunning || returned.LifecycleExecution.RunID == "" || returned.LifecycleExecution.Revision < 1 {
+			t.Fatalf("开始任务应立即返回运行记录: %#v", returned)
+		}
+		waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+		})
+	})
+
+	t.Run("更新任务", func(t *testing.T) {
+		app := newApp(t.TempDir())
+		chainID, entered, release := configureBlockingLifecycleHook(t, app, task.LifecycleHookUpdateTask)
+		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookUpdateTask, chainID)
+		if _, err := app.tasks.StartTask(created.ID); err != nil {
+			t.Fatalf("直接开始任务: %v", err)
+		}
+
+		returned := invokeWhileLifecycleCommandBlocks(t, func() (task.Task, error) {
+			return app.UpdateTask(created.ID, "已保存的新标题", "", task.DefaultColor)
+		}, entered, release)
+		if returned.Title != "已保存的新标题" || returned.LifecycleExecution == nil || returned.LifecycleExecution.Hook != task.LifecycleHookUpdateTask || returned.LifecycleExecution.State != task.LifecycleExecutionRunning {
+			t.Fatalf("更新任务应在命令结束前返回已保存运行快照: %#v", returned)
+		}
+		waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Title == "已保存的新标题" && current.LifecycleExecution == nil
+		})
+	})
+
+	t.Run("结束任务", func(t *testing.T) {
+		app := newApp(t.TempDir())
+		chainID, entered, release := configureBlockingLifecycleHook(t, app, task.LifecycleHookBeforeEnd)
+		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookBeforeEnd, chainID)
+		if _, err := app.tasks.StartTask(created.ID); err != nil {
+			t.Fatalf("直接开始任务: %v", err)
+		}
+
+		returned := invokeWhileLifecycleCommandBlocks(t, func() (task.Task, error) {
+			return app.FinishTask(created.ID)
+		}, entered, release)
+		if returned.Status != task.StatusRunning || returned.LifecycleExecution == nil || returned.LifecycleExecution.Hook != task.LifecycleHookBeforeEnd {
+			t.Fatalf("结束任务应在命令结束前返回运行快照: %#v", returned)
+		}
+		waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusCompleted && current.LifecycleExecution == nil
+		})
+	})
+
+	t.Run("重试失败链", func(t *testing.T) {
+		app := newApp(t.TempDir())
+		chainID, entered, release := configureRetryLifecycleHook(t, app, task.LifecycleHookBeforeStart)
+		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookBeforeStart, chainID)
+		if _, err := app.StartTask(created.ID); err != nil {
+			t.Fatalf("首次开始任务: %v", err)
+		}
+		failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.LifecycleExecution != nil && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+		})
+
+		returned := invokeWhileLifecycleCommandBlocks(t, func() (task.Task, error) {
+			return app.RetryTaskLifecycleCommandChain(created.ID)
+		}, entered, release)
+		if returned.LifecycleExecution == nil || returned.LifecycleExecution.State != task.LifecycleExecutionRunning || returned.LifecycleExecution.RunID == failed.LifecycleExecution.RunID || returned.LifecycleExecution.CurrentIndex != 1 {
+			t.Fatalf("重试应创建新的首步运行记录: %#v", returned.LifecycleExecution)
+		}
+		waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+		})
+	})
+}
+
+func TestAppRecordsDeletedLifecycleChainAsFailed(t *testing.T) {
+	app := newApp(t.TempDir())
+	created, err := app.CreateTask("缺失链任务", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	data, err := app.repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	chains := make([]settings.LifecycleCommandChain, 0, len(data.Settings.LifecycleChains)-1)
+	for _, chain := range data.Settings.LifecycleChains {
+		if chain.ID != settings.LifecycleChainCreateWorkspaceID {
+			chains = append(chains, chain)
+		}
+	}
+	data.Settings.LifecycleChains = chains
+	delete(data.Settings.LifecycleDefaultChains, settings.LifecycleHookBeforeStart)
+	if err := app.repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	failed, err := app.StartTask(created.ID)
+	if err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	execution := failed.LifecycleExecution
+	if failed.Status != task.StatusPending || execution == nil || execution.State != task.LifecycleExecutionFailed || execution.ChainID != settings.LifecycleChainCreateWorkspaceID || execution.Error == "" || execution.RunID == "" || execution.Revision < 2 {
+		t.Fatalf("删除链后的失败记录 = %#v", failed)
+	}
+}
+
+func configureBlockingLifecycleHook(t *testing.T, app *App, hook task.LifecycleHook) (string, <-chan struct{}, chan<- error) {
+	t.Helper()
+	chainID := "blocking-" + string(hook)
+	commandID := "blocking-command-" + string(hook)
+	configureLifecycleTestChain(t, app, hook, chainID, commandID)
+	entered := make(chan struct{}, 1)
+	release := make(chan error, 1)
+	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
+		entered <- struct{}{}
+		if err := <-release; err != nil {
+			return lifecycle.CommandResult{StandardError: []byte("失败")}, err
+		}
+		return lifecycle.CommandResult{Output: []byte("完成")}, nil
+	}))
+	return chainID, entered, release
+}
+
+func configureRetryLifecycleHook(t *testing.T, app *App, hook task.LifecycleHook) (string, <-chan struct{}, chan<- error) {
+	t.Helper()
+	chainID := "retry-blocking-" + string(hook)
+	commandID := "retry-blocking-command-" + string(hook)
+	configureLifecycleTestChain(t, app, hook, chainID, commandID)
+	entered := make(chan struct{}, 1)
+	release := make(chan error, 1)
+	attempts := 0
+	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
+		attempts++
+		if attempts == 1 {
+			return lifecycle.CommandResult{StandardError: []byte("首次失败")}, errors.New("exit status 1")
+		}
+		entered <- struct{}{}
+		if err := <-release; err != nil {
+			return lifecycle.CommandResult{StandardError: []byte("失败")}, err
+		}
+		return lifecycle.CommandResult{Output: []byte("完成")}, nil
+	}))
+	return chainID, entered, release
+}
+
+func configureLifecycleTestChain(t *testing.T, app *App, hook task.LifecycleHook, chainID, commandID string) {
+	t.Helper()
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.LifecycleCommands = append(current.LifecycleCommands, settings.LifecycleCommand{
+		ID: commandID, Kind: settings.LifecycleCommandKindCustom, Name: "阻塞命令", Command: "blocking", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHook(hook)},
+	})
+	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+		ID: chainID, Name: "阻塞链", Commands: []settings.LifecycleCommandReference{{CommandID: commandID, Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHook(hook)},
+	})
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+}
+
+func createTaskWithLifecycleChain(t *testing.T, app *App, hook task.LifecycleHook, chainID string) task.Task {
+	t.Helper()
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("异步生命周期任务", "", task.DefaultColor, nil, map[task.LifecycleHook]string{hook: chainID})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndLifecycleChains() error = %v", err)
+	}
+	return created
+}
+
+func invokeWhileLifecycleCommandBlocks(t *testing.T, invoke func() (task.Task, error), entered <-chan struct{}, release chan<- error) task.Task {
+	t.Helper()
+	type result struct {
+		task task.Task
+		err  error
+	}
+	results := make(chan result, 1)
+	go func() {
+		current, err := invoke()
+		results <- result{task: current, err: err}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("生命周期命令未开始执行")
+	}
+	select {
+	case returned := <-results:
+		if returned.err != nil {
+			t.Fatalf("绑定调用 error = %v", returned.err)
+		}
+		release <- nil
+		return returned.task
+	case <-time.After(100 * time.Millisecond):
+		release <- nil
+		<-results
+		t.Fatal("绑定调用等待了生命周期命令完成")
+		return task.Task{}
+	}
+}
+
+func waitForTask(t *testing.T, app *App, taskID string, matches func(task.Task) bool) task.Task {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		current, err := app.tasks.GetTask(taskID)
+		if err == nil && matches(current) {
+			return current
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	current, err := app.tasks.GetTask(taskID)
+	t.Fatalf("等待任务最终状态超时: task=%#v, err=%v", current, err)
+	return task.Task{}
+}
+
+func startTaskAndWait(t *testing.T, app *App, taskID string) task.Task {
+	t.Helper()
+	if _, err := app.StartTask(taskID); err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	return waitForTask(t, app, taskID, func(current task.Task) bool {
+		return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+	})
+}
+
+func finishTaskAndWait(t *testing.T, app *App, taskID string) task.Task {
+	t.Helper()
+	if _, err := app.FinishTask(taskID); err != nil {
+		t.Fatalf("FinishTask() error = %v", err)
+	}
+	return waitForTask(t, app, taskID, func(current task.Task) bool {
+		return current.Status == task.StatusCompleted && current.LifecycleExecution == nil
+	})
+}
+
+func TestAppRecordsFailingLifecycleCommandDetails(t *testing.T) {
+	app := newApp(t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.LifecycleCommands = append(current.LifecycleCommands,
+		settings.LifecycleCommand{ID: "first", Kind: settings.LifecycleCommandKindCustom, Name: "创建工作区", Command: "first"},
+		settings.LifecycleCommand{ID: "second", Kind: settings.LifecycleCommandKindCustom, Name: "安装依赖", Command: "second"},
+	)
+	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+		ID: "two-steps", Name: "两步准备", CommandIDs: []string{"first", "second"},
+	})
+	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "two-steps"
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(invocation lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
+		if invocation.Command == "second" {
+			return lifecycle.CommandResult{StandardError: []byte("失败")}, errors.New("exit status 1")
+		}
+		return lifecycle.CommandResult{Output: []byte("ok")}, nil
+	}))
+	created, err := app.CreateTask("两步任务", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	if _, err := app.StartTask(created.ID); err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.LifecycleExecution != nil && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
+	execution := failed.LifecycleExecution
+	if execution == nil || execution.State != task.LifecycleExecutionFailed || execution.CurrentCommandID != "second" || execution.CurrentCommandName != "安装依赖" || execution.CurrentIndex != 2 || execution.CommandCount != 2 {
+		t.Fatalf("失败记录未定位到第二条命令: %#v", execution)
 	}
 }
 
@@ -438,17 +711,16 @@ func TestAppUpdatesLifecycleChainSelectionsOnlyForPendingTasks(t *testing.T) {
 		t.Fatalf("未执行任务命令链 = %#v", got)
 	}
 
-	started, err := app.StartTask(updated.ID)
-	if err != nil {
-		t.Fatalf("StartTask() error = %v", err)
-	}
+	started := startTaskAndWait(t, app, updated.ID)
 	if _, err := app.UpdateTaskWithExtraInfoAndLifecycleChains(started.ID, "执行中任务", "", task.DefaultColor, nil, selected); err == nil {
 		t.Fatal("执行中任务更新命令链 error = nil")
 	}
-	completed, err := app.FinishTask(started.ID)
-	if err != nil {
+	if _, err := app.FinishTask(started.ID); err != nil {
 		t.Fatalf("FinishTask() error = %v", err)
 	}
+	completed := waitForTask(t, app, started.ID, func(current task.Task) bool {
+		return current.Status == task.StatusCompleted
+	})
 	if _, err := app.UpdateTaskWithExtraInfoAndLifecycleChains(completed.ID, "已完成任务", "", task.DefaultColor, nil, selected); err == nil {
 		t.Fatal("已完成任务更新命令链 error = nil")
 	}
@@ -560,9 +832,7 @@ func TestAppSetsRunningTaskShelved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	if _, err := app.StartTask(created.ID); err != nil {
-		t.Fatalf("StartTask() error = %v", err)
-	}
+	startTaskAndWait(t, app, created.ID)
 
 	shelver, ok := any(app).(interface {
 		SetTaskShelved(taskID string, shelved bool) ([]task.Task, error)
@@ -717,19 +987,13 @@ func TestAppHTTPServiceListsTasksByStatusAndReturnsTaskDetails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建执行中任务: %v", err)
 	}
-	if _, err := app.StartTask(running.ID); err != nil {
-		t.Fatalf("开始执行中任务: %v", err)
-	}
+	startTaskAndWait(t, app, running.ID)
 	completed, err := app.CreateTask("已完成任务", "已经完成", "#f97316")
 	if err != nil {
 		t.Fatalf("创建已完成任务: %v", err)
 	}
-	if _, err := app.StartTask(completed.ID); err != nil {
-		t.Fatalf("开始已完成任务: %v", err)
-	}
-	if _, err := app.FinishTask(completed.ID); err != nil {
-		t.Fatalf("结束已完成任务: %v", err)
-	}
+	startTaskAndWait(t, app, completed.ID)
+	finishTaskAndWait(t, app, completed.ID)
 
 	response, err := http.Get(app.statusHTTP.APIURL() + "/tasks?status=pending")
 	if err != nil {
@@ -973,10 +1237,7 @@ func TestAppHTTPTaskDetailIncludesActiveTerminalDetails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 	normal, err := app.CreateTerminal(started.ID, 100, 32)
 	if err != nil {
 		t.Fatalf("创建普通终端: %v", err)
@@ -1147,10 +1408,7 @@ func TestAppBuildsTerminalEnvironmentForEveryStatusMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 	titleChangeEnvironment := app.terminalStatusEnvironment(started.ID, "terminal-1")
 	if !containsEnvironmentValue(titleChangeEnvironment, "TASKAI_TASK_ID="+started.ID) || !containsEnvironmentValue(titleChangeEnvironment, "TASKAI_TERMINAL_ID=terminal-1") {
 		t.Fatalf("标题变化模式终端环境 = %#v，期望包含任务和终端 ID", titleChangeEnvironment)
@@ -1240,10 +1498,7 @@ func TestAppInjectsHTTPStatusEnvironmentForNormalAndCommandTerminals(t *testing.
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 
 	normal, err := app.CreateTerminal(started.ID, 100, 32)
 	if err != nil {
@@ -1286,10 +1541,7 @@ func TestAppRegistersRealtimeTerminalBeforeStartingProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 	backend.onStart = func(request terminal.StartRequest) {
 		if got := app.realtime.TerminalPresence(request.TaskID, request.ID); got != realtime.TerminalActive {
 			t.Fatalf("进程启动前的终端状态记录 = %q，期望 %q", got, realtime.TerminalActive)
@@ -1328,10 +1580,7 @@ func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 
 	var openedPath string
 	app.directoryOpener = func(path string) error {
@@ -1352,10 +1601,7 @@ func TestRunTaskCommandUsesRunningTaskWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
+	started := startTaskAndWait(t, app, created.ID)
 
 	var directory, shellPath, command string
 	var arguments, environment []string
@@ -1743,11 +1989,7 @@ func runningAppWithTaskMenuItem(t *testing.T, item settings.TaskMenuItem) (*App,
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
 	}
-	started, err := app.StartTask(created.ID)
-	if err != nil {
-		t.Fatalf("开始任务: %v", err)
-	}
-	return app, started
+	return app, startTaskAndWait(t, app, created.ID)
 }
 
 type controlledCommandWaiter struct {
