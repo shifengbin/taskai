@@ -1054,6 +1054,89 @@ func TestAppHTTPTaskDetailIncludesLifecycleConfiguration(t *testing.T) {
 	}
 }
 
+func TestAppGetsCurrentLifecycleCommandInput(t *testing.T) {
+	app := newApp(t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	backend := &activeTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+	t.Cleanup(func() { _ = app.terminals.CloseAll() })
+
+	configured, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	configured.WorkspaceRoot = t.TempDir()
+	configured.HTTPServiceEnabled = true
+	configured.StatusManagementHTTPPort = availableLoopbackPort(t)
+	configured.TaskTemplates = []task.TaskTemplate{{
+		ID: "release", Name: "发布任务",
+		Fields: []task.TaskTemplateField{{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, DefaultValue: "development"}},
+	}}
+	configured.ActiveTaskTemplateID = "release"
+	configured, err = app.SaveSettings(configured)
+	if err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	template := gitTemplateForTest(t, app)
+	info, err := app.SaveExtraInfo(task.ExtraInfo{
+		TemplateID: template.ID,
+		Catalogue:  template.Catalogue,
+		Fields: []task.ExtraInfoField{
+			{Key: "name", Value: "API 服务"},
+			{Key: "repository", Value: "git@example.com:team/api.git"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveExtraInfo() error = %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布 API", "准备部署", task.DefaultColor, []task.TaskExtraInfo{{
+		InformationID: info.ID,
+		Parameters:    []task.ExtraInfoParameter{{Key: "branch", DisplayName: "仓库分支", Value: "main"}},
+	}}, map[string]any{"environment": "production"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	terminalInfo, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("CreateTerminal() error = %v", err)
+	}
+	if !app.realtime.SetTerminalStatus(started.ID, terminalInfo.ID, realtime.StatusWorking) {
+		t.Fatal("设置终端实时状态失败")
+	}
+
+	got, err := app.GetLifecycleCommandInput(started.ID)
+	if err != nil {
+		t.Fatalf("GetLifecycleCommandInput() error = %v", err)
+	}
+	expectedResource, found, err := app.httpTask(started.ID)
+	if err != nil || !found {
+		t.Fatalf("httpTask() = (%#v, %t, %v)", expectedResource, found, err)
+	}
+	want, err := lifecycle.BuildCommandInput(expectedResource, app.statusHTTP.APIURL())
+	if err != nil {
+		t.Fatalf("BuildCommandInput() error = %v", err)
+	}
+	if got != string(want) {
+		t.Fatalf("当前命令链输入 = %s，期望 %s", got, want)
+	}
+
+	if err := app.statusHTTP.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	withoutHTTP, err := app.GetLifecycleCommandInput(started.ID)
+	if err != nil {
+		t.Fatalf("关闭 HTTP 后 GetLifecycleCommandInput() error = %v", err)
+	}
+	if strings.Contains(withoutHTTP, `"baseURL"`) {
+		t.Fatalf("未监听 HTTP 服务时输入不应包含 baseURL: %s", withoutHTTP)
+	}
+	if _, err := app.GetLifecycleCommandInput("missing"); err == nil {
+		t.Fatal("不存在任务的 GetLifecycleCommandInput() error = nil")
+	}
+}
+
 func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 	app := newApp(t.TempDir())
 	current, err := app.GetSettings()

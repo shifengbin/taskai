@@ -41,6 +41,8 @@ export function ExecuteTaskMenuCommand(arg1:string,arg2:string,arg3:number,arg4:
 
 export function FinishTask(arg1:string):Promise<task.Task>;
 
+export function GetLifecycleCommandInput(arg1:string):Promise<string>;
+
 export function GetSettings():Promise<settings.Settings>;
 
 export function HasRunningTasks():Promise<boolean>;

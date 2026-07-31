@@ -30,6 +30,7 @@ const bindings = vi.hoisted(() => ({
 	ListLifecycleCommandChains: vi.fn(),
 	SaveLifecycleCommandChain: vi.fn(),
 	CopyLifecycleCommandChain: vi.fn(),
+	GetLifecycleCommandInput: vi.fn(),
 	DeleteLifecycleCommandChain: vi.fn(),
 	SaveLifecycleDefaultChain: vi.fn(),
   ReorderTasks: vi.fn(),
@@ -53,7 +54,7 @@ const bindings = vi.hoisted(() => ({
   HasRunningTasks: vi.fn(),
   PrepareQuit: vi.fn(),
 }))
-const runtime = vi.hoisted(() => ({EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: vi.fn()}))
+const runtime = vi.hoisted(() => ({ClipboardSetText: vi.fn(), EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: vi.fn()}))
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
 vi.mock('../wailsjs/runtime/runtime', () => runtime)
@@ -95,6 +96,7 @@ describe('App confirmation flows', () => {
 		bindings.ClearSelectedTerminal.mockResolvedValue(undefined)
 		bindings.SelectTerminal.mockResolvedValue(undefined)
 		bindings.ReportTerminalTitleActivity.mockResolvedValue(true)
+		runtime.ClipboardSetText.mockResolvedValue(true)
 		bindings.ListExtraInfoCatalogues.mockResolvedValue([])
 		bindings.ListExtraInfoTemplates.mockResolvedValue([])
 		bindings.ListExtraInfos.mockResolvedValue([])
@@ -129,6 +131,95 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '结束'}))
     await user.click(screen.getByRole('button', {name: '结束并删除'}))
     expect(bindings.FinishTask).toHaveBeenCalledWith('task-1')
+  })
+
+  it('任务详情展示额外信息和系统变量，并复制当前命令链输入', async () => {
+    const user = userEvent.setup()
+    bindings.ListTasks.mockResolvedValue([{
+      id: 'task-1', title: '发布 API', description: '准备部署', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+      extraInfo: [{
+        id: 'info-1', catalogue: 'git', displayName: 'API 服务',
+        fields: [{key: 'name', displayName: '项目名称', value: 'API 服务'}, {key: 'repository', displayName: '仓库地址', value: 'git@example.com:team/api.git'}],
+        parameters: [{key: 'branch', displayName: '仓库分支', required: false, value: 'main'}, {key: 'deploy', displayName: '允许部署', inputType: 'checkbox', required: false, value: 'true'}],
+      }],
+      templateFields: {environment: 'production'},
+    }])
+    bindings.GetLifecycleCommandInput.mockResolvedValue('{"id":"task-1"}')
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByText('发布 API'))
+
+    expect(screen.getByText('额外信息')).toBeInTheDocument()
+    expect(screen.getAllByText('API 服务')).toHaveLength(2)
+    expect(screen.getByText('仓库地址')).toBeInTheDocument()
+    expect(screen.getByText('git@example.com:team/api.git')).toBeInTheDocument()
+    expect(screen.getByText('允许部署')).toBeInTheDocument()
+    expect(screen.getByText('是')).toBeInTheDocument()
+    expect(screen.getByText('TASKAI_TASK_ID')).toBeInTheDocument()
+    expect(screen.getByText('TASKAI_TERMINAL_ID')).toBeInTheDocument()
+    expect(screen.getByText('TASKAI_STATUS_API')).toBeInTheDocument()
+    expect(screen.queryByText('TASKAI_ENVIRONMENT')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '复制当前命令链输入 JSON'}))
+    expect(bindings.GetLifecycleCommandInput).toHaveBeenCalledWith('task-1')
+    expect(runtime.ClipboardSetText).toHaveBeenCalledWith('{"id":"task-1"}')
+    expect(await screen.findByText('已复制当前命令链输入 JSON')).toBeInTheDocument()
+  })
+
+  it('复制当前命令链输入失败时不写入剪贴板', async () => {
+    const user = userEvent.setup()
+    bindings.GetLifecycleCommandInput.mockRejectedValue(new Error('任务不存在'))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByText('清理临时文件'))
+    await user.click(screen.getByRole('button', {name: '复制当前命令链输入 JSON'}))
+
+    expect(await screen.findByText('任务不存在')).toBeInTheDocument()
+    expect(runtime.ClipboardSetText).not.toHaveBeenCalled()
+  })
+
+  it('任务详情展示模板字段和环境变量', async () => {
+    const user = userEvent.setup()
+    bindings.ListTasks.mockResolvedValue([{
+      id: 'task-1', title: '发布 API', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
+      templateFields: {environment: 'production', deploy: true, note: '仅供参考'},
+    }])
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      activeTaskTemplateId: 'release',
+      taskTemplates: [{
+        id: 'release', name: '发布配置', fields: [
+          {key: 'environment', displayName: '运行环境', inputType: 'string', required: true, defaultValue: 'development', injectEnvironment: true},
+          {key: 'deploy', displayName: '允许部署', inputType: 'bool', required: false, defaultValue: false, injectEnvironment: true},
+          {key: 'note', displayName: '内部备注', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false},
+        ],
+      }],
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByText('发布 API'))
+
+    expect(screen.getByText('任务模板')).toBeInTheDocument()
+    expect(screen.getByText('发布配置')).toBeInTheDocument()
+    expect(screen.getByText('运行环境')).toBeInTheDocument()
+    expect(screen.getByText('production')).toBeInTheDocument()
+    expect(screen.getByText('TASKAI_ENVIRONMENT=production')).toBeInTheDocument()
+    expect(screen.getByText('TASKAI_DEPLOY=true')).toBeInTheDocument()
+    expect(screen.getByText('不生成环境变量')).toBeInTheDocument()
+    expect(screen.getAllByText('仅自定义生命周期 Shell 命令').length).toBeGreaterThan(0)
+  })
+
+  it('任务详情在未启用模板时显示模板空状态', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByText('清理临时文件'))
+
+    expect(screen.getByText('未启用任务模板')).toBeInTheDocument()
   })
 
   it('结束执行中的任务后保持当前任务标签', async () => {
@@ -825,6 +916,24 @@ describe('App confirmation flows', () => {
 		await user.click(within(commandDialog).getByLabelText('开始前'))
 		await user.click(within(commandDialog).getByRole('button', {name: '保存命令'}))
 		await waitFor(() => expect(bindings.SaveLifecycleCommand).toHaveBeenCalledWith(expect.objectContaining({name: '新命令', command: 'new-command', chainArgumentMode: 'disabled', applicableHooks: ['beforeStart']})))
+	})
+
+	it('命令链管理提供扩展规则帮助', async () => {
+		const user = userEvent.setup()
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		await user.click(screen.getByRole('button', {name: '查看命令链扩展规则'}))
+
+		const helpDialog = screen.getByRole('dialog', {name: '命令链扩展规则'})
+		expect(within(helpDialog).getByText(/固定参数会先于命令链追加参数传入/)).toBeInTheDocument()
+		expect(within(helpDialog).getByText(/前一条自定义命令的原始标准输出/)).toBeInTheDocument()
+		expect(within(helpDialog).getByText(/dir=<相对目录>/)).toBeInTheDocument()
+		expect(within(helpDialog).getByText(/从链首重新执行/)).toBeInTheDocument()
+
+		await user.click(within(helpDialog).getByRole('button', {name: '关闭'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '命令链扩展规则'})).not.toBeInTheDocument())
 	})
 
 	it('在命令链中配置 Git 参数并显示系统使用文档', async () => {

@@ -74,6 +74,10 @@ export function FinishTask(arg1) {
   return window['go']['main']['App']['FinishTask'](arg1);
 }
 
+export function GetLifecycleCommandInput(arg1) {
+  return window['go']['main']['App']['GetLifecycleCommandInput'](arg1);
+}
+
 export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }

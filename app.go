@@ -158,6 +158,24 @@ func (app *App) ListTasks() ([]task.Task, error) {
 	return app.tasks.ListTasks()
 }
 
+func (app *App) GetLifecycleCommandInput(taskID string) (string, error) {
+	data, err := app.repository.Load()
+	if err != nil {
+		return "", err
+	}
+	for _, current := range data.Tasks {
+		if current.ID != taskID {
+			continue
+		}
+		input, err := app.lifecycleCommandInput(current, data.Settings)
+		if err != nil {
+			return "", err
+		}
+		return string(input), nil
+	}
+	return "", fmt.Errorf("任务不存在")
+}
+
 func (app *App) ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error) {
 	items, err := app.tasks.ListTasks()
 	if err != nil {
@@ -562,7 +580,7 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
-	input, err := lifecycle.BuildCommandInput(app.realtimeTaskResource(inputTask, data.Settings, true), app.statusHTTP.APIURL())
+	input, err := app.lifecycleCommandInput(inputTask, data.Settings)
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
@@ -1210,6 +1228,10 @@ func (app *App) realtimeTaskResource(current task.Task, configured settings.Sett
 		resource.Terminals = &terminals
 	}
 	return resource
+}
+
+func (app *App) lifecycleCommandInput(current task.Task, configured settings.Settings) ([]byte, error) {
+	return lifecycle.BuildCommandInput(app.realtimeTaskResource(current, configured, true), app.statusHTTP.APIURL())
 }
 
 func taskTemplateFieldsForResource(current task.Task, configured settings.Settings) map[string]any {

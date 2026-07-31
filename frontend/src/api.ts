@@ -13,6 +13,7 @@ import {
 	ExecuteTaskMenuCommand,
   FinishTask,
 	GetSettings,
+	GetLifecycleCommandInput,
 	DeleteExtraInfoCatalogue,
 	DeleteExtraInfo,
 	DeleteExtraInfoTemplate,
@@ -105,6 +106,7 @@ export const api = {
 	retryTaskLifecycleCommandChain: (taskID: string) => RetryTaskLifecycleCommandChain(taskID) as Promise<TaskRecord>,
   finishTask: (taskID: string) => FinishTask(taskID) as Promise<TaskRecord>,
   getSettings: () => GetSettings() as Promise<SettingsRecord>,
+	getLifecycleCommandInput: (taskID: string) => GetLifecycleCommandInput(taskID),
 	saveSettings: (settings: SettingsRecord) => {
 		const payload = settingsModel.Settings.createFrom(settings)
 		if (settings.lifecycleCommands || settings.lifecycleChains || settings.lifecycleDefaultChains) {

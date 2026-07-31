@@ -87,6 +87,7 @@ import {
   type TaskStatus,
   type TerminalRecord,
 } from './types'
+import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import './App.css'
 
 export default function App() {
@@ -278,7 +279,15 @@ export default function App() {
   const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
   const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
 	const activeTaskTemplate = settings?.taskTemplates?.find((template) => template.id === settings.activeTaskTemplateId)
-  const areAllTasksExpanded = tasks.length > 0 && tasks.every((task) => expandedTasks[task.id] ?? true)
+	const areAllTasksExpanded = tasks.length > 0 && tasks.every((task) => expandedTasks[task.id] ?? true)
+
+	const copyLifecycleCommandInput = async (taskID: string) => {
+		const input = await api.getLifecycleCommandInput(taskID)
+		if (!await ClipboardSetText(input)) {
+			throw new Error('无法写入系统剪贴板')
+		}
+		setMessage('已复制当前命令链输入 JSON')
+	}
 
   const toggleTaskExpanded = (taskID: string) => {
     setExpandedTasks((current) => ({...current, [taskID]: !(current[taskID] ?? true)}))
@@ -968,7 +977,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 onClose={() => void closeTerminal(selectedTerminal)}
               />
             ) : (
-              <TaskDetail task={selectedTask}/>
+              <TaskDetail
+				task={selectedTask}
+				template={activeTaskTemplate}
+				onCopyLifecycleCommandInput={(taskID) => void copyLifecycleCommandInput(taskID).catch((error) => showError(error, setMessage))}
+			/>
             )}
           </Box>
         </Box>
@@ -1736,6 +1749,7 @@ function LifecycleManagement({
 }) {
 	const [commandDraft, setCommandDraft] = useState<LifecycleCommand>()
 	const [chainDraft, setChainDraft] = useState<LifecycleCommandChain>()
+	const [chainHelpOpen, setChainHelpOpen] = useState(false)
 	const commandNames = new Map(commands.map((command) => [command.id, command.name]))
 	const commandsByID = new Map(commands.map((command) => [command.id, command]))
 
@@ -1864,7 +1878,10 @@ function LifecycleManagement({
 		<Box sx={{display: 'grid', gap: 1.25, pt: 0.5, borderTop: 1, borderColor: 'divider'}}>
 			<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1}}>
 				<Box><Typography variant="subtitle2">命令链</Typography><Typography variant="caption" color="text.secondary">同一条链可被多个钩子和任务复用，修改将在下次执行或重试时生效。</Typography></Box>
-				<Button size="small" variant="contained" onClick={() => setChainDraft({id: '', name: '', commands: [], applicableHooks: []})}>新增链</Button>
+				<Box sx={{display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
+					<Button size="small" variant="outlined" onClick={() => setChainHelpOpen(true)}>查看命令链扩展规则</Button>
+					<Button size="small" variant="contained" onClick={() => setChainDraft({id: '', name: '', commands: [], applicableHooks: []})}>新增链</Button>
+				</Box>
 			</Box>
 			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1.5, overflow: 'hidden'}}>
 				{chains.map((chain, index) => <Box key={chain.id} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: 'minmax(0, 1fr) auto'}, gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === chains.length - 1 ? 0 : 1, borderColor: 'divider'}}>
@@ -1920,6 +1937,37 @@ function LifecycleManagement({
 				</Box>
 			</DialogContent>
 			<DialogActions><Button onClick={() => setChainDraft(undefined)}>取消</Button><Button variant="contained" disabled={!chainDraft?.applicableHooks.length || !chainDraft.commands.length || incompatibleChainCommands.length > 0} onClick={() => void saveChain()}>保存命令链</Button></DialogActions>
+		</Dialog>
+
+		<Dialog open={chainHelpOpen} onClose={() => setChainHelpOpen(false)} aria-labelledby="lifecycle-chain-help-title" fullWidth maxWidth="md">
+			<DialogTitle id="lifecycle-chain-help-title">命令链扩展规则</DialogTitle>
+			<DialogContent dividers sx={{display: 'grid', gap: 2}}>
+				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
+					<Typography variant="subtitle2">适用范围与顺序</Typography>
+					<Typography variant="body2" color="text.secondary">命令链按配置顺序执行，可用于开始前、开始后、结束前、结束后和更新任务后五个钩子。链中的每条命令都必须覆盖该链选择的全部适用范围。</Typography>
+				</Box>
+				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
+					<Typography variant="subtitle2">参数传递</Typography>
+					<Typography variant="body2" color="text.secondary">每行配置一个独立参数。固定参数会先于命令链追加参数传入。关闭“允许在命令链中追加参数”只会隐藏编辑框，不会删除已经保存的追加参数。</Typography>
+				</Box>
+				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
+					<Typography variant="subtitle2">标准输入与输出</Typography>
+					<Typography variant="body2" color="text.secondary">首条自定义命令接收任务详情 JSON；当前任务详情中的“复制当前命令链输入 JSON”可用于取得此刻的首段快照。后续自定义命令接收前一条自定义命令的原始标准输出，系统不会自动解析、合并或补回 JSON。</Typography>
+				</Box>
+				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
+					<Typography variant="subtitle2">环境变量</Typography>
+					<Typography variant="body2" color="text.secondary">应用向任务关联的命令与脚本注入 <code>TASKAI_TASK_ID</code>；新建终端还会获得 <code>TASKAI_TERMINAL_ID</code>，HTTP 状态管理时额外获得 <code>TASKAI_STATUS_API</code>。当前任务模板中勾选环境变量注入的字段仅传给自定义生命周期 Shell 命令。</Typography>
+				</Box>
+				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
+					<Typography variant="subtitle2">内置命令</Typography>
+					<Typography variant="body2" color="text.secondary">创建和删除任务工作目录由应用直接执行。Git 仓库克隆的追加参数可留空，或仅填写一行 <code>dir=&lt;相对目录&gt;</code>；目录必须保持在任务工作目录内。</Typography>
+				</Box>
+				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
+					<Typography variant="subtitle2">失败与重试</Typography>
+					<Typography variant="body2" color="text.secondary">链执行失败会保留错误和进度，重试始终从链首重新执行，并读取最新的链定义。</Typography>
+				</Box>
+			</DialogContent>
+			<DialogActions><Button onClick={() => setChainHelpOpen(false)}>关闭</Button></DialogActions>
 		</Dialog>
 	</Box>
 }
@@ -2209,7 +2257,15 @@ function TaskExtraInfoSnapshotFields({
 	)
 }
 
-function TaskDetail({task}: {task?: TaskRecord}) {
+function TaskDetail({
+	task,
+	template,
+	onCopyLifecycleCommandInput,
+}: {
+	task?: TaskRecord
+	template?: TaskTemplate
+	onCopyLifecycleCommandInput(taskID: string): void
+}) {
   if (!task) {
     return (
       <Box sx={{height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary', textAlign: 'center', p: 3}}>
@@ -2220,6 +2276,7 @@ function TaskDetail({task}: {task?: TaskRecord}) {
       </Box>
     )
   }
+	const templateValues = resolveTaskTemplateValues(template, task.templateFields)
   return (
     <Box sx={{height: '100%', overflow: 'auto', p: {xs: 3, md: 5}, maxWidth: 900}}>
       <Box sx={{display: 'flex', alignItems: 'center', gap: 1, mb: 2}}>
@@ -2229,6 +2286,48 @@ function TaskDetail({task}: {task?: TaskRecord}) {
       <Typography variant="body1" sx={{whiteSpace: 'pre-wrap', color: task.description ? 'text.primary' : 'text.secondary', mb: 4}}>
         {task.description || '暂无任务描述'}
       </Typography>
+		<Box component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
+			<Typography variant="overline" color="text.secondary">任务模板</Typography>
+			{template ? <Box sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
+				<Typography variant="subtitle2">{template.name}</Typography>
+				{template.fields.map((field) => {
+					const value = taskTemplateFieldDisplayValue(templateValues[field.key])
+					const environment = field.injectEnvironment ? `TASKAI_${field.key.toUpperCase()}=${value}` : undefined
+					return <Box key={field.key} sx={{display: 'grid', gap: 0.5, borderTop: 1, borderColor: 'divider', pt: 1}}>
+						<TaskDetailValue label={field.displayName || field.key} value={value}/>
+						<Typography variant="caption" color="text.secondary">字段键：<code>{field.key}</code></Typography>
+						<Typography variant="caption" color="text.secondary">{environment ? <>生成环境变量 <code>{environment}</code></> : '不生成环境变量'}</Typography>
+						{environment && <Typography variant="caption" color="text.secondary">仅自定义生命周期 Shell 命令</Typography>}
+					</Box>
+				})}
+			</Box> : <Alert severity="info" variant="outlined">未启用任务模板</Alert>}
+		</Box>
+		<Box component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
+			<Typography variant="overline" color="text.secondary">额外信息</Typography>
+			{task.extraInfo?.length ? Object.entries(groupTaskExtraInfoByCatalogue(task.extraInfo)).map(([catalogue, items]) => (
+				<Box key={catalogue} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
+					<Typography variant="subtitle2">{catalogue}</Typography>
+					{items.map((item, itemIndex) => (
+						<Box key={item.id || `${catalogue}-${itemIndex}`} sx={{display: 'grid', gap: 1, borderTop: itemIndex === 0 ? 0 : 1, borderColor: 'divider', pt: itemIndex === 0 ? 0 : 1.25}}>
+							<Typography variant="body2" sx={{fontWeight: 700}}>{item.displayName || item.fields.find((field) => field.key === 'name')?.value || catalogue}</Typography>
+							<Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))'}, gap: 1}}>
+								{item.fields.map((field) => <TaskDetailValue key={`field-${field.key}`} label={field.displayName || field.key} value={field.value || '—'}/>) }
+								{item.parameters.map((parameter) => <TaskDetailValue key={`parameter-${parameter.key}`} label={parameter.displayName || parameter.key} value={extraInfoParameterInputType(parameter) === 'checkbox' ? parameter.value === 'true' ? '是' : '否' : parameter.value || '—'}/>) }
+							</Box>
+						</Box>
+					))}
+				</Box>
+			)) : <Alert severity="info" variant="outlined">未添加额外信息</Alert>}
+		</Box>
+		<Box component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
+			<Typography variant="overline" color="text.secondary">系统环境变量</Typography>
+			<Box sx={{display: 'grid', gap: 0.75}}>
+				<TaskDetailValue label="TASKAI_TASK_ID" value="任务关联的自定义命令和前后置脚本"/>
+				<TaskDetailValue label="TASKAI_TERMINAL_ID" value="仅新建的普通终端和显示终端的自定义命令"/>
+				<TaskDetailValue label="TASKAI_STATUS_API" value="仅 HTTP 状态管理方式下，注入到之后新建的终端"/>
+			</Box>
+		</Box>
+		<Button variant="outlined" size="small" sx={{mb: 3, alignSelf: 'start'}} onClick={() => onCopyLifecycleCommandInput(task.id)}>复制当前命令链输入 JSON</Button>
 		{task.lifecycleExecution && <Alert severity={task.lifecycleExecution.state === 'failed' ? 'error' : 'warning'} variant="outlined" sx={{mb: 3}}>
 			<Typography variant="subtitle2">{lifecycleHooks.find((hook) => hook.id === task.lifecycleExecution?.hook)?.label ?? '生命周期'}：{task.lifecycleExecution.currentCommandName || '命令'}（{task.lifecycleExecution.currentIndex}/{task.lifecycleExecution.commandCount}）</Typography>
 			{task.lifecycleExecution.error && <Typography variant="body2" sx={{mt: 0.5, whiteSpace: 'pre-wrap'}}>{task.lifecycleExecution.error}</Typography>}
@@ -2241,6 +2340,28 @@ function TaskDetail({task}: {task?: TaskRecord}) {
       )}
     </Box>
   )
+}
+
+function groupTaskExtraInfoByCatalogue(items: TaskExtraInfo[]): Record<string, TaskExtraInfo[]> {
+	return items.reduce<Record<string, TaskExtraInfo[]>>((grouped, item) => {
+		const catalogue = item.catalogue || '未分类'
+		grouped[catalogue] = [...(grouped[catalogue] ?? []), item]
+		return grouped
+	}, {})
+}
+
+function TaskDetailValue({label, value}: {label: string, value: string}) {
+	return <Box sx={{display: 'grid', gap: 0.25, minWidth: 0}}>
+		<Typography variant="caption" color="text.secondary" sx={{overflowWrap: 'anywhere'}}>{label}</Typography>
+		<Typography variant="body2" sx={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{value}</Typography>
+	</Box>
+}
+
+function taskTemplateFieldDisplayValue(value: string | boolean | undefined): string {
+	if (typeof value === 'boolean') {
+		return `${value}`
+	}
+	return value || '—'
 }
 
 function createExtraInfoTemplateDraft(catalogue: string): ExtraInfoTemplate {
