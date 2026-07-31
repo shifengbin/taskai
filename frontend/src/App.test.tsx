@@ -165,6 +165,10 @@ describe('App confirmation flows', () => {
     expect(bindings.GetLifecycleCommandInput).toHaveBeenCalledWith('task-1')
     expect(runtime.ClipboardSetText).toHaveBeenCalledWith('{"id":"task-1"}')
     expect(await screen.findByText('已复制当前命令链输入 JSON')).toBeInTheDocument()
+    expect(screen.getByText('已复制当前命令链输入 JSON').closest('[role="alert"]')).toHaveClass('MuiAlert-colorSuccess')
+
+    await user.click(screen.getByText('已复制当前命令链输入 JSON').closest('[role="alert"]')!.querySelector('button[aria-label="Close"]')!)
+    expect(screen.queryAllByRole('alert').some((alert) => alert.textContent?.trim() === '')).toBe(false)
   })
 
   it('复制当前命令链输入失败时不写入剪贴板', async () => {
@@ -177,6 +181,7 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '复制当前命令链输入 JSON'}))
 
     expect(await screen.findByText('任务不存在')).toBeInTheDocument()
+    expect(screen.getByText('任务不存在').closest('[role="alert"]')).toHaveClass('MuiAlert-colorError')
     expect(runtime.ClipboardSetText).not.toHaveBeenCalled()
   })
 
