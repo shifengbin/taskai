@@ -43,6 +43,7 @@ import UnfoldLessOutlinedIcon from '@mui/icons-material/UnfoldLessOutlined'
 import UnfoldMoreOutlinedIcon from '@mui/icons-material/UnfoldMoreOutlined'
 
 import {api} from './api'
+import taskAiMark from './assets/task-ai-mark.svg'
 import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalView} from './components/TerminalView'
 import {
@@ -529,7 +530,13 @@ export default function App() {
 		setSelectedTerminalID(undefined)
     try {
       const started = await api.startTask(taskID)
-      setTasks((current) => mergeLifecycleTask(current, started))
+		setTasks((current) => {
+			const existing = current.find((task) => task.id === taskID)
+			if (existing?.status === 'running' && started.status === 'pending') {
+				return current
+			}
+			return mergeLifecycleTask(current, started)
+		})
       if (started.status === 'running') {
 			activateStartedTask(taskID)
       }
@@ -849,7 +856,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       <Box className={`taskai-app taskai-app--${colorScheme}`} data-color-scheme={colorScheme} sx={{height: '100vh', minWidth: 720, display: 'grid', gridTemplateRows: '52px minmax(0, 1fr)', overflow: 'hidden'}}>
         <AppBar className="taskai-topbar" position="static" color="transparent" elevation={0} sx={{borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
           <Toolbar className="taskai-topbar__toolbar" variant="dense" sx={{minHeight: '52px !important', gap: 1}}>
-            <TaskAltOutlinedIcon className="taskai-brand-mark" color="primary"/>
+            <Box component="img" className="taskai-brand-mark" src={taskAiMark} alt="任务 AI 图标"/>
             <Typography variant="subtitle1" sx={{fontWeight: 800, letterSpacing: 0.3}}>任务工作台</Typography>
             <Box sx={{flex: 1}}/>
 			<Tooltip title="额外信息管理">
@@ -1411,14 +1418,14 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               服务仅监听 <code>127.0.0.1:&lt;端口&gt;</code>，无需鉴权，也不会暴露到局域网。
             </Alert>
             <Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1}}>
-              <HTTPHelpStep number="1" title="独立启用服务">在“实时状态”中开启“启用本机 HTTP 服务”并设置端口，可单独查询任务和状态。</HTTPHelpStep>
-              <HTTPHelpStep number="2" title="使用 HTTP 管理状态">选择“通过 HTTP 接口”会自动启用服务，并向之后新建的终端注入状态变量。</HTTPHelpStep>
+              <HTTPHelpStep number="1" title="独立启用服务">在“实时状态”中开启“启用本机 HTTP 服务”并设置端口，可单独查询任务和状态；本机 HTTP 服务正在监听时，之后新建的终端会获得 API 地址。</HTTPHelpStep>
+              <HTTPHelpStep number="2" title="使用 HTTP 管理状态">选择“通过 HTTP 接口”会自动启用服务，因此之后新建的终端也会获得 API 地址。</HTTPHelpStep>
             </Box>
           </HTTPHelpSection>
 
           <HTTPHelpSection title="终端环境变量">
-            <Typography variant="body2" color="text.secondary">新建的普通终端和显示终端的自定义命令始终获得任务与终端 ID；HTTP 状态管理方式下额外获得 API 地址：</Typography>
-            <HTTPCodeBlock>{'TASKAI_TASK_ID=<任务 ID>\nTASKAI_TERMINAL_ID=<终端 ID>\n\n# 仅 HTTP 状态管理方式注入\nTASKAI_STATUS_API=http://127.0.0.1:<端口>/api/v1'}</HTTPCodeBlock>
+            <Typography variant="body2" color="text.secondary">新建的普通终端和显示终端的自定义命令始终获得任务与终端 ID；本机 HTTP 服务正在监听时额外获得 API 地址：</Typography>
+            <HTTPCodeBlock>{'TASKAI_TASK_ID=<任务 ID>\nTASKAI_TERMINAL_ID=<终端 ID>\n\n# 仅本机 HTTP 服务正在监听时注入\nTASKAI_STATUS_API=http://127.0.0.1:<端口>/api/v1'}</HTTPCodeBlock>
             <Typography variant="body2" color="text.secondary">无终端后台命令以及前置、后置脚本仅注入 <code>TASKAI_TASK_ID</code>。</Typography>
           </HTTPHelpSection>
 
@@ -1451,7 +1458,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               <Typography variant="body2"><strong>状态值：</strong><code>idle</code> 空闲、<code>working</code> 工作中、<code>unread</code> 未读、<code>error</code> 异常。</Typography>
               <Typography variant="body2"><strong>汇总优先级：</strong>异常 → 未读 → 工作中 → 空闲。</Typography>
               <Typography variant="body2"><strong>错误响应：</strong><code>{'{"error":"..."}'}</code>；无效请求为 <code>400</code>，不存在的任务或终端为 <code>404</code>，已结束任务或已关闭终端为 <code>409</code>，错误方法为 <code>405</code>。</Typography>
-              <Typography variant="body2" color="text.secondary">修改端口或切换状态管理方式不会更新已运行终端的环境变量；请新建终端后再使用新配置。</Typography>
+              <Typography variant="body2" color="text.secondary">修改端口、服务开关或切换状态管理方式不会更新已运行终端的环境变量；请新建终端后再使用新配置。</Typography>
             </Box>
           </HTTPHelpSection>
         </DialogContent>
@@ -1645,14 +1652,14 @@ function createAppTheme(colorScheme: ColorScheme) {
   const isDark = colorScheme === 'dark'
   const colors = isDark
     ? {
-        canvas: '#07130e', paper: '#0e2118', sidebar: '#173a28', detail: '#0a1911', ink: '#edfff4', muted: '#afcfbd', divider: '#d5f5e0',
-        primary: '#6cd39a', accent: '#ffad6c', track: '#d5ff5f', error: '#ff8a7a', warning: '#ffbc7b', info: '#85d8ff', contrast: '#07130e',
+        canvas: '#19221d', paper: '#222d26', sidebar: '#29362c', detail: '#1d2821', ink: '#e7eee7', muted: '#a6b5a7', divider: '#3c4b41',
+        primary: '#9cc3ab', accent: '#db9a7f', track: '#dce9df', error: '#ef9a8a', warning: '#e3b66f', info: '#9dc9dc', contrast: '#16271d',
       }
     : {
-        canvas: '#edf3ed', paper: '#fbfffb', sidebar: '#d7e5d9', detail: '#ffffff', ink: '#10291e', muted: '#3d604d', divider: '#20533d',
-        primary: '#176b4b', accent: '#ff8a3d', track: '#b6e338', error: '#b9332f', warning: '#8f3d00', info: '#155d88', contrast: '#fbfffb',
+        canvas: '#edf0ea', paper: '#fafbf7', sidebar: '#e4ebe3', detail: '#ffffff', ink: '#29332c', muted: '#657268', divider: '#b8c5b9',
+        primary: '#547565', accent: '#b16b50', track: '#dbe8de', error: '#ae4c40', warning: '#916521', info: '#376d80', contrast: '#ffffff',
       }
-  const secondaryContrast = isDark ? colors.contrast : colors.ink
+  const secondaryContrast = isDark ? '#2b241e' : '#ffffff'
 
   return createTheme({
     palette: {
@@ -1668,18 +1675,19 @@ function createAppTheme(colorScheme: ColorScheme) {
       divider: colors.divider,
       action: {
         active: colors.primary,
-        hover: isDark ? 'rgba(108, 211, 154, 0.14)' : 'rgba(23, 107, 75, 0.10)',
-        selected: isDark ? 'rgba(108, 211, 154, 0.20)' : 'rgba(23, 107, 75, 0.16)',
-        disabled: isDark ? 'rgba(237, 255, 244, 0.34)' : 'rgba(16, 41, 30, 0.35)',
-        disabledBackground: isDark ? 'rgba(237, 255, 244, 0.10)' : 'rgba(16, 41, 30, 0.08)',
+        hover: isDark ? 'rgba(156, 195, 171, 0.13)' : 'rgba(84, 117, 101, 0.09)',
+        selected: isDark ? 'rgba(156, 195, 171, 0.20)' : 'rgba(84, 117, 101, 0.14)',
+        disabled: isDark ? 'rgba(231, 238, 231, 0.34)' : 'rgba(41, 51, 44, 0.35)',
+        disabledBackground: isDark ? 'rgba(231, 238, 231, 0.10)' : 'rgba(41, 51, 44, 0.08)',
       },
     },
-    shape: {borderRadius: 6},
+    shape: {borderRadius: 8},
     typography: {
       fontFamily: 'Nunito, "Noto Sans SC", sans-serif',
-      button: {fontWeight: 800, letterSpacing: '0.01em'},
-      overline: {fontWeight: 900, letterSpacing: '0.12em'},
-      h5: {fontWeight: 900, letterSpacing: '-0.035em'},
+      button: {fontWeight: 750, letterSpacing: 0},
+      overline: {fontWeight: 800, letterSpacing: '0.1em'},
+      subtitle1: {fontFamily: '"Songti SC", "Noto Serif CJK SC", Nunito, serif', fontWeight: 700, letterSpacing: 0},
+      h5: {fontFamily: '"Songti SC", "Noto Serif CJK SC", Nunito, serif', fontWeight: 700, letterSpacing: 0},
     },
     components: {
       MuiCssBaseline: {
@@ -1690,33 +1698,31 @@ function createAppTheme(colorScheme: ColorScheme) {
       },
       MuiPaper: {styleOverrides: {root: {backgroundImage: 'none'}}},
       MuiAppBar: {styleOverrides: {root: {color: colors.ink, backgroundImage: 'none'}}},
-      MuiButtonBase: {styleOverrides: {root: {'&:focus-visible': {outline: `3px solid ${colors.track}`, outlineOffset: 2}}}},
+      MuiButtonBase: {styleOverrides: {root: {'&:focus-visible': {outline: `3px solid ${colors.primary}`, outlineOffset: 2}}}},
       MuiIconButton: {styleOverrides: {root: {
-        border: '1px solid transparent', borderRadius: 5,
-        '&:hover': {borderColor: colors.divider, backgroundColor: isDark ? 'rgba(108, 211, 154, 0.16)' : 'rgba(182, 227, 56, 0.32)'},
+        border: '1px solid transparent', borderRadius: 6,
+        '&:hover': {borderColor: colors.divider, backgroundColor: isDark ? 'rgba(156, 195, 171, 0.16)' : 'rgba(84, 117, 101, 0.10)'},
       }}},
-      MuiButton: {styleOverrides: {root: {borderRadius: '5px 13px 5px 13px', boxShadow: 'none'}, contained: {
-        boxShadow: `3px 3px 0 ${colors.divider}`,
-        '&:hover': {boxShadow: `4px 4px 0 ${colors.divider}`},
-      }}},
+      MuiButton: {styleOverrides: {root: {borderRadius: 6, boxShadow: 'none'}, contained: {boxShadow: 'none'}}},
       MuiDialog: {styleOverrides: {paper: {
-        border: `2px solid ${colors.divider}`, borderRadius: '12px 30px 12px 30px', boxShadow: `10px 10px 0 ${colors.accent}`, overflow: 'hidden',
+        border: `1px solid ${colors.divider}`, borderRadius: 10, boxShadow: isDark ? '0 18px 40px rgba(0, 0, 0, 0.38)' : '0 18px 40px rgba(41, 51, 44, 0.14)', overflow: 'hidden',
       }}},
       MuiDialogTitle: {styleOverrides: {root: {
         padding: '16px 20px', color: colors.ink, fontWeight: 900,
-        backgroundImage: `repeating-linear-gradient(-33deg, ${colors.paper} 0 18px, ${colors.track} 19px 23px, ${colors.paper} 24px 42px)`,
+        backgroundColor: colors.paper,
       }}},
       MuiDialogActions: {styleOverrides: {root: {padding: '14px 20px', borderTop: `1px solid ${colors.divider}`, backgroundColor: colors.sidebar}}},
-      MuiOutlinedInput: {styleOverrides: {root: {borderRadius: '5px 13px 5px 13px', backgroundColor: colors.detail, '&:hover .MuiOutlinedInput-notchedOutline': {borderColor: colors.primary}, '&.Mui-focused .MuiOutlinedInput-notchedOutline': {borderColor: colors.primary, borderWidth: 2}}}},
+      MuiOutlinedInput: {styleOverrides: {root: {borderRadius: 6, backgroundColor: colors.detail, '&:hover .MuiOutlinedInput-notchedOutline': {borderColor: colors.primary}, '&.Mui-focused .MuiOutlinedInput-notchedOutline': {borderColor: colors.primary, borderWidth: 2}}}},
       MuiInputLabel: {styleOverrides: {root: {fontWeight: 800}}},
-      MuiTabs: {styleOverrides: {indicator: {height: 4, borderRadius: 99, backgroundColor: colors.accent}}},
-      MuiTab: {styleOverrides: {root: {fontWeight: 900, '&.Mui-selected': {color: colors.ink, backgroundColor: isDark ? 'rgba(213, 255, 95, 0.18)' : 'rgba(182, 227, 56, 0.36)'}}}},
-      MuiChip: {styleOverrides: {root: {borderRadius: '4px 11px 4px 11px', fontWeight: 800}}},
-      MuiAccordion: {styleOverrides: {root: {backgroundColor: colors.detail, '&.Mui-expanded': {boxShadow: `inset 4px 0 0 ${colors.primary}`}}}},
-      MuiMenu: {styleOverrides: {paper: {border: `2px solid ${colors.divider}`, borderRadius: '6px 16px 6px 16px', boxShadow: `6px 6px 0 ${colors.accent}`}}},
-      MuiMenuItem: {styleOverrides: {root: {gap: 0.5, fontWeight: 800, '&:hover': {backgroundColor: isDark ? 'rgba(213, 255, 95, 0.16)' : 'rgba(182, 227, 56, 0.30)'}}}},
-      MuiAlert: {styleOverrides: {root: {borderRadius: '6px 16px 6px 16px', fontWeight: 700}}},
-      MuiTooltip: {styleOverrides: {tooltip: {border: `1px solid ${colors.divider}`, borderRadius: 4, color: colors.ink, backgroundColor: colors.detail, fontWeight: 700}}},
+      MuiTabs: {styleOverrides: {indicator: {height: 3, borderRadius: 99, backgroundColor: colors.primary}}},
+      MuiTab: {styleOverrides: {root: {fontWeight: 800, '&.Mui-selected': {color: colors.ink, backgroundColor: isDark ? 'rgba(156, 195, 171, 0.14)' : 'rgba(84, 117, 101, 0.10)'}}}},
+      MuiChip: {styleOverrides: {root: {borderRadius: 5, fontWeight: 750}}},
+      MuiAccordion: {styleOverrides: {root: {backgroundColor: colors.detail, '&.Mui-expanded': {boxShadow: `inset 3px 0 0 ${colors.primary}`}}}},
+      MuiMenu: {styleOverrides: {paper: {border: `1px solid ${colors.divider}`, borderRadius: 8, boxShadow: isDark ? '0 12px 28px rgba(0, 0, 0, 0.30)' : '0 12px 28px rgba(41, 51, 44, 0.12)'}}},
+      MuiPopover: {styleOverrides: {paper: {border: `1px solid ${colors.divider}`, borderRadius: 8, boxShadow: isDark ? '0 12px 28px rgba(0, 0, 0, 0.30)' : '0 12px 28px rgba(41, 51, 44, 0.12)'}}},
+      MuiMenuItem: {styleOverrides: {root: {gap: 0.5, fontWeight: 750, '&:hover': {backgroundColor: isDark ? 'rgba(156, 195, 171, 0.14)' : 'rgba(84, 117, 101, 0.10)'}}}},
+      MuiAlert: {styleOverrides: {root: {borderRadius: 6, fontWeight: 700}}},
+      MuiTooltip: {styleOverrides: {tooltip: {border: `1px solid ${colors.divider}`, borderRadius: 5, color: colors.ink, backgroundColor: colors.detail, fontWeight: 700}}},
       MuiSwitch: {styleOverrides: {track: {opacity: 1, backgroundColor: colors.muted}, switchBase: {'&.Mui-checked + .MuiSwitch-track': {opacity: 1, backgroundColor: colors.primary}}}},
     },
   })
@@ -2034,11 +2040,11 @@ function LifecycleManagement({
 				</Box>
 				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
 					<Typography variant="subtitle2">标准输入与输出</Typography>
-					<Typography variant="body2" color="text.secondary">首条自定义命令接收任务详情 JSON；当前任务详情中的“复制当前命令链输入 JSON”可用于取得此刻的首段快照。后续自定义命令接收前一条自定义命令的原始标准输出，系统不会自动解析、合并或补回 JSON。</Typography>
+					<Typography variant="body2" color="text.secondary">首条自定义命令接收任务详情 JSON；本机 HTTP 服务正在监听时，顶层 <code>baseURL</code> 是当前 API 基址，只通过标准输入提供，不是终端环境变量。当前任务详情中的“复制当前命令链输入 JSON”可用于取得此刻的首段快照。后续自定义命令接收前一条自定义命令的原始标准输出，系统不会自动解析、合并或补回 JSON。</Typography>
 				</Box>
 				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
 					<Typography variant="subtitle2">环境变量</Typography>
-					<Typography variant="body2" color="text.secondary">应用向任务关联的命令与脚本注入 <code>TASKAI_TASK_ID</code>；新建终端还会获得 <code>TASKAI_TERMINAL_ID</code>，HTTP 状态管理时额外获得 <code>TASKAI_STATUS_API</code>。当前任务模板中勾选环境变量注入的字段仅传给自定义生命周期 Shell 命令。</Typography>
+					<Typography variant="body2" color="text.secondary">应用向任务关联的命令与脚本注入 <code>TASKAI_TASK_ID</code>；新建终端还会获得 <code>TASKAI_TERMINAL_ID</code>，本机 HTTP 服务正在监听时额外获得 <code>TASKAI_STATUS_API</code>。当前任务模板中勾选环境变量注入的字段仅传给自定义生命周期 Shell 命令。</Typography>
 				</Box>
 				<Box component="section" sx={{display: 'grid', gap: 0.5}}>
 					<Typography variant="subtitle2">内置命令</Typography>
@@ -2360,9 +2366,9 @@ function TaskDetail({
   }
 	const templateValues = resolveTaskTemplateValues(template, task.templateFields)
   return (
-    <Box className="taskai-task-detail" sx={{height: '100%', width: '100%', overflow: 'auto', p: {xs: 3, md: 5}, maxWidth: 'none'}}>
+    <Box className="taskai-task-detail" sx={{height: '100%', width: '100%', overflow: 'auto', p: {xs: 2.5, md: 4}, maxWidth: 'none'}}>
       <Box className="taskai-task-detail__heading" sx={{display: 'flex', alignItems: 'center', gap: 1, mb: 2}}>
-        <Typography variant="h5" sx={{fontWeight: 750}}>{task.title}</Typography>
+        <Typography variant="h5" sx={{fontWeight: 800}}>{task.title}</Typography>
         <Chip label={taskStatusLabel[task.status]} size="small" variant="outlined"/>
       </Box>
       <Typography variant="body1" sx={{whiteSpace: 'pre-wrap', color: task.description ? 'text.primary' : 'text.secondary', mb: 4}}>
@@ -2370,7 +2376,7 @@ function TaskDetail({
       </Typography>
 		<Box className="taskai-detail-section" component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
 			<Typography className="taskai-detail-section__title" variant="overline" color="text.secondary">任务模板</Typography>
-			{template ? <Box className="taskai-detail-card" sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
+			{template ? <Box className="taskai-detail-card" sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5}}>
 				<Typography variant="subtitle2">{template.name}</Typography>
 				{template.fields.map((field) => {
 					const value = taskTemplateFieldDisplayValue(templateValues[field.key])
@@ -2387,7 +2393,7 @@ function TaskDetail({
 		<Box className="taskai-detail-section" component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
 			<Typography className="taskai-detail-section__title" variant="overline" color="text.secondary">额外信息</Typography>
 			{task.extraInfo?.length ? Object.entries(groupTaskExtraInfoByCatalogue(task.extraInfo)).map(([catalogue, items]) => (
-				<Box className="taskai-detail-card" key={catalogue} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
+				<Box className="taskai-detail-card" key={catalogue} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5}}>
 					<Typography variant="subtitle2">{catalogue}</Typography>
 					{items.map((item, itemIndex) => (
 						<Box key={item.id || `${catalogue}-${itemIndex}`} sx={{display: 'grid', gap: 1, borderTop: itemIndex === 0 ? 0 : 1, borderColor: 'divider', pt: itemIndex === 0 ? 0 : 1.25}}>
@@ -2406,7 +2412,7 @@ function TaskDetail({
 			<Box sx={{display: 'grid', gap: 0.75}}>
 				<TaskDetailValue label="TASKAI_TASK_ID" value="任务关联的自定义命令和前后置脚本"/>
 				<TaskDetailValue label="TASKAI_TERMINAL_ID" value="仅新建的普通终端和显示终端的自定义命令"/>
-				<TaskDetailValue label="TASKAI_STATUS_API" value="仅 HTTP 状态管理方式下，注入到之后新建的终端"/>
+				<TaskDetailValue label="TASKAI_STATUS_API" value="本机 HTTP 服务正在监听时，注入到之后新建的终端"/>
 			</Box>
 		</Box>
 		<Button variant="outlined" size="small" sx={{mb: 3, alignSelf: 'start'}} onClick={() => onCopyLifecycleCommandInput(task.id)}>复制当前命令链输入 JSON</Button>

@@ -105,17 +105,13 @@ export const api = {
 	startTask: (taskID: string) => StartTask(taskID) as Promise<TaskRecord>,
 	retryTaskLifecycleCommandChain: (taskID: string) => RetryTaskLifecycleCommandChain(taskID) as Promise<TaskRecord>,
   finishTask: (taskID: string) => FinishTask(taskID) as Promise<TaskRecord>,
-  getSettings: () => GetSettings() as Promise<SettingsRecord>,
+	getSettings: () => GetSettings() as Promise<SettingsRecord>,
 	getLifecycleCommandInput: (taskID: string) => GetLifecycleCommandInput(taskID),
 	saveSettings: (settings: SettingsRecord) => {
 		const payload = settingsModel.Settings.createFrom(settings)
-		if (settings.lifecycleCommands || settings.lifecycleChains || settings.lifecycleDefaultChains) {
-			Object.assign(payload, {
-				lifecycleCommands: settings.lifecycleCommands ?? [],
-				lifecycleChains: settings.lifecycleChains ?? [],
-				lifecycleDefaultChains: settings.lifecycleDefaultChains ?? {},
-			})
-		}
+		delete (payload as {lifecycleCommands?: unknown}).lifecycleCommands
+		delete (payload as {lifecycleChains?: unknown}).lifecycleChains
+		delete (payload as {lifecycleDefaultChains?: unknown}).lifecycleDefaultChains
 		if (settings.taskTemplates || settings.activeTaskTemplateId !== undefined) {
 			Object.assign(payload, {
 				taskTemplates: settings.taskTemplates ?? [],

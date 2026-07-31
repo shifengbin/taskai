@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"taskai/internal/task"
 )
 
 func TestDefaultUsesApplicationDataWorkspaces(t *testing.T) {
@@ -51,7 +53,7 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID || current.LifecycleCommands[4].ID != "system.lifecycle.manifest-file" {
 		t.Fatalf("默认生命周期命令 = %#v", current.LifecycleCommands)
 	}
-	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
+	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
 		t.Fatalf("内置命令适用范围 = %#v", current.LifecycleCommands)
 	}
 	if !reflect.DeepEqual(current.LifecycleChains[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleChains[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
@@ -71,6 +73,111 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	}
 	if got := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandGitCloneID).ChainArgumentMode; got != LifecycleCommandChainArgumentModeEnabled {
 		t.Fatalf("Git 仓库克隆命令的链级参数模式 = %q，期望允许", got)
+	}
+}
+
+func TestDefaultSeedsDefaultBranchTemplateAndRepositoryPresetChains(t *testing.T) {
+	current := Default(t.TempDir())
+
+	if current.ActiveTaskTemplateID != "preset.task-template.default-branch" || len(current.TaskTemplates) != 1 {
+		t.Fatalf("默认任务模板 = %#v，当前模板 = %q", current.TaskTemplates, current.ActiveTaskTemplateID)
+	}
+	template := current.TaskTemplates[0]
+	if template.ID != "preset.task-template.default-branch" || template.Name != "默认分支" || len(template.Fields) != 1 {
+		t.Fatalf("默认分支模板 = %#v", template)
+	}
+	field := template.Fields[0]
+	if field.Key != "branch" || field.DisplayName != "默认分支" || field.InputType != task.TaskTemplateFieldInputString || !field.Required || field.DefaultValue != "" || field.InjectEnvironment {
+		t.Fatalf("默认分支字段 = %#v", field)
+	}
+
+	chains := map[string]LifecycleCommandChain{}
+	for _, chain := range current.LifecycleChains {
+		chains[chain.ID] = chain
+	}
+	iterations, found := chains["preset.lifecycle-chain.iterations-ai"]
+	if !found {
+		t.Fatalf("缺少 iterations-ai 预置链: %#v", current.LifecycleChains)
+	}
+	if iterations.Name != "iterations-ai" || !reflect.DeepEqual(iterations.ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) {
+		t.Fatalf("iterations-ai 链范围 = %#v", iterations)
+	}
+	if want := []LifecycleCommandReference{
+		{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+		{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=git@gitlab.jiandan100.cn:webdev/iterations-ai.git"}},
+		{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+		{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+	}; !reflect.DeepEqual(iterations.Commands, want) {
+		t.Fatalf("iterations-ai 命令 = %#v，期望 %#v", iterations.Commands, want)
+	}
+
+	updateRepositories, found := chains["preset.lifecycle-chain.update-repositories"]
+	if !found {
+		t.Fatalf("缺少更新仓库预置链: %#v", current.LifecycleChains)
+	}
+	if updateRepositories.Name != "更新仓库" || !reflect.DeepEqual(updateRepositories.ApplicableHooks, []LifecycleHook{LifecycleHookUpdateTask}) {
+		t.Fatalf("更新仓库链范围 = %#v", updateRepositories)
+	}
+	if want := []LifecycleCommandReference{
+		{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+		{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+	}; !reflect.DeepEqual(updateRepositories.Commands, want) {
+		t.Fatalf("更新仓库命令 = %#v，期望 %#v", updateRepositories.Commands, want)
+	}
+	if current.LifecycleDefaultChains[LifecycleHookPostStart] != "" || current.LifecycleDefaultChains[LifecycleHookUpdateTask] != "" {
+		t.Fatalf("预置链不应默认选中: %#v", current.LifecycleDefaultChains)
+	}
+	createWorkspace := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandCreateWorkspaceID)
+	if createWorkspace == nil || !reflect.DeepEqual(createWorkspace.ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}) {
+		t.Fatalf("创建任务工作目录命令范围 = %#v", createWorkspace)
+	}
+}
+
+func TestApplyPresetMigrationMovesUnmodifiedIterationsAIToBeforeStart(t *testing.T) {
+	legacy := Default(t.TempDir())
+	legacy.PresetVersion = 1
+	for index := range legacy.LifecycleChains {
+		if legacy.LifecycleChains[index].ID == LifecycleChainIterationsAIID {
+			legacy.LifecycleChains[index].ApplicableHooks = []LifecycleHook{LifecycleHookPostStart}
+		}
+	}
+
+	migrated, changed := ApplyPresetMigration(legacy)
+	if !changed {
+		t.Fatal("预置链范围修复未触发迁移")
+	}
+	if migrated.PresetVersion != CurrentPresetVersion {
+		t.Fatalf("迁移版本 = %d，期望 %d", migrated.PresetVersion, CurrentPresetVersion)
+	}
+	for _, chain := range migrated.LifecycleChains {
+		if chain.ID == LifecycleChainIterationsAIID {
+			if !reflect.DeepEqual(chain.ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) {
+				t.Fatalf("iterations-ai 迁移范围 = %#v", chain.ApplicableHooks)
+			}
+			return
+		}
+	}
+	t.Fatalf("迁移后缺少 iterations-ai: %#v", migrated.LifecycleChains)
+}
+
+func TestApplyPresetMigrationRestoresMissingDefaultBranchTemplateFromVersionTwo(t *testing.T) {
+	legacy := Default(t.TempDir())
+	legacy.PresetVersion = 2
+	legacy.TaskTemplates = []task.TaskTemplate{}
+	legacy.ActiveTaskTemplateID = ""
+
+	migrated, changed := ApplyPresetMigration(legacy)
+	if !changed {
+		t.Fatal("缺失默认分支模板时应触发迁移")
+	}
+	if migrated.PresetVersion != CurrentPresetVersion {
+		t.Fatalf("迁移版本 = %d，期望 %d", migrated.PresetVersion, CurrentPresetVersion)
+	}
+	if len(migrated.TaskTemplates) != 1 || migrated.TaskTemplates[0].ID != DefaultBranchTaskTemplateID {
+		t.Fatalf("恢复后的模板 = %#v", migrated.TaskTemplates)
+	}
+	if migrated.ActiveTaskTemplateID != DefaultBranchTaskTemplateID {
+		t.Fatalf("恢复后的当前模板 = %q，期望 %q", migrated.ActiveTaskTemplateID, DefaultBranchTaskTemplateID)
 	}
 }
 
@@ -97,7 +204,7 @@ func TestDefaultIncludesDocumentedGitCloneLifecycleCommand(t *testing.T) {
 		if documentation, _ := command["documentation"].(string); !strings.Contains(documentation, "可留空") {
 			t.Fatalf("Git 系统命令文档未说明参数可留空: %#v", command["documentation"])
 		}
-		if !reflect.DeepEqual(command["applicableHooks"], []any{"beforeStart", "beforeEnd", "updateTask"}) {
+		if !reflect.DeepEqual(command["applicableHooks"], []any{"beforeStart", "postStart", "beforeEnd", "updateTask"}) {
 			t.Fatalf("Git 系统命令适用范围 = %#v", command["applicableHooks"])
 		}
 		return

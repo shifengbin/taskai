@@ -192,7 +192,7 @@ describe('TaskTree', () => {
     expect(within(terminalItem).queryByText('空闲', {exact: true})).not.toBeInTheDocument()
   })
 
-  it('为当前选中的任务提供松林夜跑选择态标记', () => {
+  it('为当前选中的任务提供庭院选择态标记', () => {
     render(
       <TaskTree
         {...({
@@ -214,6 +214,33 @@ describe('TaskTree', () => {
     )
 
     expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-selected', 'true')
+  })
+
+  it('庭院任务行保持平面边界', () => {
+    render(
+      <TaskTree
+        {...({
+          tasks: [runningTask],
+          terminals: [],
+          selectedTerminalId: undefined,
+          onSelectTask: vi.fn(),
+          onSelectTerminal: vi.fn(),
+          onCreateTerminal: vi.fn(),
+          onEditTask: vi.fn(),
+          onOpenTaskFolder: vi.fn(),
+          onStartTask: vi.fn(),
+          onFinishTask: vi.fn(),
+          activeStatus: 'running',
+          onChangeStatus: vi.fn(),
+        } as any)}
+      />,
+    )
+
+    const row = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!(row instanceof HTMLElement)) {
+      throw new Error('未找到任务行')
+    }
+    expect(getComputedStyle(row).borderRadius).toBe('0')
   })
 
   it('任务收起时显示聚合状态点，展开后仅展示终端状态点', () => {

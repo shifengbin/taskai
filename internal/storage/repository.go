@@ -101,6 +101,11 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 		changed = true
 	}
 	data.Settings = lifecycleSettings
+	presetSettings, presetChanged := settings.ApplyPresetMigration(data.Settings)
+	if presetChanged {
+		data.Settings = presetSettings
+		changed = true
+	}
 	if data.Tasks == nil {
 		data.Tasks = []task.Task{}
 		changed = true
@@ -437,12 +442,24 @@ func (repository *Repository) SaveSettings(next settings.Settings) (settings.Set
 	if err != nil {
 		return settings.Settings{}, err
 	}
+	templatesProvided := next.TaskTemplates != nil
+	// 生命周期配置只能通过专用接口更新，普通设置快照不能覆盖最新链定义。
+	next.LifecycleCommands = data.Settings.LifecycleCommands
+	next.LifecycleChains = data.Settings.LifecycleChains
+	next.LifecycleDefaultChains = data.Settings.LifecycleDefaultChains
 	validated, err := settings.NormalizeTaskTemplates(next)
 	if err != nil {
 		return settings.Settings{}, err
 	}
 	if err := validateTaskTemplateUpdates(data.Settings, validated, data.Tasks); err != nil {
 		return settings.Settings{}, err
+	}
+	if !templatesProvided {
+		validated.TaskTemplates = append([]task.TaskTemplate(nil), data.Settings.TaskTemplates...)
+		validated.ActiveTaskTemplateID = data.Settings.ActiveTaskTemplateID
+	}
+	if validated.PresetVersion < data.Settings.PresetVersion {
+		validated.PresetVersion = data.Settings.PresetVersion
 	}
 	data.Settings = validated
 	if err := repository.Save(data); err != nil {
@@ -550,6 +567,42 @@ func (repository *Repository) ListLifecycleCommandChains() ([]settings.Lifecycle
 		return nil, err
 	}
 	return append([]settings.LifecycleCommandChain(nil), data.Settings.LifecycleChains...), nil
+}
+
+func (repository *Repository) SaveLifecycleDefaultChain(hook task.LifecycleHook, chainID string) (settings.Settings, error) {
+	if !task.IsLifecycleHook(hook) {
+		return settings.Settings{}, fmt.Errorf("不支持的生命周期钩子: %q", hook)
+	}
+	data, err := repository.Load()
+	if err != nil {
+		return settings.Settings{}, err
+	}
+	defaults := make(map[task.LifecycleHook]string, len(data.Settings.LifecycleDefaultChains))
+	for currentHook, currentChainID := range data.Settings.LifecycleDefaultChains {
+		defaults[currentHook] = currentChainID
+	}
+	chainID = strings.TrimSpace(chainID)
+	if chainID == "" {
+		delete(defaults, hook)
+	} else {
+		index := lifecycleCommandChainIndex(data.Settings.LifecycleChains, chainID)
+		if index < 0 {
+			return settings.Settings{}, fmt.Errorf("生命周期默认链不存在: %q", chainID)
+		}
+		if !lifecycleChainSupportsHook(data.Settings.LifecycleChains[index], hook) {
+			return settings.Settings{}, fmt.Errorf("生命周期命令链 %q 不适用于 %s", data.Settings.LifecycleChains[index].Name, hook)
+		}
+		defaults[hook] = chainID
+	}
+	data.Settings.LifecycleDefaultChains = defaults
+	data.Settings, err = settings.NormalizeLifecycle(data.Settings)
+	if err != nil {
+		return settings.Settings{}, err
+	}
+	if err := repository.Save(data); err != nil {
+		return settings.Settings{}, err
+	}
+	return data.Settings, nil
 }
 
 func (repository *Repository) SaveLifecycleCommandChain(next settings.LifecycleCommandChain) (settings.LifecycleCommandChain, error) {

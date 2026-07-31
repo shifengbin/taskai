@@ -38,10 +38,25 @@ func TestDefaultDataDirectoryUsesApplicationName(t *testing.T) {
 	}
 }
 
+func newAppWithoutActiveTaskTemplate(t *testing.T, dataDirectory string) *App {
+	t.Helper()
+	app := newApp(dataDirectory)
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.TaskTemplates = []task.TaskTemplate{}
+	current.ActiveTaskTemplateID = ""
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	return app
+}
+
 func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	t.Parallel()
 
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("整理文档", "在工作目录中完成", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
@@ -82,7 +97,7 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 }
 
 func TestAppRegistersRunningTaskAndClearsRealtimeStatusWhenFinished(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("实时状态任务", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
@@ -99,7 +114,7 @@ func TestAppRegistersRunningTaskAndClearsRealtimeStatusWhenFinished(t *testing.T
 }
 
 func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -111,9 +126,7 @@ func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
 		ID: "fail-before-start", Name: "失败前置链", CommandIDs: []string{"fail"},
 	})
 	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "fail-before-start"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
 		return lifecycle.CommandResult{StandardError: []byte("拒绝开始")}, errors.New("exit status 1")
 	}))
@@ -133,8 +146,68 @@ func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
 	}
 }
 
-func TestAppPostStartFailureKeepsTaskRunning(t *testing.T) {
+func TestAppPreservesSavedLifecycleChainWhenTaskStartsAfterStaleSettingsSave(t *testing.T) {
 	app := newApp(t.TempDir())
+	stale, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+
+	command, err := app.SaveLifecycleCommand(settings.LifecycleCommand{
+		Name: "初始化项目", Command: "prepare", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommand() error = %v", err)
+	}
+	chain, err := app.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
+		Name: "项目初始化", Commands: []settings.LifecycleCommandReference{{CommandID: command.ID}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
+	}
+	if _, err := app.SaveLifecycleDefaultChain(task.LifecycleHookBeforeStart, chain.ID); err != nil {
+		t.Fatalf("SaveLifecycleDefaultChain() error = %v", err)
+	}
+
+	created, err := app.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains("初始化任务", "", task.DefaultColor, nil, map[string]any{"branch": "main"}, map[task.LifecycleHook]string{
+		task.LifecycleHookBeforeStart: chain.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndLifecycleChains() error = %v", err)
+	}
+	stale.ActiveTaskStatus = settings.TaskStatusPending
+	if _, err := app.SaveSettings(stale); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	chains, err := app.ListLifecycleCommandChains()
+	if err != nil {
+		t.Fatalf("ListLifecycleCommandChains() error = %v", err)
+	}
+	foundChain := false
+	for _, current := range chains {
+		if current.ID == chain.ID {
+			foundChain = true
+			break
+		}
+	}
+	if !foundChain {
+		t.Fatalf("任务开始前命令链已丢失: %#v", chains)
+	}
+
+	calls := 0
+	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
+		calls++
+		return lifecycle.CommandResult{Output: []byte("准备完成")}, nil
+	}))
+	started := startTaskAndWait(t, app, created.ID)
+	if started.Status != task.StatusRunning || calls != 1 {
+		t.Fatalf("命令链未执行并开始任务: task=%#v, calls=%d", started, calls)
+	}
+}
+
+func TestAppPostStartFailureKeepsTaskRunning(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	configureLifecycleFailure(t, app, task.LifecycleHookPostStart)
 	created, err := app.CreateTask("任务", "", task.DefaultColor)
 	if err != nil {
@@ -152,7 +225,7 @@ func TestAppPostStartFailureKeepsTaskRunning(t *testing.T) {
 }
 
 func TestAppBeforeEndFailureKeepsTaskRunning(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	configureLifecycleFailure(t, app, task.LifecycleHookBeforeEnd)
 	created, err := app.CreateTask("任务", "", task.DefaultColor)
 	if err != nil {
@@ -171,7 +244,7 @@ func TestAppBeforeEndFailureKeepsTaskRunning(t *testing.T) {
 }
 
 func TestAppPostEndFailureKeepsTaskCompleted(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	configureLifecycleFailure(t, app, task.LifecycleHookPostEnd)
 	created, err := app.CreateTask("任务", "", task.DefaultColor)
 	if err != nil {
@@ -190,7 +263,7 @@ func TestAppPostEndFailureKeepsTaskCompleted(t *testing.T) {
 }
 
 func TestAppUpdateTaskFailureDoesNotRollbackSavedDetails(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	configureLifecycleFailure(t, app, task.LifecycleHookUpdateTask)
 	created, err := app.CreateTask("任务", "", task.DefaultColor)
 	if err != nil {
@@ -209,7 +282,7 @@ func TestAppUpdateTaskFailureDoesNotRollbackSavedDetails(t *testing.T) {
 }
 
 func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	current, err := app.GetSettings()
 	if err != nil {
@@ -227,9 +300,7 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 	)
 	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "before-chain"
 	current.LifecycleDefaultChains[task.LifecycleHookPostEnd] = "post-chain"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	directories := make(map[string]string)
 	baseURL := ""
@@ -265,7 +336,7 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 }
 
 func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -286,9 +357,7 @@ func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
 		ID: "template-input", Name: "模板输入", Commands: []settings.LifecycleCommandReference{{CommandID: "template-input", Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
 	})
 	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "template-input"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	payloads := make(chan map[string]any, 1)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(invocation lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
@@ -316,7 +385,7 @@ func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
 }
 
 func TestAppFreezesTaskTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -349,9 +418,7 @@ func TestAppFreezesTaskTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
 		},
 	})
 	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "clone-template"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"branch": "release/1.2"})
 	if err != nil {
@@ -477,7 +544,7 @@ func TestAppManifestFilePreservesLifecycleFailureSemantics(t *testing.T) {
 
 func newManifestLifecycleApp(t *testing.T, hook task.LifecycleHook, includeCreateWorkspace bool) *App {
 	t.Helper()
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -497,9 +564,7 @@ func newManifestLifecycleApp(t *testing.T, hook task.LifecycleHook, includeCreat
 		ID: chainID, Name: "生成清单文件", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHook(hook)}, Commands: commands,
 	})
 	current.LifecycleDefaultChains[settings.LifecycleHook(hook)] = chainID
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 	return app
 }
 
@@ -573,7 +638,7 @@ func decodeAppManifestFile(t *testing.T, path string) appManifestFile {
 
 func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testing.T) {
 	t.Run("开始前失败阻止任务启动", func(t *testing.T) {
-		app := newApp(t.TempDir())
+		app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 		current, err := app.GetSettings()
 		if err != nil {
 			t.Fatalf("GetSettings() error = %v", err)
@@ -585,9 +650,7 @@ func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testin
 			}},
 		})
 		current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "clone-before-start"
-		if _, err := app.SaveSettings(current); err != nil {
-			t.Fatalf("SaveSettings() error = %v", err)
-		}
+		saveSettingsWithLifecycleConfiguration(t, app, current)
 
 		created, err := app.CreateTask("初始化失败", "", task.DefaultColor)
 		if err != nil {
@@ -605,7 +668,7 @@ func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testin
 	})
 
 	t.Run("开始后失败可重试", func(t *testing.T) {
-		app := newApp(t.TempDir())
+		app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 		current, err := app.GetSettings()
 		if err != nil {
 			t.Fatalf("GetSettings() error = %v", err)
@@ -618,9 +681,7 @@ func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testin
 			}},
 		})
 		current.LifecycleDefaultChains[task.LifecycleHookPostStart] = "clone-post-start"
-		if _, err := app.SaveSettings(current); err != nil {
-			t.Fatalf("SaveSettings() error = %v", err)
-		}
+		saveSettingsWithLifecycleConfiguration(t, app, current)
 
 		created, err := app.CreateTask("可重试初始化", "", task.DefaultColor)
 		if err != nil {
@@ -649,7 +710,8 @@ func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testin
 }
 
 func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -664,6 +726,8 @@ func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
 		},
 	}}
 	current.ActiveTaskTemplateID = "release"
+	current.HTTPServiceEnabled = true
+	current.StatusManagementHTTPPort = availableLoopbackPort(t)
 	current.LifecycleCommands = append(current.LifecycleCommands, settings.LifecycleCommand{
 		ID: "capture-template-environment", Kind: settings.LifecycleCommandKindCustom, Name: "读取模板变量", Command: "capture", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
 	})
@@ -674,8 +738,9 @@ func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
 		}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
 	})
 	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "capture-template-environment"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
+	saveSettingsWithLifecycleConfiguration(t, app, current)
+	if app.statusHTTP.APIURL() == "" {
+		t.Fatal("独立 HTTP 服务未启动")
 	}
 
 	environments := make(chan []string, 1)
@@ -723,6 +788,67 @@ func TestLifecycleChainAppendsSavedReferenceArgumentsWhenChainArgumentsAreDisabl
 	}
 }
 
+func TestLifecyclePresetChainsResolveWithConfiguredParameters(t *testing.T) {
+	current := settings.Default(t.TempDir())
+
+	iterations, iterationCommands, err := lifecycleChain(current, settings.LifecycleChainIterationsAIID)
+	if err != nil {
+		t.Fatalf("lifecycleChain(iterations-ai) error = %v", err)
+	}
+	if iterations.Name != "iterations-ai" || !reflect.DeepEqual(iterations.ApplicableHooks, []settings.LifecycleHook{settings.LifecycleHookBeforeStart}) {
+		t.Fatalf("iterations-ai 链 = %#v", iterations)
+	}
+	if got := lifecycleCommandIDsAndArguments(iterationCommands); !reflect.DeepEqual(got, []struct {
+		ID        string
+		Arguments []string
+	}{
+		{ID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+		{ID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + settings.IterationsAIRepository}},
+		{ID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
+		{ID: settings.LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+	}) {
+		t.Fatalf("iterations-ai 命令 = %#v", got)
+	}
+
+	updateRepositories, updateCommands, err := lifecycleChain(current, settings.LifecycleChainUpdateRepositoriesID)
+	if err != nil {
+		t.Fatalf("lifecycleChain(更新仓库) error = %v", err)
+	}
+	if updateRepositories.Name != "更新仓库" || !reflect.DeepEqual(updateRepositories.ApplicableHooks, []settings.LifecycleHook{settings.LifecycleHookUpdateTask}) {
+		t.Fatalf("更新仓库链 = %#v", updateRepositories)
+	}
+	if got := lifecycleCommandIDsAndArguments(updateCommands); !reflect.DeepEqual(got, []struct {
+		ID        string
+		Arguments []string
+	}{
+		{ID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
+		{ID: settings.LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+	}) {
+		t.Fatalf("更新仓库命令 = %#v", got)
+	}
+}
+
+func lifecycleCommandIDsAndArguments(commands []settings.LifecycleCommand) []struct {
+	ID        string
+	Arguments []string
+} {
+	values := make([]struct {
+		ID        string
+		Arguments []string
+	}, len(commands))
+	for index, command := range commands {
+		arguments := command.Arguments
+		if arguments == nil {
+			arguments = []string{}
+		}
+		values[index] = struct {
+			ID        string
+			Arguments []string
+		}{ID: command.ID, Arguments: arguments}
+	}
+	return values
+}
+
 func configureLifecycleFailure(t *testing.T, app *App, hook task.LifecycleHook) {
 	t.Helper()
 	current, err := app.GetSettings()
@@ -738,16 +864,14 @@ func configureLifecycleFailure(t *testing.T, app *App, hook task.LifecycleHook) 
 		ID: chainID, Name: "失败链", CommandIDs: []string{commandID},
 	})
 	current.LifecycleDefaultChains[hook] = chainID
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
 		return lifecycle.CommandResult{StandardError: []byte("失败")}, errors.New("exit status 1")
 	}))
 }
 
 func TestAppRunsUpdateTaskHookOnlyForRunningTask(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -759,9 +883,7 @@ func TestAppRunsUpdateTaskHookOnlyForRunningTask(t *testing.T) {
 		ID: "update-chain", Name: "更新链", CommandIDs: []string{"record-update"},
 	})
 	current.LifecycleDefaultChains[task.LifecycleHookUpdateTask] = "update-chain"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	calls := 0
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
@@ -798,7 +920,7 @@ func TestAppRunsUpdateTaskHookOnlyForRunningTask(t *testing.T) {
 }
 
 func TestAppRetriesFailedLifecycleChainFromFirstCommand(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -810,9 +932,7 @@ func TestAppRetriesFailedLifecycleChainFromFirstCommand(t *testing.T) {
 		ID: "retry-before-start", Name: "可重试开始链", CommandIDs: []string{"retryable"},
 	})
 	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "retry-before-start"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	fail := true
 	calls := 0
@@ -857,7 +977,7 @@ func TestAppRetriesFailedLifecycleChainFromFirstCommand(t *testing.T) {
 
 func TestAppSchedulesLifecycleCommandChainsInBackground(t *testing.T) {
 	t.Run("开始任务", func(t *testing.T) {
-		app := newApp(t.TempDir())
+		app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 		chainID, entered, release := configureBlockingLifecycleHook(t, app, task.LifecycleHookBeforeStart)
 		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookBeforeStart, chainID)
 
@@ -873,7 +993,7 @@ func TestAppSchedulesLifecycleCommandChainsInBackground(t *testing.T) {
 	})
 
 	t.Run("更新任务", func(t *testing.T) {
-		app := newApp(t.TempDir())
+		app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 		chainID, entered, release := configureBlockingLifecycleHook(t, app, task.LifecycleHookUpdateTask)
 		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookUpdateTask, chainID)
 		if _, err := app.tasks.StartTask(created.ID); err != nil {
@@ -892,7 +1012,7 @@ func TestAppSchedulesLifecycleCommandChainsInBackground(t *testing.T) {
 	})
 
 	t.Run("结束任务", func(t *testing.T) {
-		app := newApp(t.TempDir())
+		app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 		chainID, entered, release := configureBlockingLifecycleHook(t, app, task.LifecycleHookBeforeEnd)
 		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookBeforeEnd, chainID)
 		if _, err := app.tasks.StartTask(created.ID); err != nil {
@@ -911,7 +1031,7 @@ func TestAppSchedulesLifecycleCommandChainsInBackground(t *testing.T) {
 	})
 
 	t.Run("重试失败链", func(t *testing.T) {
-		app := newApp(t.TempDir())
+		app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 		chainID, entered, release := configureRetryLifecycleHook(t, app, task.LifecycleHookBeforeStart)
 		created := createTaskWithLifecycleChain(t, app, task.LifecycleHookBeforeStart, chainID)
 		if _, err := app.StartTask(created.ID); err != nil {
@@ -934,7 +1054,7 @@ func TestAppSchedulesLifecycleCommandChainsInBackground(t *testing.T) {
 }
 
 func TestAppRecordsDeletedLifecycleChainAsFailed(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("缺失链任务", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
@@ -1004,6 +1124,71 @@ func configureRetryLifecycleHook(t *testing.T, app *App, hook task.LifecycleHook
 	return chainID, entered, release
 }
 
+func saveSettingsWithLifecycleConfiguration(t *testing.T, app *App, next settings.Settings) settings.Settings {
+	t.Helper()
+	desired, err := settings.NormalizeLifecycle(next)
+	if err != nil {
+		t.Fatalf("NormalizeLifecycle() error = %v", err)
+	}
+	next.LifecycleCommands = nil
+	next.LifecycleChains = nil
+	next.LifecycleDefaultChains = nil
+	if _, err := app.SaveSettings(next); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	commands, err := app.ListLifecycleCommands()
+	if err != nil {
+		t.Fatalf("ListLifecycleCommands() error = %v", err)
+	}
+	commandsByID := make(map[string]settings.LifecycleCommand, len(commands))
+	for _, command := range commands {
+		commandsByID[command.ID] = command
+	}
+	for _, command := range desired.LifecycleCommands {
+		if command.Kind != settings.LifecycleCommandKindCustom || reflect.DeepEqual(commandsByID[command.ID], command) {
+			continue
+		}
+		if _, err := app.SaveLifecycleCommand(command); err != nil {
+			t.Fatalf("SaveLifecycleCommand() error = %v", err)
+		}
+	}
+
+	chains, err := app.ListLifecycleCommandChains()
+	if err != nil {
+		t.Fatalf("ListLifecycleCommandChains() error = %v", err)
+	}
+	chainsByID := make(map[string]settings.LifecycleCommandChain, len(chains))
+	for _, chain := range chains {
+		chainsByID[chain.ID] = chain
+	}
+	for _, chain := range desired.LifecycleChains {
+		if reflect.DeepEqual(chainsByID[chain.ID], chain) {
+			continue
+		}
+		if _, err := app.SaveLifecycleCommandChain(chain); err != nil {
+			t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
+		}
+	}
+
+	for _, hook := range []task.LifecycleHook{
+		task.LifecycleHookBeforeStart,
+		task.LifecycleHookPostStart,
+		task.LifecycleHookBeforeEnd,
+		task.LifecycleHookPostEnd,
+		task.LifecycleHookUpdateTask,
+	} {
+		if _, err := app.SaveLifecycleDefaultChain(hook, desired.LifecycleDefaultChains[hook]); err != nil {
+			t.Fatalf("SaveLifecycleDefaultChain() error = %v", err)
+		}
+	}
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	return current
+}
+
 func configureLifecycleTestChain(t *testing.T, app *App, hook task.LifecycleHook, chainID, commandID string) {
 	t.Helper()
 	current, err := app.GetSettings()
@@ -1016,9 +1201,7 @@ func configureLifecycleTestChain(t *testing.T, app *App, hook task.LifecycleHook
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: chainID, Name: "阻塞链", Commands: []settings.LifecycleCommandReference{{CommandID: commandID, Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHook(hook)},
 	})
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 }
 
 func createTaskWithLifecycleChain(t *testing.T, app *App, hook task.LifecycleHook, chainID string) task.Task {
@@ -1106,7 +1289,7 @@ func runGitTestCommand(t *testing.T, arguments ...string) string {
 }
 
 func TestAppRecordsFailingLifecycleCommandDetails(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -1119,9 +1302,7 @@ func TestAppRecordsFailingLifecycleCommandDetails(t *testing.T) {
 		ID: "two-steps", Name: "两步准备", CommandIDs: []string{"first", "second"},
 	})
 	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "two-steps"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(invocation lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
 		if invocation.Command == "second" {
 			return lifecycle.CommandResult{StandardError: []byte("失败")}, errors.New("exit status 1")
@@ -1146,7 +1327,7 @@ func TestAppRecordsFailingLifecycleCommandDetails(t *testing.T) {
 }
 
 func TestAppUpdatesLifecycleChainSelectionsOnlyForPendingTasks(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	selected := map[task.LifecycleHook]string{
 		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
 	}
@@ -1183,7 +1364,7 @@ func TestAppUpdatesLifecycleChainSelectionsOnlyForPendingTasks(t *testing.T) {
 }
 
 func TestAppCreatesAndUpdatesTaskTemplateFieldsWithExtraInfoAndLifecycleChains(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -1197,9 +1378,7 @@ func TestAppCreatesAndUpdatesTaskTemplateFieldsWithExtraInfoAndLifecycleChains(t
 		},
 	}}
 	current.ActiveTaskTemplateID = "release"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	created, err := app.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
 		"发布", "", task.DefaultColor, nil,
@@ -1233,7 +1412,7 @@ func TestAppCreatesAndUpdatesTaskTemplateFieldsWithExtraInfoAndLifecycleChains(t
 }
 
 func TestAppHTTPTaskDetailIncludesLifecycleConfiguration(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	selected := map[task.LifecycleHook]string{
 		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
 	}
@@ -1262,7 +1441,7 @@ func TestAppHTTPTaskDetailIncludesLifecycleConfiguration(t *testing.T) {
 }
 
 func TestAppGetsCurrentLifecycleCommandInput(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	backend := &activeTerminalBackend{}
 	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
@@ -1345,7 +1524,7 @@ func TestAppGetsCurrentLifecycleCommandInput(t *testing.T) {
 }
 
 func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -1359,9 +1538,7 @@ func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 		},
 	}}
 	current.ActiveTaskTemplateID = "release"
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("SaveSettings() error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "staging"})
 	if err != nil {
 		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
@@ -1392,9 +1569,7 @@ func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 	}
 
 	current.ActiveTaskTemplateID = ""
-	if _, err := app.SaveSettings(current); err != nil {
-		t.Fatalf("保存未启用模板设置 error = %v", err)
-	}
+	saveSettingsWithLifecycleConfiguration(t, app, current)
 	detail, found, err = app.httpTask(created.ID)
 	if err != nil || !found {
 		t.Fatalf("停用模板后的 httpTask() = (%#v, %t, %v)", detail, found, err)
@@ -1405,7 +1580,7 @@ func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 }
 
 func TestAppExposesLifecycleCommandAndChainManagementBindings(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	commands, err := app.ListLifecycleCommands()
 	if err != nil || len(commands) < 2 {
 		t.Fatalf("ListLifecycleCommands() = %#v, %v", commands, err)
@@ -1443,7 +1618,7 @@ func TestAppExposesLifecycleCommandAndChainManagementBindings(t *testing.T) {
 }
 
 func TestAppRejectsTaskActionsWhileLifecycleChainIsLocked(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("任务", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
@@ -1476,7 +1651,7 @@ func TestAppRejectsTaskActionsWhileLifecycleChainIsLocked(t *testing.T) {
 }
 
 func TestAppSetsRunningTaskShelved(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("执行中任务", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
@@ -1499,7 +1674,7 @@ func TestAppSetsRunningTaskShelved(t *testing.T) {
 }
 
 func TestAppMapsTerminalExitReasonsToRealtimeStatus(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	app.realtime.RegisterTerminal("task-1", "terminal-1")
 	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "exited", ExitReason: terminal.ExitReasonUnexpected})
 	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusError {
@@ -1513,7 +1688,7 @@ func TestAppMapsTerminalExitReasonsToRealtimeStatus(t *testing.T) {
 }
 
 func TestAppConfiguresHTTPStatusServiceAtomically(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	initialPort := availableLoopbackPort(t)
 	initial, err := app.SaveSettings(settings.Settings{
@@ -1558,7 +1733,7 @@ func TestAppConfiguresHTTPStatusServiceAtomically(t *testing.T) {
 }
 
 func TestAppConfiguresIndependentHTTPServiceAndKeepsStatusHTTPAutomatic(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	port := availableLoopbackPort(t)
 	base := settings.Settings{
@@ -1595,7 +1770,7 @@ func TestAppConfiguresIndependentHTTPServiceAndKeepsStatusHTTPAutomatic(t *testi
 }
 
 func TestAppKeepsHTTPServiceWhenSavingActiveTaskStatus(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	initial := settings.Settings{
 		WorkspaceRoot:            t.TempDir(),
@@ -1619,7 +1794,7 @@ func TestAppKeepsHTTPServiceWhenSavingActiveTaskStatus(t *testing.T) {
 }
 
 func TestAppHTTPServiceListsTasksByStatusAndReturnsTaskDetails(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	if _, err := app.SaveSettings(settings.Settings{
 		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth,
@@ -1672,7 +1847,7 @@ func TestAppHTTPServiceListsTasksByStatusAndReturnsTaskDetails(t *testing.T) {
 }
 
 func TestAppManagesExtraInfoTemplatesThroughBindings(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.SaveExtraInfoTemplate(task.ExtraInfoTemplate{
 		Catalogue: "deployment", DisplayName: "部署信息", Fields: []task.ExtraInfoField{{Key: "environment", DisplayName: "环境", DefaultValue: "test"}},
 		Parameters: []task.ExtraInfoParameterDefinition{{Key: "region", DisplayName: "区域", Required: true}},
@@ -1707,7 +1882,7 @@ func TestAppManagesExtraInfoTemplatesThroughBindings(t *testing.T) {
 }
 
 func TestAppCreatesAndUpdatesTaskExtraInfoSnapshots(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	template := gitTemplateForTest(t, app)
 	info, err := task.NewExtraInfo(template, map[string]string{
 		"name":       "API 服务",
@@ -1765,7 +1940,7 @@ func TestAppCreatesAndUpdatesTaskExtraInfoSnapshots(t *testing.T) {
 }
 
 func TestAppUsesInformationParametersAsProtectedTaskDefaults(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	template := gitTemplateForTest(t, app)
 	info, err := app.SaveExtraInfo(task.ExtraInfo{
 		TemplateID: template.ID,
@@ -1811,7 +1986,7 @@ func TestAppUsesInformationParametersAsProtectedTaskDefaults(t *testing.T) {
 }
 
 func TestAppHTTPTaskDetailFlattensExtraInfoByCatalogue(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	if _, err := app.SaveSettings(settings.Settings{
 		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth,
@@ -1866,7 +2041,7 @@ func TestAppHTTPTaskDetailFlattensExtraInfoByCatalogue(t *testing.T) {
 }
 
 func TestAppHTTPTaskDetailIncludesActiveTerminalDetails(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	backend := &activeTerminalBackend{}
 	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
@@ -1974,7 +2149,7 @@ func TestAppHTTPTaskDetailIncludesActiveTerminalDetails(t *testing.T) {
 }
 
 func TestAppHTTPTaskDetailReturnsCheckboxParameterAsBoolean(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	if _, err := app.SaveSettings(settings.Settings{
 		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth,
@@ -2050,8 +2225,8 @@ func taskParameterValue(parameters []task.ExtraInfoParameter, key string) string
 	return ""
 }
 
-func TestAppBuildsTerminalEnvironmentForEveryStatusMode(t *testing.T) {
-	app := newApp(t.TempDir())
+func TestAppBuildsTerminalEnvironmentWhenHTTPServiceIsListening(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	created, err := app.CreateTask("终端环境", "", task.DefaultColor)
 	if err != nil {
@@ -2062,11 +2237,36 @@ func TestAppBuildsTerminalEnvironmentForEveryStatusMode(t *testing.T) {
 	if !containsEnvironmentValue(titleChangeEnvironment, "TASKAI_TASK_ID="+started.ID) || !containsEnvironmentValue(titleChangeEnvironment, "TASKAI_TERMINAL_ID=terminal-1") {
 		t.Fatalf("标题变化模式终端环境 = %#v，期望包含任务和终端 ID", titleChangeEnvironment)
 	}
-	if containsEnvironmentValue(titleChangeEnvironment, "TASKAI_STATUS_API="+app.statusHTTP.APIURL()) {
+	if containsEnvironmentValue(titleChangeEnvironment, "TASKAI_STATUS_API=") {
 		t.Fatalf("标题变化模式终端环境不应包含 HTTP 地址: %#v", titleChangeEnvironment)
 	}
 
 	port := availableLoopbackPort(t)
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            started.WorkspaceRoot,
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		StatusManagementMode:     settings.StatusManagementModeTitleChange,
+		HTTPServiceEnabled:       true,
+		StatusManagementHTTPPort: port,
+	}); err != nil {
+		t.Fatalf("保存独立 HTTP 服务设置: %v", err)
+	}
+	independentHTTPEnvironment := app.terminalStatusEnvironment(started.ID, "terminal-independent-http")
+	assertStatusEnvironment(t, independentHTTPEnvironment, app.statusHTTP.APIURL(), started.ID, "terminal-independent-http")
+
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            started.WorkspaceRoot,
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		StatusManagementMode:     settings.StatusManagementModeTitleChange,
+		StatusManagementHTTPPort: port,
+	}); err != nil {
+		t.Fatalf("关闭独立 HTTP 服务: %v", err)
+	}
+	closedServiceEnvironment := app.terminalStatusEnvironment(started.ID, "terminal-service-closed")
+	if containsEnvironmentValue(closedServiceEnvironment, "TASKAI_STATUS_API=") {
+		t.Fatalf("服务关闭后的新终端环境不应包含 HTTP 地址: %#v", closedServiceEnvironment)
+	}
+
 	if _, err := app.SaveSettings(settings.Settings{
 		WorkspaceRoot:            started.WorkspaceRoot,
 		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
@@ -2075,10 +2275,8 @@ func TestAppBuildsTerminalEnvironmentForEveryStatusMode(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("保存 HTTP 状态设置: %v", err)
 	}
-	environment := app.terminalStatusEnvironment(started.ID, "terminal-1")
-	if !containsEnvironmentValue(environment, "TASKAI_TASK_ID="+started.ID) || !containsEnvironmentValue(environment, "TASKAI_TERMINAL_ID=terminal-1") || !containsEnvironmentValue(environment, "TASKAI_STATUS_API="+app.statusHTTP.APIURL()) {
-		t.Fatalf("HTTP 模式终端环境 = %#v", environment)
-	}
+	httpStatusEnvironment := app.terminalStatusEnvironment(started.ID, "terminal-http-status")
+	assertStatusEnvironment(t, httpStatusEnvironment, app.statusHTTP.APIURL(), started.ID, "terminal-http-status")
 }
 
 func TestAppInjectsTaskIDIntoBackgroundCommandsAndScripts(t *testing.T) {
@@ -2088,6 +2286,19 @@ func TestAppInjectsTaskIDIntoBackgroundCommandsAndScripts(t *testing.T) {
 		AfterScript:  &settings.TaskScript{Script: "cleanup"},
 	}
 	app, started := runningAppWithTaskMenuItem(t, item)
+	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("读取菜单命令设置: %v", err)
+	}
+	current.HTTPServiceEnabled = true
+	current.StatusManagementHTTPPort = availableLoopbackPort(t)
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("启用独立 HTTP 服务: %v", err)
+	}
+	if app.statusHTTP.APIURL() == "" {
+		t.Fatal("独立 HTTP 服务未启动")
+	}
 	mainWaiter := &controlledCommandWaiter{done: make(chan error, 1)}
 	afterStarted := make(chan struct{})
 	var beforeEnvironment, commandEnvironment, afterEnvironment []string
@@ -2125,12 +2336,12 @@ func TestAppInjectsTaskIDIntoBackgroundCommandsAndScripts(t *testing.T) {
 	}
 }
 
-func TestAppInjectsHTTPStatusEnvironmentForNormalAndCommandTerminals(t *testing.T) {
+func TestAppInjectsStatusAPIIntoEveryTerminalEntryWhenHTTPServiceIsListening(t *testing.T) {
 	port := availableLoopbackPort(t)
 	item := settings.TaskMenuItem{
 		ID: "custom-status-command", Kind: settings.TaskMenuItemKindCommand, Name: "状态命令", Command: "status-command", ShowTerminal: true,
 	}
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
 	backend := &capturingTerminalBackend{}
 	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
@@ -2138,10 +2349,11 @@ func TestAppInjectsHTTPStatusEnvironmentForNormalAndCommandTerminals(t *testing.
 		WorkspaceRoot:            t.TempDir(),
 		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
 		TaskMenuItems:            []settings.TaskMenuItem{item},
-		StatusManagementMode:     settings.StatusManagementModeHTTP,
+		StatusManagementMode:     settings.StatusManagementModeTitleChange,
+		HTTPServiceEnabled:       true,
 		StatusManagementHTTPPort: port,
 	}); err != nil {
-		t.Fatalf("保存 HTTP 状态设置: %v", err)
+		t.Fatalf("保存独立 HTTP 服务设置: %v", err)
 	}
 	created, err := app.CreateTask("状态环境", "", task.DefaultColor)
 	if err != nil {
@@ -2153,6 +2365,10 @@ func TestAppInjectsHTTPStatusEnvironmentForNormalAndCommandTerminals(t *testing.
 	if err != nil {
 		t.Fatalf("创建普通终端: %v", err)
 	}
+	directCommand, err := app.CreateCommandTerminal(started.ID, "direct-status-command", nil, 100, 32)
+	if err != nil {
+		t.Fatalf("创建显示终端命令: %v", err)
+	}
 	command, err := app.ExecuteTaskMenuCommand(started.ID, item.ID, 100, 32)
 	if err != nil {
 		t.Fatalf("创建显示终端命令: %v", err)
@@ -2163,7 +2379,11 @@ func TestAppInjectsHTTPStatusEnvironmentForNormalAndCommandTerminals(t *testing.
 
 	initialNormalEnvironment := backend.request(normal.ID).Environment
 	assertStatusEnvironment(t, initialNormalEnvironment, app.statusHTTP.APIURL(), started.ID, normal.ID)
+	assertStatusEnvironment(t, backend.request(directCommand.ID).Environment, app.statusHTTP.APIURL(), started.ID, directCommand.ID)
 	assertStatusEnvironment(t, backend.request(command.Terminal.ID).Environment, app.statusHTTP.APIURL(), started.ID, command.Terminal.ID)
+	if request := backend.request(directCommand.ID); request.Command != "direct-status-command" {
+		t.Fatalf("直接显示终端命令 = %q，期望 direct-status-command", request.Command)
+	}
 	if request := backend.request(command.Terminal.ID); request.Command != "status-command" {
 		t.Fatalf("显示终端命令 = %q，期望 status-command", request.Command)
 	}
@@ -2183,7 +2403,7 @@ func TestAppInjectsHTTPStatusEnvironmentForNormalAndCommandTerminals(t *testing.
 }
 
 func TestAppRegistersRealtimeTerminalBeforeStartingProcess(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	backend := &capturingTerminalBackend{}
 	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
 	created, err := app.CreateTask("启动注册", "", task.DefaultColor)
@@ -2203,7 +2423,7 @@ func TestAppRegistersRealtimeTerminalBeforeStartingProcess(t *testing.T) {
 }
 
 func TestAppReordersTasksWithinStatus(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	first, err := app.CreateTask("第一个待办", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("创建第一个任务: %v", err)
@@ -2224,7 +2444,7 @@ func TestAppReordersTasksWithinStatus(t *testing.T) {
 }
 
 func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("打开目录", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
@@ -2245,7 +2465,7 @@ func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
 }
 
 func TestRunTaskCommandUsesRunningTaskWorkspace(t *testing.T) {
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("运行命令", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("创建任务: %v", err)
@@ -2628,7 +2848,7 @@ func TestTaskScriptProcessHelper(t *testing.T) {
 
 func runningAppWithTaskMenuItem(t *testing.T, item settings.TaskMenuItem) (*App, task.Task) {
 	t.Helper()
-	app := newApp(t.TempDir())
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	if _, err := app.SaveSettings(settings.Settings{
 		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth, TaskMenuItems: []settings.TaskMenuItem{item},
 	}); err != nil {

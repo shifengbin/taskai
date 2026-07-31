@@ -187,6 +187,7 @@ export namespace settings {
 	    lifecycleDefaultChains: Record<string, string>;
 	    taskTemplates: task.TaskTemplate[];
 	    activeTaskTemplateId: string;
+	    presetVersion: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -208,6 +209,7 @@ export namespace settings {
 	        this.lifecycleDefaultChains = source["lifecycleDefaultChains"];
 	        this.taskTemplates = this.convertValues(source["taskTemplates"], task.TaskTemplate);
 	        this.activeTaskTemplateId = source["activeTaskTemplateId"];
+	        this.presetVersion = source["presetVersion"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

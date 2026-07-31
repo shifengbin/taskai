@@ -147,8 +147,8 @@ func TestCommandChainRunnerClonesSpecifiedRepositoryDirectlyToTarget(t *testing.
 		t.Fatalf("指定仓库克隆未原样传递标准输入: %q", output)
 	}
 	want := []GitInvocation{
-		{Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/template.git", "refs/heads/release/1.2"}},
-		{Arguments: []string{"clone", "--branch", "release/1.2", "--", "https://example.com/template.git", filepath.Join(workspacePath, "template")}},
+		{Directory: workspacePath, Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/template.git", "refs/heads/release/1.2"}},
+		{Directory: workspacePath, Arguments: []string{"clone", "--branch", "release/1.2", "--", "https://example.com/template.git", filepath.Join(workspacePath, "template")}},
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("Git 调用 = %#v，期望 %#v", calls, want)
@@ -275,8 +275,8 @@ func TestCommandChainRunnerComposesSpecifiedRepositoryAndGitInfoCloneInOrder(t *
 		t.Fatalf("Run() error = %v", err)
 	}
 	want := []GitInvocation{
-		{Arguments: []string{"clone", "--", "https://example.com/template.git", filepath.Join(workspacePath, "template")}},
-		{Arguments: []string{"clone", "--", "https://example.com/api.git", filepath.Join(workspacePath, "repositories", "api")}},
+		{Directory: workspacePath, Arguments: []string{"clone", "--", "https://example.com/template.git", filepath.Join(workspacePath, "template")}},
+		{Directory: filepath.Join(workspacePath, "repositories"), Arguments: []string{"clone", "--", "https://example.com/api.git", filepath.Join(workspacePath, "repositories", "api")}},
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("组合 Git 调用 = %#v，期望 %#v", calls, want)
@@ -380,10 +380,10 @@ func TestCommandChainRunnerClonesGitRepositoriesForRemoteAndLocalBranches(t *tes
 		t.Fatalf("Git 命令输出 = %q，期望原样透传", output)
 	}
 	want := []GitInvocation{
-		{Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/api.git", "refs/heads/release"}},
-		{Arguments: []string{"clone", "--branch", "release", "--", "https://example.com/api.git", filepath.Join(workspacePath, "repositories", "api")}},
-		{Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/web.git", "refs/heads/feature/local"}},
-		{Arguments: []string{"clone", "--", "https://example.com/web.git", filepath.Join(workspacePath, "repositories", "web")}},
+		{Directory: filepath.Join(workspacePath, "repositories"), Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/api.git", "refs/heads/release"}},
+		{Directory: filepath.Join(workspacePath, "repositories"), Arguments: []string{"clone", "--branch", "release", "--", "https://example.com/api.git", filepath.Join(workspacePath, "repositories", "api")}},
+		{Directory: filepath.Join(workspacePath, "repositories"), Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/web.git", "refs/heads/feature/local"}},
+		{Directory: filepath.Join(workspacePath, "repositories"), Arguments: []string{"clone", "--", "https://example.com/web.git", filepath.Join(workspacePath, "repositories", "web")}},
 		{Directory: filepath.Join(workspacePath, "repositories", "web"), Arguments: []string{"switch", "--create", "feature/local"}},
 	}
 	if !reflect.DeepEqual(calls, want) {

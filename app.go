@@ -365,46 +365,7 @@ func (app *App) DeleteLifecycleCommandChain(chainID string) error {
 }
 
 func (app *App) SaveLifecycleDefaultChain(hook task.LifecycleHook, chainID string) (settings.Settings, error) {
-	if !task.IsLifecycleHook(hook) {
-		return settings.Settings{}, fmt.Errorf("不支持的生命周期钩子: %q", hook)
-	}
-	current, err := app.GetSettings()
-	if err != nil {
-		return settings.Settings{}, err
-	}
-	defaults := make(map[task.LifecycleHook]string, len(current.LifecycleDefaultChains))
-	for currentHook, currentChainID := range current.LifecycleDefaultChains {
-		defaults[currentHook] = currentChainID
-	}
-	if strings.TrimSpace(chainID) == "" {
-		delete(defaults, hook)
-	} else {
-		var selected *settings.LifecycleCommandChain
-		for index := range current.LifecycleChains {
-			if current.LifecycleChains[index].ID == chainID {
-				selected = &current.LifecycleChains[index]
-				break
-			}
-		}
-		if selected == nil {
-			return settings.Settings{}, fmt.Errorf("生命周期默认链不存在: %q", chainID)
-		}
-		if !lifecycleChainAppliesTo(*selected, hook) {
-			return settings.Settings{}, fmt.Errorf("生命周期命令链 %q 不适用于 %s", selected.Name, hook)
-		}
-		defaults[hook] = chainID
-	}
-	current.LifecycleDefaultChains = defaults
-	return app.SaveSettings(current)
-}
-
-func lifecycleChainAppliesTo(chain settings.LifecycleCommandChain, hook task.LifecycleHook) bool {
-	for _, applicableHook := range chain.ApplicableHooks {
-		if applicableHook == hook {
-			return true
-		}
-	}
-	return false
+	return app.repository.SaveLifecycleDefaultChain(hook, chainID)
 }
 
 type lifecycleRun struct {
@@ -1128,10 +1089,6 @@ func (app *App) terminalStatusEnvironment(taskID, terminalID string) []string {
 	environment := []string{
 		"TASKAI_TASK_ID=" + taskID,
 		"TASKAI_TERMINAL_ID=" + terminalID,
-	}
-	current, err := app.GetSettings()
-	if err != nil || current.StatusManagementMode != settings.StatusManagementModeHTTP {
-		return environment
 	}
 	apiURL := app.statusHTTP.APIURL()
 	if apiURL == "" {

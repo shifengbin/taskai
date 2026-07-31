@@ -106,7 +106,7 @@ describe('TerminalView', () => {
     expect(screen.getByTestId('terminal-view-title-container')).toHaveStyle({flex: '1', minWidth: '0'})
   })
 
-  it('暗色模式使用更深的松林夜跑终端底色', () => {
+  it('暗色模式使用更深的庭院终端底色', () => {
     render(
       <ThemeProvider theme={createTheme({palette: {mode: 'dark'}})}>
         <TerminalView
@@ -118,10 +118,10 @@ describe('TerminalView', () => {
       </ThemeProvider>,
     )
 
-    expect(terminalInstances[0].options.theme?.background).toBe('#030b06')
+    expect(terminalInstances[0].options.theme?.background).toBe('#101a14')
   })
 
-  it('亮色模式仍使用深色终端底色', () => {
+  it('亮色模式仍使用深色庭院终端底色', () => {
     render(
       <ThemeProvider theme={createTheme({palette: {mode: 'light'}})}>
         <TerminalView
@@ -133,7 +133,7 @@ describe('TerminalView', () => {
       </ThemeProvider>,
     )
 
-    expect(terminalInstances[0].options.theme?.background).toBe('#07130e')
+    expect(terminalInstances[0].options.theme?.background).toBe('#26352e')
   })
 
   it('挂载活动终端后自动聚焦 xterm 输入区', () => {

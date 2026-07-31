@@ -45,6 +45,7 @@ func NewDirectGitExecutor() *DirectGitExecutor {
 
 func (executor *DirectGitExecutor) Run(invocation GitInvocation) (CommandResult, error) {
 	process := exec.Command("git", invocation.Arguments...)
+	configureBackgroundProcess(process)
 	process.Dir = invocation.Directory
 	var output bytes.Buffer
 	var standardError bytes.Buffer

@@ -32,26 +32,26 @@ func (service *Service) CreateTask(title, description, color string) (task.Task,
 }
 
 func (service *Service) CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
-	return service.createTask(title, description, color, extraInfo, nil, nil, true)
+	return service.createTask(title, description, color, extraInfo, nil, nil, true, false)
 }
 
 func (service *Service) CreateTaskWithExtraInfoAndTemplateFields(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any) (task.Task, error) {
-	return service.createTask(title, description, color, extraInfo, templateFields, nil, true)
+	return service.createTask(title, description, color, extraInfo, templateFields, nil, true, true)
 }
 
 func (service *Service) CreateTaskWithExtraInfoAndLifecycleChains(title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string) (task.Task, error) {
-	return service.createTask(title, description, color, extraInfo, nil, chains, false)
+	return service.createTask(title, description, color, extraInfo, nil, chains, false, false)
 }
 
 func (service *Service) CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string) (task.Task, error) {
-	return service.createTask(title, description, color, extraInfo, templateFields, chains, false)
+	return service.createTask(title, description, color, extraInfo, templateFields, chains, false, true)
 }
 
 func (service *Service) CreateTaskWithTemplateFields(title, description, color string, templateFields map[string]any) (task.Task, error) {
-	return service.createTask(title, description, color, nil, templateFields, nil, true)
+	return service.createTask(title, description, color, nil, templateFields, nil, true, true)
 }
 
-func (service *Service) createTask(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string, useDefaults bool) (task.Task, error) {
+func (service *Service) createTask(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string, useDefaults, includeTemplateFields bool) (task.Task, error) {
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -70,18 +70,22 @@ func (service *Service) createTask(title, description, color string, extraInfo [
 		}
 		created.LifecycleChains = selected
 	}
-	created, err = created.UpdateTemplateFields(activeTaskTemplate(data.Settings), templateFields)
+	currentTemplate := activeTaskTemplate(data.Settings)
+	if !includeTemplateFields {
+		currentTemplate = nil
+	}
+	created, err = created.UpdateTemplateFields(currentTemplate, templateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, created.LifecycleChains, created.TemplateFields); err != nil {
+	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, currentTemplate, created.LifecycleChains, created.TemplateFields); err != nil {
 		return task.Task{}, err
 	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, nil, extraInfo)
 	if err != nil {
 		return task.Task{}, err
 	}
-	snapshots, err = applyTaskTemplateBranchToGitExtraInfo(snapshots, activeTaskTemplate(data.Settings), created.TemplateFields)
+	snapshots, err = applyTaskTemplateBranchToGitExtraInfo(snapshots, currentTemplate, created.TemplateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -256,7 +260,7 @@ func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, colo
 	if err != nil {
 		return task.Task{}, err
 	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, updated.LifecycleChains, updated.TemplateFields); err != nil {
+	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
 		return task.Task{}, err
 	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, data.Tasks[index].ExtraInfo, extraInfo)
@@ -295,7 +299,7 @@ func (service *Service) UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, 
 	if err != nil {
 		return task.Task{}, err
 	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, updated.LifecycleChains, updated.TemplateFields); err != nil {
+	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
 		return task.Task{}, err
 	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, data.Tasks[index].ExtraInfo, extraInfo)
@@ -334,7 +338,7 @@ func (service *Service) UpdateTaskWithTemplateFields(taskID, title, description,
 	if err != nil {
 		return task.Task{}, err
 	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, updated.LifecycleChains, updated.TemplateFields); err != nil {
+	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
 		return task.Task{}, err
 	}
 	snapshots, err := applyTaskTemplateBranchToGitExtraInfo(updated.ExtraInfo, activeTaskTemplate(data.Settings), updated.TemplateFields)
@@ -377,7 +381,7 @@ func (service *Service) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title,
 		return task.Task{}, err
 	}
 	updated.LifecycleChains = selected
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, updated.LifecycleChains, updated.TemplateFields); err != nil {
+	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
 		return task.Task{}, err
 	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, current.ExtraInfo, extraInfo)
@@ -428,7 +432,7 @@ func (service *Service) UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
 		return task.Task{}, err
 	}
 	updated.LifecycleChains = selected
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, updated.LifecycleChains, updated.TemplateFields); err != nil {
+	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
 		return task.Task{}, err
 	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, current.ExtraInfo, extraInfo)
@@ -566,7 +570,7 @@ func lifecycleChainSupportsHook(chain settings.LifecycleCommandChain, hook task.
 	return false
 }
 
-func validateGitCloneRepositoryTemplateBranch(current settings.Settings, selections map[task.LifecycleHook]string, templateFields map[string]any) error {
+func validateGitCloneRepositoryTemplateBranch(current settings.Settings, template *task.TaskTemplate, selections map[task.LifecycleHook]string, templateFields map[string]any) error {
 	chains := make(map[string]settings.LifecycleCommandChain, len(current.LifecycleChains))
 	for _, chain := range current.LifecycleChains {
 		chains[chain.ID] = chain
@@ -582,7 +586,7 @@ func validateGitCloneRepositoryTemplateBranch(current settings.Settings, selecti
 		}
 		for _, reference := range chain.Commands {
 			if commands[reference.CommandID].Kind == settings.LifecycleCommandKindGitCloneRepository {
-				_, err := task.TaskTemplateBranch(current.ActiveTaskTemplate(), templateFields)
+				_, err := task.TaskTemplateBranch(template, templateFields)
 				return err
 			}
 		}

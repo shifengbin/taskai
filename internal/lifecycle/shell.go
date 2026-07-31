@@ -19,6 +19,7 @@ func NewShellCommandExecutor() *ShellCommandExecutor {
 
 func (executor *ShellCommandExecutor) Run(invocation CommandInvocation) (CommandResult, error) {
 	process := shellCommandProcess(executor.platform, invocation.ShellPath, invocation.Command, invocation.Arguments)
+	configureBackgroundProcess(process)
 	process.Dir = invocation.Directory
 	process.Stdin = bytes.NewReader(invocation.Input)
 	if process.Env == nil {

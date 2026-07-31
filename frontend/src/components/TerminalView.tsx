@@ -139,6 +139,6 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
 
 function terminalVisualTheme(mode: 'light' | 'dark') {
   return mode === 'dark'
-    ? {background: '#030b06', foreground: '#edfff4', cursor: '#d5ff5f', selectionBackground: '#173a28'}
-    : {background: '#07130e', foreground: '#edfff4', cursor: '#b6e338', selectionBackground: '#24553c'}
+    ? {background: '#101a14', foreground: '#d8e8dc', cursor: '#9cc3ab', selectionBackground: '#2e4035'}
+    : {background: '#26352e', foreground: '#e3eee5', cursor: '#9bd5ae', selectionBackground: '#3d5748'}
 }

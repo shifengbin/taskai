@@ -12,6 +12,14 @@ import (
 const DefaultTaskTreeWidth = 360
 const MinimumTaskTreeWidth = 280
 
+const (
+	CurrentPresetVersion               = 3
+	DefaultBranchTaskTemplateID        = "preset.task-template.default-branch"
+	LifecycleChainIterationsAIID       = "preset.lifecycle-chain.iterations-ai"
+	LifecycleChainUpdateRepositoriesID = "preset.lifecycle-chain.update-repositories"
+	IterationsAIRepository             = "git@gitlab.jiandan100.cn:webdev/iterations-ai.git"
+)
+
 type ColorScheme string
 
 const (
@@ -144,6 +152,7 @@ type Settings struct {
 	LifecycleDefaultChains   map[LifecycleHook]string `json:"lifecycleDefaultChains"`
 	TaskTemplates            []task.TaskTemplate      `json:"taskTemplates"`
 	ActiveTaskTemplateID     string                   `json:"activeTaskTemplateId"`
+	PresetVersion            int                      `json:"presetVersion"`
 }
 
 func Default(applicationDataDirectory string) Settings {
@@ -158,7 +167,9 @@ func Default(applicationDataDirectory string) Settings {
 		LifecycleCommands:      DefaultLifecycleCommands(),
 		LifecycleChains:        DefaultLifecycleChains(),
 		LifecycleDefaultChains: DefaultLifecycleDefaultChains(),
-		TaskTemplates:          []task.TaskTemplate{},
+		TaskTemplates:          DefaultTaskTemplates(),
+		ActiveTaskTemplateID:   DefaultBranchTaskTemplateID,
+		PresetVersion:          CurrentPresetVersion,
 	}
 }
 
@@ -200,7 +211,133 @@ func DefaultLifecycleChains() []LifecycleCommandChain {
 	return []LifecycleCommandChain{
 		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
 		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
+		{ID: LifecycleChainIterationsAIID, Name: "iterations-ai", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + IterationsAIRepository}},
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainUpdateRepositoriesID, Name: "更新仓库", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookUpdateTask}},
 	}
+}
+
+func DefaultTaskTemplates() []task.TaskTemplate {
+	return []task.TaskTemplate{{
+		ID:   DefaultBranchTaskTemplateID,
+		Name: "默认分支",
+		Fields: []task.TaskTemplateField{{
+			Key:          "branch",
+			DisplayName:  "默认分支",
+			InputType:    task.TaskTemplateFieldInputString,
+			Required:     true,
+			DefaultValue: "",
+		}},
+	}}
+}
+
+func ApplyPresetMigration(next Settings) (Settings, bool) {
+	if next.PresetVersion >= CurrentPresetVersion {
+		return next, false
+	}
+
+	if next.PresetVersion < 1 {
+		chains := make(map[string]bool, len(next.LifecycleChains))
+		for _, chain := range next.LifecycleChains {
+			chains[chain.ID] = true
+		}
+		for _, preset := range DefaultLifecycleChains() {
+			if preset.ID != LifecycleChainIterationsAIID && preset.ID != LifecycleChainUpdateRepositoriesID {
+				continue
+			}
+			if !chains[preset.ID] {
+				next.LifecycleChains = append(next.LifecycleChains, preset)
+			}
+		}
+	}
+	if next.PresetVersion < 2 {
+		migrateIterationsAIHook(&next)
+	}
+	if next.PresetVersion < 3 {
+		ensureDefaultBranchTemplate(&next)
+	}
+	next.PresetVersion = CurrentPresetVersion
+	return next, true
+}
+
+func ensureDefaultBranchTemplate(next *Settings) {
+	defaultTemplateID := ""
+	for _, template := range next.TaskTemplates {
+		if template.ID == DefaultBranchTaskTemplateID {
+			defaultTemplateID = template.ID
+			break
+		}
+		if template.Name == "默认分支" {
+			defaultTemplateID = template.ID
+		}
+	}
+	if defaultTemplateID == "" {
+		defaultTemplate := DefaultTaskTemplates()[0]
+		next.TaskTemplates = append(next.TaskTemplates, defaultTemplate)
+		defaultTemplateID = defaultTemplate.ID
+	}
+	if strings.TrimSpace(next.ActiveTaskTemplateID) == "" {
+		next.ActiveTaskTemplateID = defaultTemplateID
+	}
+}
+
+func migrateIterationsAIHook(next *Settings) {
+	for index := range next.LifecycleChains {
+		chain := &next.LifecycleChains[index]
+		if !isVersionOneIterationsAIChain(*chain) {
+			continue
+		}
+		chain.ApplicableHooks = []LifecycleHook{LifecycleHookBeforeStart}
+		return
+	}
+}
+
+func isVersionOneIterationsAIChain(chain LifecycleCommandChain) bool {
+	if chain.ID != LifecycleChainIterationsAIID || chain.Name != "iterations-ai" || !sameLifecycleHooks(chain.ApplicableHooks, []LifecycleHook{LifecycleHookPostStart}) {
+		return false
+	}
+	for _, preset := range DefaultLifecycleChains() {
+		if preset.ID == LifecycleChainIterationsAIID {
+			return sameLifecycleCommandReferences(chain.Commands, preset.Commands)
+		}
+	}
+	return false
+}
+
+func sameLifecycleHooks(left, right []LifecycleHook) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameLifecycleCommandReferences(left, right []LifecycleCommandReference) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index].CommandID != right[index].CommandID || len(left[index].Arguments) != len(right[index].Arguments) {
+			return false
+		}
+		for argumentIndex := range left[index].Arguments {
+			if left[index].Arguments[argumentIndex] != right[index].Arguments[argumentIndex] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func DefaultLifecycleDefaultChains() map[LifecycleHook]string {
@@ -324,11 +461,11 @@ func fixedTaskMenuItem(id string) TaskMenuItem {
 func fixedLifecycleCommand(id string) LifecycleCommand {
 	switch id {
 	case LifecycleCommandCreateWorkspaceID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}}
 	case LifecycleCommandDeleteWorkspaceID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindDeleteWorkspace, Name: "删除任务工作目录", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}}
 	case LifecycleCommandGitCloneID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；留空时每个内置 Git 项目将克隆到任务工作目录下的 <项目名称>。填写时使用 dir=<相对目录>，将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；留空时每个内置 Git 项目将克隆到任务工作目录下的 <项目名称>。填写时使用 dir=<相对目录>，将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
 	case LifecycleCommandGitCloneRepositoryID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitCloneRepository, Name: "克隆指定 Git 仓库", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数：repository=<仓库地址>（必填）；dir=<相对目录>（可选）。仓库直接克隆到任务工作目录或指定子目录本身，不读取 Git 附加信息。目标必须为空目录，非空目录会失败。分支使用任务模板的 branch 字段；为空时由远程默认分支决定。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}}
 	case LifecycleCommandManifestFileID:

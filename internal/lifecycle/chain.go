@@ -287,17 +287,18 @@ func isWithinWorkspace(workspacePath, candidate string) bool {
 }
 
 func (runner *CommandChainRunner) cloneGitRepository(repository, target, branch string) error {
+	directory := filepath.Dir(target)
 	if branch == "" {
-		return runner.runGit("克隆仓库", "", []string{"clone", "--", repository, target})
+		return runner.runGit("克隆仓库", directory, []string{"clone", "--", repository, target})
 	}
-	result, err := runner.gitExecutor.Run(GitInvocation{Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", repository, "refs/heads/" + branch}})
+	result, err := runner.gitExecutor.Run(GitInvocation{Directory: directory, Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", repository, "refs/heads/" + branch}})
 	if err == nil {
-		return runner.runGit("克隆远程分支", "", []string{"clone", "--branch", branch, "--", repository, target})
+		return runner.runGit("克隆远程分支", directory, []string{"clone", "--branch", branch, "--", repository, target})
 	}
 	if !isGitRemoteBranchMissing(err) {
 		return gitCommandError("检查远程分支", result.StandardError, err)
 	}
-	if err := runner.runGit("克隆默认分支", "", []string{"clone", "--", repository, target}); err != nil {
+	if err := runner.runGit("克隆默认分支", directory, []string{"clone", "--", repository, target}); err != nil {
 		return err
 	}
 	return runner.runGit("创建本地分支", target, []string{"switch", "--create", branch})

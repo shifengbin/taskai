@@ -162,6 +162,7 @@ describe('App confirmation flows', () => {
     expect(screen.getByText('TASKAI_TASK_ID')).toBeInTheDocument()
     expect(screen.getByText('TASKAI_TERMINAL_ID')).toBeInTheDocument()
     expect(screen.getByText('TASKAI_STATUS_API')).toBeInTheDocument()
+		expect(screen.getByText('本机 HTTP 服务正在监听时，注入到之后新建的终端')).toBeInTheDocument()
     expect(screen.queryByText('TASKAI_ENVIRONMENT')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', {name: '复制当前命令链输入 JSON'}))
@@ -721,6 +722,30 @@ describe('App confirmation flows', () => {
 		))
 	})
 
+	it('默认分支模板要求输入分支', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{id: 'preset.task-template.default-branch', name: '默认分支', fields: [
+				{key: 'branch', displayName: '默认分支', inputType: 'string', required: true, defaultValue: '', injectEnvironment: false},
+			]}], activeTaskTemplateId: 'preset.task-template.default-branch',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		expect(screen.getByRole('textbox', {name: /默认分支/})).toHaveValue('')
+		const title = screen.getByRole('textbox', {name: '标题'})
+		await user.type(title, '迭代任务')
+		const form = title.closest('form')
+		if (!form) {
+			throw new Error('未找到任务表单')
+		}
+		fireEvent.submit(form)
+
+		await screen.findByText('字段“默认分支”不能为空')
+		expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).not.toHaveBeenCalled()
+	})
+
 	it('编辑旧任务时恢复当前字段值并隐藏历史字段', async () => {
 		const user = userEvent.setup()
 		bindings.ListTasks.mockResolvedValue([{
@@ -824,10 +849,12 @@ describe('App confirmation flows', () => {
 			id: 'task-scoped', title: '有范围的任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
 			lifecycleChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
 		}])
-		bindings.GetSettings.mockResolvedValue({
+		const scopedSettings = {
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
 			lifecycleChains: [beforeStartChain, postStartChain], lifecycleDefaultChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
-		})
+		}
+		bindings.GetSettings.mockResolvedValue(scopedSettings)
+		bindings.SaveSettings.mockImplementation(async (next) => ({...scopedSettings, ...next}))
 		bindings.UpdateTask.mockResolvedValue({
 			id: 'task-scoped', title: '更新后的范围任务', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
 			lifecycleChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
@@ -966,6 +993,8 @@ describe('App confirmation flows', () => {
 		const helpDialog = screen.getByRole('dialog', {name: '命令链扩展规则'})
 		expect(within(helpDialog).getByText(/固定参数会先于命令链追加参数传入/)).toBeInTheDocument()
 		expect(within(helpDialog).getByText(/前一条自定义命令的原始标准输出/)).toBeInTheDocument()
+		expect(within(helpDialog).getByText('baseURL')).toBeInTheDocument()
+		expect(within(helpDialog).getByText(/只通过标准输入提供，不是终端环境变量/)).toBeInTheDocument()
 		expect(within(helpDialog).getByText(/dir=<相对目录>/)).toBeInTheDocument()
 		expect(within(helpDialog).getByText(/从链首重新执行/)).toBeInTheDocument()
 
@@ -1635,14 +1664,27 @@ describe('App confirmation flows', () => {
     expect(within(taskTreeHeader).getByRole('button', {name: '展开全部任务'})).toBeInTheDocument()
   })
 
-  it('暗色模式使用松林夜跑的反光分割条', async () => {
+  it('暗色模式使用庭院的低对比分隔条', async () => {
     bindings.GetSettings.mockResolvedValue({
       workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'dark', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
     })
     render(<App/>)
 
     const divider = await screen.findByRole('separator', {name: '调整任务树宽度'})
-    expect(getComputedStyle(divider).backgroundColor).toBe('rgb(213, 245, 224)')
+    expect(getComputedStyle(divider).backgroundColor).toBe('rgb(60, 75, 65)')
+  })
+
+  it('在工作台标题中展示任务 AI 图标', async () => {
+    render(<App/>)
+
+    const icon = await screen.findByRole('img', {name: '任务 AI 图标'})
+    expect(icon).toHaveClass('taskai-brand-mark')
+    expect(icon).toHaveAttribute('src', expect.stringContaining('task-ai-mark.svg'))
+  })
+
+  it('工作台样式不包含松林夜跑的斜纹装饰', () => {
+    expect(appStyles).not.toContain('repeating-linear-gradient')
+    expect(appStyles).not.toContain('#b6e338')
   })
 
   it('选中任务不显示容易误解为状态的斜纹尾标', () => {
@@ -1734,10 +1776,6 @@ describe('App confirmation flows', () => {
     }
     act(() => lifecycleEventListener?.({
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
-      lifecycleExecution: {
-        runId: 'post-start-run', revision: 1, hook: 'postStart', chainId: 'post-start-chain',
-        currentCommandId: 'notify', currentCommandName: '发送通知', currentIndex: 1, commandCount: 1, state: 'running',
-      },
     }))
 		if (!resolveStartTask) {
 			throw new Error('开始任务绑定未等待返回')
@@ -1752,8 +1790,9 @@ describe('App confirmation flows', () => {
 		})
 
     await waitFor(() => expect(screen.getByRole('tab', {name: /执行中/})).toHaveAttribute('aria-selected', 'true'))
-    expect(screen.getByText('开始后 · 发送通知 1/1')).toBeInTheDocument()
-    expect(within(screen.getByRole('navigation', {name: '任务和终端'})).getByText('清理临时文件').closest('[data-task-id]')).toHaveAttribute('data-task-start-feedback', 'flash')
+    const startedTask = within(screen.getByRole('navigation', {name: '任务和终端'})).getByText('清理临时文件').closest('[data-task-id]')
+    expect(startedTask).toHaveAttribute('data-task-start-feedback', 'flash')
+    expect(startedTask).not.toHaveTextContent('开始前')
   })
 
   it('终端退出后不再显示右侧终端视图', async () => {
@@ -1876,7 +1915,10 @@ describe('App confirmation flows', () => {
     await user.type(port, '38561')
     await user.click(screen.getByRole('button', {name: '查看 HTTP 接口使用说明'}))
 
-    expect(await screen.findByRole('dialog', {name: 'HTTP 状态接口使用说明'})).toHaveTextContent('TASKAI_STATUS_API')
+		const help = await screen.findByRole('dialog', {name: 'HTTP 状态接口使用说明'})
+		expect(help).toHaveTextContent('TASKAI_STATUS_API')
+		expect(help).toHaveTextContent('本机 HTTP 服务正在监听时额外获得 API 地址')
+		expect(help).toHaveTextContent('无终端后台命令以及前置、后置脚本仅注入 TASKAI_TASK_ID')
     expect(screen.getByText('服务与设置')).toBeInTheDocument()
     expect(screen.getByText('查询接口')).toBeInTheDocument()
     expect(screen.getByText('状态更新')).toBeInTheDocument()
@@ -1908,7 +1950,9 @@ describe('App confirmation flows', () => {
     await user.clear(port)
     await user.type(port, '38562')
     await user.click(screen.getByRole('button', {name: '查看 HTTP 接口使用说明'}))
-    expect(await screen.findByRole('dialog', {name: 'HTTP 状态接口使用说明'})).toBeInTheDocument()
+    const help = await screen.findByRole('dialog', {name: 'HTTP 状态接口使用说明'})
+    expect(help).toHaveTextContent('本机 HTTP 服务正在监听时，之后新建的终端会获得 API 地址')
+    expect(help).toHaveTextContent('仅本机 HTTP 服务正在监听时注入')
     await user.click(screen.getByRole('button', {name: '关闭'}))
     await waitFor(() => expect(screen.queryByRole('dialog', {name: 'HTTP 状态接口使用说明'})).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', {name: '保存'}))
