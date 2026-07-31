@@ -9,11 +9,15 @@ import (
 type TaskBinding interface {
 	CreateTask(title, description, color string) (task.Task, error)
 	CreateTaskWithExtraInfo(title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error)
+	CreateTaskWithExtraInfoAndTemplateFields(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any) (task.Task, error)
+	CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string) (task.Task, error)
 	ListTasks() ([]task.Task, error)
 	ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error)
 	SetTaskShelved(taskID string, shelved bool) ([]task.Task, error)
 	UpdateTask(taskID, title, description, color string) (task.Task, error)
 	UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error)
+	UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any) (task.Task, error)
+	UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string) (task.Task, error)
 	StartTask(taskID string) (task.Task, error)
 	FinishTask(taskID string) (task.Task, error)
 }

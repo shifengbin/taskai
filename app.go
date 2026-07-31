@@ -142,8 +142,16 @@ func (app *App) CreateTaskWithExtraInfo(title, description, color string, extraI
 	return app.tasks.CreateTaskWithExtraInfo(title, description, color, extraInfo)
 }
 
+func (app *App) CreateTaskWithExtraInfoAndTemplateFields(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any) (task.Task, error) {
+	return app.tasks.CreateTaskWithExtraInfoAndTemplateFields(title, description, color, extraInfo, templateFields)
+}
+
 func (app *App) CreateTaskWithExtraInfoAndLifecycleChains(title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string) (task.Task, error) {
 	return app.tasks.CreateTaskWithExtraInfoAndLifecycleChains(title, description, color, extraInfo, chains)
+}
+
+func (app *App) CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string) (task.Task, error) {
+	return app.tasks.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(title, description, color, extraInfo, templateFields, chains)
 }
 
 func (app *App) ListTasks() ([]task.Task, error) {
@@ -219,6 +227,27 @@ func (app *App) UpdateTaskWithExtraInfo(taskID, title, description, color string
 	return app.scheduleLifecycleHookLocked(updated, task.LifecycleHookUpdateTask)
 }
 
+func (app *App) UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
+	current, err := app.tasks.GetTask(taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	if current.IsLifecycleLocked() {
+		return task.Task{}, fmt.Errorf("任务正在执行命令链，暂不能修改")
+	}
+	updated, err := app.tasks.UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, description, color, extraInfo, templateFields)
+	if err != nil {
+		return task.Task{}, err
+	}
+	if updated.Status != task.StatusRunning {
+		return updated, nil
+	}
+	return app.scheduleLifecycleHookLocked(updated, task.LifecycleHookUpdateTask)
+}
+
 func (app *App) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string) (task.Task, error) {
 	unlock := app.lockLifecycleTask(taskID)
 	defer unlock()
@@ -234,6 +263,23 @@ func (app *App) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, descrip
 		return task.Task{}, fmt.Errorf("仅未执行任务可以修改生命周期命令链")
 	}
 	return app.tasks.UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, description, color, extraInfo, chains)
+}
+
+func (app *App) UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string) (task.Task, error) {
+	unlock := app.lockLifecycleTask(taskID)
+	defer unlock()
+
+	current, err := app.tasks.GetTask(taskID)
+	if err != nil {
+		return task.Task{}, err
+	}
+	if current.IsLifecycleLocked() {
+		return task.Task{}, fmt.Errorf("任务正在执行命令链，暂不能修改")
+	}
+	if current.Status != task.StatusPending {
+		return task.Task{}, fmt.Errorf("仅未执行任务可以修改生命周期命令链")
+	}
+	return app.tasks.UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(taskID, title, description, color, extraInfo, templateFields, chains)
 }
 
 func (app *App) ListExtraInfoTemplates() ([]task.ExtraInfoTemplate, error) {
@@ -508,7 +554,15 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
-	input, err := lifecycle.BuildCommandInput(app.realtimeTaskResource(inputTask, true), app.statusHTTP.APIURL())
+	gitCloneRepositoryBranch, err := lifecycleGitCloneRepositoryBranch(data.Settings.ActiveTaskTemplate(), inputTask.TemplateFields, commands)
+	if err != nil {
+		return app.failLifecycleRun(current.ID, execution, err)
+	}
+	templateEnvironment, err := task.TaskTemplateEnvironment(data.Settings.ActiveTaskTemplate(), inputTask.TemplateFields)
+	if err != nil {
+		return app.failLifecycleRun(current.ID, execution, err)
+	}
+	input, err := lifecycle.BuildCommandInput(app.realtimeTaskResource(inputTask, data.Settings, true), app.statusHTTP.APIURL())
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
@@ -521,14 +575,15 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 		hook:      hook,
 		execution: execution,
 		request: lifecycle.CommandChainRequest{
-			Task:          current,
-			Directory:     directory,
-			WorkspaceRoot: current.WorkspaceRoot,
-			WorkspacePath: current.WorkspacePath,
-			ShellPath:     data.Settings.ShellPath,
-			Environment:   append([]string(nil), app.taskCommandEnvironment(current.ID)...),
-			Input:         append([]byte(nil), input...),
-			Commands:      copyLifecycleCommands(commands),
+			Task:                     current,
+			Directory:                directory,
+			WorkspaceRoot:            current.WorkspaceRoot,
+			WorkspacePath:            current.WorkspacePath,
+			ShellPath:                data.Settings.ShellPath,
+			Environment:              append(app.taskCommandEnvironment(current.ID), templateEnvironment...),
+			Input:                    append([]byte(nil), input...),
+			Commands:                 copyLifecycleCommands(commands),
+			GitCloneRepositoryBranch: gitCloneRepositoryBranch,
 		},
 	}
 	go app.executeLifecycleRun(run)
@@ -654,6 +709,15 @@ func (app *App) lockLifecycleTask(taskID string) func() {
 
 func isCurrentLifecycleExecution(current task.Task, execution task.LifecycleExecution) bool {
 	return current.LifecycleExecution != nil && current.LifecycleExecution.RunID == execution.RunID && current.LifecycleExecution.Revision == execution.Revision
+}
+
+func lifecycleGitCloneRepositoryBranch(template *task.TaskTemplate, values map[string]any, commands []settings.LifecycleCommand) (string, error) {
+	for _, command := range commands {
+		if command.Kind == settings.LifecycleCommandKindGitCloneRepository {
+			return task.TaskTemplateBranch(template, values)
+		}
+	}
+	return "", nil
 }
 
 func copyLifecycleCommands(commands []settings.LifecycleCommand) []settings.LifecycleCommand {
@@ -1104,7 +1168,7 @@ func (app *App) httpTasks() ([]realtime.TaskResource, error) {
 
 	tasks := make([]realtime.TaskResource, 0, len(data.Tasks))
 	for _, current := range data.Tasks {
-		tasks = append(tasks, app.realtimeTaskResource(current, false))
+		tasks = append(tasks, app.realtimeTaskResource(current, data.Settings, false))
 	}
 	return tasks, nil
 }
@@ -1117,14 +1181,14 @@ func (app *App) httpTask(taskID string) (realtime.TaskResource, bool, error) {
 
 	for _, current := range data.Tasks {
 		if current.ID == taskID {
-			return app.realtimeTaskResource(current, true), true, nil
+			return app.realtimeTaskResource(current, data.Settings, true), true, nil
 		}
 	}
 
 	return realtime.TaskResource{}, false, nil
 }
 
-func (app *App) realtimeTaskResource(current task.Task, includeExtraInfo bool) realtime.TaskResource {
+func (app *App) realtimeTaskResource(current task.Task, configured settings.Settings, includeExtraInfo bool) realtime.TaskResource {
 	resource := realtime.TaskResource{
 		ID:                 current.ID,
 		Title:              current.Title,
@@ -1137,6 +1201,7 @@ func (app *App) realtimeTaskResource(current task.Task, includeExtraInfo bool) r
 		WorkspacePath:      current.WorkspacePath,
 		LifecycleChains:    copyTaskLifecycleChains(current.LifecycleChains),
 		LifecycleExecution: copyTaskLifecycleExecution(current.LifecycleExecution),
+		TemplateFields:     taskTemplateFieldsForResource(current, configured),
 	}
 	if includeExtraInfo {
 		extraInfo := httpExtraInfo(current.ExtraInfo)
@@ -1145,6 +1210,18 @@ func (app *App) realtimeTaskResource(current task.Task, includeExtraInfo bool) r
 		resource.Terminals = &terminals
 	}
 	return resource
+}
+
+func taskTemplateFieldsForResource(current task.Task, configured settings.Settings) map[string]any {
+	activeTemplate := configured.ActiveTaskTemplate()
+	if activeTemplate == nil {
+		return map[string]any{}
+	}
+	resolved, err := task.ResolveTaskTemplateFields(*activeTemplate, current.TemplateFields)
+	if err != nil {
+		return map[string]any{}
+	}
+	return resolved
 }
 
 func copyTaskLifecycleChains(chains map[task.LifecycleHook]string) map[task.LifecycleHook]string {

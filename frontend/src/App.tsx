@@ -79,7 +79,10 @@ import {
   type TaskScript,
   type SettingsRecord,
 	type TaskExtraInfo,
-  type TaskRecord,
+	type TaskRecord,
+	type TaskTemplate,
+	type TaskTemplateField,
+	type TaskTemplateValues,
 	type TaskMenuItem,
   type TaskStatus,
   type TerminalRecord,
@@ -101,6 +104,7 @@ export default function App() {
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({})
   const [taskDialogOpen, setTaskDialogOpen] = useState(false)
 	const [taskExtraInfoDraft, setTaskExtraInfoDraft] = useState<TaskExtraInfo[]>([])
+	const [taskTemplateFieldsDraft, setTaskTemplateFieldsDraft] = useState<TaskTemplateValues>({})
 	const [taskLifecycleChainsDraft, setTaskLifecycleChainsDraft] = useState<Partial<Record<LifecycleHook, string>>>({})
   const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
@@ -119,7 +123,7 @@ export default function App() {
   const [draftDescription, setDraftDescription] = useState('')
   const [draftColor, setDraftColor] = useState(defaultTaskColor)
   const [settingsDraft, setSettingsDraft] = useState<SettingsRecord>()
-  const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle'>('workspace')
+	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
   const [statusHelpOpen, setStatusHelpOpen] = useState(false)
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
@@ -273,6 +277,7 @@ export default function App() {
   const selectedTask = tasks.find((task) => task.id === selectedTaskID)
   const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
   const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
+	const activeTaskTemplate = settings?.taskTemplates?.find((template) => template.id === settings.activeTaskTemplateId)
   const areAllTasksExpanded = tasks.length > 0 && tasks.every((task) => expandedTasks[task.id] ?? true)
 
   const toggleTaskExpanded = (taskID: string) => {
@@ -299,6 +304,7 @@ export default function App() {
     setDraftDescription(task?.description ?? '')
     setDraftColor(task ? task.color || defaultTaskColor : randomTaskColor())
 		setTaskExtraInfoDraft(task?.extraInfo ? cloneTaskExtraInfo(task.extraInfo) : [])
+		setTaskTemplateFieldsDraft(resolveTaskTemplateValues(activeTaskTemplate, task?.templateFields))
 		setTaskLifecycleChainsDraft({...task?.lifecycleChains ?? settings?.lifecycleDefaultChains ?? {}})
     setTaskDialogOpen(true)
   }
@@ -307,6 +313,7 @@ export default function App() {
     setTaskDialogOpen(false)
     setEditingTask(undefined)
 		setTaskExtraInfoDraft([])
+		setTaskTemplateFieldsDraft({})
 		setTaskLifecycleChainsDraft({})
   }
 
@@ -331,11 +338,28 @@ export default function App() {
 			setMessage(`信息“${duplicateParameter.displayName ?? duplicateParameter.catalogue}”包含重复的动态参数键`)
 			return
 		}
+		const missingTemplateField = activeTaskTemplate?.fields.find((field) => {
+			if (!field.required) {
+				return false
+			}
+			const value = taskTemplateFieldsDraft[field.key]
+			return field.inputType === 'bool' ? value !== true : !String(value ?? '').trim()
+		})
+		if (missingTemplateField) {
+			setMessage(missingTemplateField.inputType === 'bool'
+				? `字段“${missingTemplateField.displayName}”必须勾选`
+				: `字段“${missingTemplateField.displayName}”不能为空`)
+			return
+		}
     try {
       if (editingTask) {
 			const hasExtraInfo = taskExtraInfoDraft.length > 0 || (editingTask.extraInfo?.length ?? 0) > 0
 			const updated = editingTask.status === 'pending'
-					? await api.updateTaskWithExtraInfoAndLifecycleChains(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
+					? activeTaskTemplate
+						? await api.updateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft, taskLifecycleChainsDraft)
+						: await api.updateTaskWithExtraInfoAndLifecycleChains(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
+					: activeTaskTemplate
+						? await api.updateTaskWithExtraInfoAndTemplateFields(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft)
 					: hasExtraInfo
 						? await api.updateTaskWithExtraInfo(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
 						: await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
@@ -343,7 +367,11 @@ export default function App() {
       } else {
 			const hasLifecycleChainSelection = Object.keys(taskLifecycleChainsDraft).length > 0
 			const created = hasLifecycleChainSelection
-				? await api.createTaskWithExtraInfoAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
+				? activeTaskTemplate
+					? await api.createTaskWithExtraInfoTemplateFieldsAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft, taskLifecycleChainsDraft)
+					: await api.createTaskWithExtraInfoAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
+				: activeTaskTemplate
+					? await api.createTaskWithExtraInfoAndTemplateFields(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft)
 				: taskExtraInfoDraft.length > 0
 					? await api.createTaskWithExtraInfo(draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
 					: await api.createTask(draftTitle, draftDescription, draftColor)
@@ -819,15 +847,15 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 aria-label="设置"
                 onClick={() => {
                   const draftMenuItems = cloneTaskMenuItems(taskMenuItems)
-                  setSettingsDraft(settings ? {
-                    ...settings,
+	                  setSettingsDraft(settings ? {
+	                    ...settings,
                     colorScheme,
                     shellPath: settings.shellPath || detectedShells[0] || '',
 						taskMenuItems: draftMenuItems,
 						statusManagementMode: settings.statusManagementMode ?? 'title-change',
 						statusManagementHTTPPort: settings.statusManagementHTTPPort ?? 0,
 						httpServiceEnabled: settings.httpServiceEnabled ?? false,
-                  } : undefined)
+	                  } : undefined)
                   setTaskMenuItemDraft(undefined)
                   setTaskMenuItemEditorMode(undefined)
                   setSettingsTab('workspace')
@@ -952,6 +980,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           <DialogContent sx={{display: 'grid', gap: 2, pt: '12px !important'}}>
             <TextField autoFocus required label="标题" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)}/>
             <TextField label="任务描述" value={draftDescription} multiline minRows={3} onChange={(event) => setDraftDescription(event.target.value)}/>
+			<TaskTemplateFieldsEditor template={activeTaskTemplate} values={taskTemplateFieldsDraft} onChange={setTaskTemplateFieldsDraft}/>
             <Box sx={{display: 'flex', alignItems: 'center', gap: 1.5}}>
               <Typography component="label" htmlFor="task-color-picker" variant="body2">任务颜色</Typography>
               <input
@@ -1176,7 +1205,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         <DialogContent sx={{display: 'grid', gap: 3, pt: '12px !important'}}>
           <Tabs
             value={settingsTab}
-			onChange={(_, value: 'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle') => setSettingsTab(value)}
+			onChange={(_, value: 'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle' | 'templates') => setSettingsTab(value)}
             aria-label="设置分类"
             variant="scrollable"
             scrollButtons="auto"
@@ -1184,8 +1213,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <Tab value="workspace" label="工作区与外观"/>
             <Tab value="shell" label="终端 Shell"/>
             <Tab value="menu" label="菜单管理"/>
-            <Tab value="status" label="实时状态"/>
+			<Tab value="status" label="实时状态"/>
 			<Tab value="lifecycle" label="生命周期编排"/>
+			<Tab value="templates" label="任务模板"/>
           </Tabs>
 
           {settingsTab === 'workspace' && <Box component="section" sx={{display: 'grid', gap: 1.5}}>
@@ -1328,6 +1358,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					setSettingsDraft((current) => current ? {...current, lifecycleDefaultChains: saved.lifecycleDefaultChains ?? {}} : current)
 				}}
 				onError={(error) => showError(error, setMessage)}
+			/>}
+
+			{settingsTab === 'templates' && <TaskTemplateManagement
+				templates={settingsDraft?.taskTemplates ?? []}
+				activeTemplateID={settingsDraft?.activeTaskTemplateId ?? ''}
+				onChange={(taskTemplates, activeTaskTemplateId) => updateSettingsDraft({taskTemplates, activeTaskTemplateId})}
 			/>}
         </DialogContent>
         <DialogActions>
@@ -1888,6 +1924,174 @@ function LifecycleManagement({
 	</Box>
 }
 
+function TaskTemplateManagement({
+	templates,
+	activeTemplateID,
+	onChange,
+}: {
+	templates: TaskTemplate[]
+	activeTemplateID: string
+	onChange(templates: TaskTemplate[], activeTemplateID: string): void
+}) {
+	const [draft, setDraft] = useState<TaskTemplate>()
+	const [draftError, setDraftError] = useState<string>()
+
+	const updateField = (index: number, update: Partial<TaskTemplateField>) => {
+		setDraft((current) => current ? {
+			...current,
+			fields: current.fields.map((field, fieldIndex) => fieldIndex === index ? {...field, ...update} : field),
+		} : current)
+	}
+
+	const moveField = (index: number, offset: number) => {
+		setDraft((current) => {
+			if (!current || index + offset < 0 || index + offset >= current.fields.length) {
+				return current
+			}
+			const fields = [...current.fields]
+			const [field] = fields.splice(index, 1)
+			fields.splice(index + offset, 0, field)
+			return {...current, fields}
+		})
+	}
+
+	const saveDraft = () => {
+		if (!draft) {
+			return
+		}
+		const normalized: TaskTemplate = {
+			...draft,
+			name: draft.name.trim(),
+			fields: draft.fields.map((field) => ({
+				...field,
+				key: field.key.trim(),
+				displayName: field.displayName.trim(),
+				defaultValue: field.inputType === 'bool' ? field.defaultValue === true : typeof field.defaultValue === 'string' ? field.defaultValue : '',
+			})),
+		}
+		if (!normalized.name) {
+			setDraftError('模板名称不能为空')
+			return
+		}
+		if (templates.some((template) => template.id !== normalized.id && template.name.trim().toLocaleLowerCase() === normalized.name.toLocaleLowerCase())) {
+			setDraftError('模板名称不能重复')
+			return
+		}
+		if (!normalized.fields.length || normalized.fields.some((field) => !field.key || !field.displayName)) {
+			setDraftError('每个字段都需要键和显示名称')
+			return
+		}
+		if (normalized.fields.some((field) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(field.key))) {
+			setDraftError('字段键必须以 ASCII 字母开头，且只能包含字母、数字和下划线')
+			return
+		}
+		const keys = normalized.fields.map((field) => field.key.toLocaleLowerCase())
+		if (new Set(keys).size !== keys.length) {
+			setDraftError('字段键不能重复')
+			return
+		}
+		onChange(templates.some((template) => template.id === normalized.id)
+			? templates.map((template) => template.id === normalized.id ? normalized : template)
+			: [...templates, normalized], activeTemplateID)
+		setDraft(undefined)
+		setDraftError(undefined)
+	}
+
+	return <Box component="section" sx={{display: 'grid', gap: 1.5}}>
+		<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2}}>
+			<Box>
+				<Typography variant="subtitle2">任务模板</Typography>
+				<Typography variant="caption" color="text.secondary">当前模板决定新建、编辑、HTTP 和生命周期命令链可见的字段。</Typography>
+			</Box>
+			<Button variant="contained" size="small" startIcon={<AddOutlinedIcon/>} onClick={() => {
+				setDraft(createTaskTemplateDraft())
+				setDraftError(undefined)
+			}}>新增模板</Button>
+		</Box>
+		<TextField select size="small" label="当前任务模板" value={activeTemplateID} onChange={(event) => onChange(templates, event.target.value)}>
+			<MenuItem value="">不使用任务模板</MenuItem>
+			{templates.map((template) => <MenuItem key={template.id} value={template.id}>{template.name}</MenuItem>)}
+		</TextField>
+		{templates.length === 0 ? <Alert severity="info" variant="outlined">暂无任务模板。新建模板后可选择为当前模板。</Alert> : <Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
+			{templates.map((template, index) => <Box key={template.id} sx={{display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1.25, borderBottom: index === templates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+				<Box sx={{minWidth: 0, flex: 1}}>
+					<Typography variant="body2" sx={{fontWeight: 650}} noWrap>{template.name}</Typography>
+					<Typography variant="caption" color="text.secondary">{template.fields.length} 个字段{template.id === activeTemplateID ? ' · 当前使用' : ''}</Typography>
+				</Box>
+				<Button size="small" onClick={() => {
+					setDraft(cloneTaskTemplate(template))
+					setDraftError(undefined)
+				}}>编辑</Button>
+				<Tooltip title="删除模板"><IconButton aria-label={`删除任务模板 ${template.name}`} size="small" color="error" onClick={() => onChange(templates.filter((current) => current.id !== template.id), activeTemplateID === template.id ? '' : activeTemplateID)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></Tooltip>
+			</Box>)}
+		</Box>}
+
+		<Dialog open={Boolean(draft)} onClose={() => setDraft(undefined)} fullWidth maxWidth="md" aria-labelledby="task-template-editor-title">
+			<DialogTitle id="task-template-editor-title">{templates.some((template) => template.id === draft?.id) ? '编辑任务模板' : '新增任务模板'}</DialogTitle>
+			<DialogContent sx={{display: 'grid', gap: 2, pt: '12px !important'}}>
+				{draftError && <Alert severity="error">{draftError}</Alert>}
+				<TextField required autoFocus size="small" label="模板名称" value={draft?.name ?? ''} onChange={(event) => setDraft((current) => current ? {...current, name: event.target.value} : current)}/>
+				<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2}}>
+					<Box>
+						<Typography variant="subtitle2">字段</Typography>
+						<Typography variant="caption" color="text.secondary">字段顺序决定任务表单、HTTP 字段和命令环境变量的显示顺序。</Typography>
+					</Box>
+					<Button size="small" startIcon={<AddOutlinedIcon/>} onClick={() => setDraft((current) => current ? {...current, fields: [...current.fields, createTaskTemplateField()]} : current)}>新增字段</Button>
+				</Box>
+				<Box sx={{display: 'grid', gap: 1}}>
+					{draft?.fields.map((field, index) => <Box key={index} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr auto', sm: 'minmax(110px, 1fr) minmax(110px, 1fr) 126px auto'}, gap: 1, alignItems: 'center', border: 1, borderColor: 'divider', borderRadius: 1, p: 1}}>
+						<TextField required size="small" label={`字段 ${index + 1} 键`} value={field.key} onChange={(event) => updateField(index, {key: event.target.value})}/>
+						<TextField required size="small" label={`字段 ${index + 1} 显示名称`} value={field.displayName} onChange={(event) => updateField(index, {displayName: event.target.value})}/>
+						<TextField select size="small" label={`字段 ${index + 1} 类型`} value={field.inputType} onChange={(event) => {
+							const inputType: TaskTemplateField['inputType'] = event.target.value === 'bool' ? 'bool' : 'string'
+							updateField(index, {inputType, defaultValue: inputType === 'bool' ? false : ''})
+						}}>
+							<MenuItem value="string">字符串</MenuItem>
+							<MenuItem value="bool">布尔值</MenuItem>
+						</TextField>
+						<Box sx={{display: 'flex', alignItems: 'center', gap: 0.25}}>
+							<Tooltip title="上移字段"><span><IconButton aria-label={`上移模板字段 ${index + 1}`} size="small" disabled={index === 0} onClick={() => moveField(index, -1)}><ArrowUpwardOutlinedIcon fontSize="inherit"/></IconButton></span></Tooltip>
+							<Tooltip title="下移字段"><span><IconButton aria-label={`下移模板字段 ${index + 1}`} size="small" disabled={index === (draft?.fields.length ?? 0) - 1} onClick={() => moveField(index, 1)}><ArrowDownwardOutlinedIcon fontSize="inherit"/></IconButton></span></Tooltip>
+							<Tooltip title="删除字段"><span><IconButton aria-label={`删除模板字段 ${index + 1}`} size="small" color="error" disabled={(draft?.fields.length ?? 0) === 1} onClick={() => setDraft((current) => current ? {...current, fields: current.fields.filter((_, fieldIndex) => fieldIndex !== index)} : current)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></span></Tooltip>
+						</Box>
+						<Box sx={{gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5}}>
+							{field.inputType === 'bool'
+								? <FormControlLabel sx={{m: 0}} control={<Checkbox checked={field.defaultValue === true} onChange={(event) => updateField(index, {defaultValue: event.target.checked})}/>} label="默认选中"/>
+								: <TextField size="small" label={`字段 ${index + 1} 默认值`} value={typeof field.defaultValue === 'string' ? field.defaultValue : ''} onChange={(event) => updateField(index, {defaultValue: event.target.value})} sx={{minWidth: 220, flex: 1}}/>}
+							<FormControlLabel sx={{m: 0}} control={<Checkbox checked={field.required} onChange={(event) => updateField(index, {required: event.target.checked})}/>} label={field.inputType === 'bool' ? '必填（必须勾选）' : '必填'}/>
+							<FormControlLabel sx={{m: 0}} control={<Checkbox checked={field.injectEnvironment} onChange={(event) => updateField(index, {injectEnvironment: event.target.checked})}/>} label="注入生命周期环境变量"/>
+						</Box>
+					</Box>)}
+				</Box>
+			</DialogContent>
+			<DialogActions><Button onClick={() => setDraft(undefined)}>取消</Button><Button variant="contained" onClick={saveDraft}>保存模板</Button></DialogActions>
+		</Dialog>
+	</Box>
+}
+
+function TaskTemplateFieldsEditor({
+	template,
+	values,
+	onChange,
+}: {
+	template?: TaskTemplate
+	values: TaskTemplateValues
+	onChange: Dispatch<SetStateAction<TaskTemplateValues>>
+}) {
+	if (!template) {
+		return null
+	}
+	return <Box component="section" data-testid="task-template-fields" sx={{display: 'grid', gap: 1.25, borderTop: 1, borderColor: 'divider', pt: 1.75}}>
+		<Typography variant="subtitle2">{template.name}</Typography>
+		<Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1.25}}>
+			{template.fields.map((field) => field.inputType === 'bool'
+				? <FormControlLabel key={field.key} sx={{m: 0, minWidth: 0}} control={<Checkbox checked={values[field.key] === true} onChange={(event) => onChange((current) => ({...current, [field.key]: event.target.checked}))}/>} label={field.displayName}/>
+				: <TextField key={field.key} size="small" required={field.required} label={field.displayName} value={typeof values[field.key] === 'string' ? values[field.key] : ''} onChange={(event) => onChange((current) => ({...current, [field.key]: event.target.value}))}/>,
+			)}
+		</Box>
+	</Box>
+}
+
 function TaskExtraInfoEditor({
 	templates,
 	infos,
@@ -2041,6 +2245,31 @@ function TaskDetail({task}: {task?: TaskRecord}) {
 
 function createExtraInfoTemplateDraft(catalogue: string): ExtraInfoTemplate {
 	return {id: '', catalogue, displayName: '', builtIn: false, fields: [{key: 'name', displayName: '名称', defaultValue: ''}], parameters: []}
+}
+
+function createTaskTemplateDraft(): TaskTemplate {
+	return {id: `task-template-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, name: '', fields: [createTaskTemplateField()]}
+}
+
+function createTaskTemplateField(): TaskTemplateField {
+	return {key: '', displayName: '', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false}
+}
+
+function cloneTaskTemplate(template: TaskTemplate): TaskTemplate {
+	return {...template, fields: template.fields.map((field) => ({...field}))}
+}
+
+function resolveTaskTemplateValues(template?: TaskTemplate, existing?: TaskTemplateValues): TaskTemplateValues {
+	if (!template) {
+		return {}
+	}
+	return Object.fromEntries(template.fields.map((field) => {
+		const saved = existing?.[field.key]
+		if (field.inputType === 'bool') {
+			return [field.key, typeof saved === 'boolean' ? saved : field.defaultValue === true]
+		}
+		return [field.key, typeof saved === 'string' ? saved : typeof field.defaultValue === 'string' ? field.defaultValue : '']
+	}))
 }
 
 function cloneExtraInfoTemplate(template: ExtraInfoTemplate): ExtraInfoTemplate {

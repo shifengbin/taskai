@@ -185,6 +185,8 @@ export namespace settings {
 	    lifecycleCommands: LifecycleCommand[];
 	    lifecycleChains: LifecycleCommandChain[];
 	    lifecycleDefaultChains: Record<string, string>;
+	    taskTemplates: task.TaskTemplate[];
+	    activeTaskTemplateId: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -204,6 +206,8 @@ export namespace settings {
 	        this.lifecycleCommands = this.convertValues(source["lifecycleCommands"], LifecycleCommand);
 	        this.lifecycleChains = this.convertValues(source["lifecycleChains"], LifecycleCommandChain);
 	        this.lifecycleDefaultChains = source["lifecycleDefaultChains"];
+	        this.taskTemplates = this.convertValues(source["taskTemplates"], task.TaskTemplate);
+	        this.activeTaskTemplateId = source["activeTaskTemplateId"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -464,6 +468,7 @@ export namespace task {
 	    workspaceRoot?: string;
 	    workspacePath?: string;
 	    extraInfo: TaskExtraInfo[];
+	    templateFields: Record<string, any>;
 	    lifecycleChains: Record<string, string>;
 	    lifecycleExecution?: LifecycleExecution;
 	
@@ -484,8 +489,66 @@ export namespace task {
 	        this.workspaceRoot = source["workspaceRoot"];
 	        this.workspacePath = source["workspacePath"];
 	        this.extraInfo = this.convertValues(source["extraInfo"], TaskExtraInfo);
+	        this.templateFields = source["templateFields"];
 	        this.lifecycleChains = source["lifecycleChains"];
 	        this.lifecycleExecution = this.convertValues(source["lifecycleExecution"], LifecycleExecution);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class TaskTemplateField {
+	    key: string;
+	    displayName: string;
+	    inputType: string;
+	    required: boolean;
+	    defaultValue: any;
+	    injectEnvironment: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaskTemplateField(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.displayName = source["displayName"];
+	        this.inputType = source["inputType"];
+	        this.required = source["required"];
+	        this.defaultValue = source["defaultValue"];
+	        this.injectEnvironment = source["injectEnvironment"];
+	    }
+	}
+	export class TaskTemplate {
+	    id: string;
+	    name: string;
+	    fields: TaskTemplateField[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TaskTemplate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.fields = this.convertValues(source["fields"], TaskTemplateField);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

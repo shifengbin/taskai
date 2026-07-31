@@ -36,15 +36,16 @@ func (function CommandExecutorFunc) Run(invocation CommandInvocation) (CommandRe
 }
 
 type CommandChainRequest struct {
-	Task          task.Task
-	Directory     string
-	WorkspaceRoot string
-	WorkspacePath string
-	ShellPath     string
-	Environment   []string
-	Input         []byte
-	Commands      []settings.LifecycleCommand
-	OnProgress    func(index, count int, command settings.LifecycleCommand)
+	Task                     task.Task
+	Directory                string
+	WorkspaceRoot            string
+	WorkspacePath            string
+	ShellPath                string
+	Environment              []string
+	Input                    []byte
+	Commands                 []settings.LifecycleCommand
+	GitCloneRepositoryBranch string
+	OnProgress               func(index, count int, command settings.LifecycleCommand)
 }
 
 type CommandChainRunner struct {
@@ -98,11 +99,94 @@ func (runner *CommandChainRunner) Run(request CommandChainRequest) ([]byte, erro
 			if err := runner.cloneGitRepositories(request, command.Arguments); err != nil {
 				return nil, commandError(command.Name, nil, err)
 			}
+		case settings.LifecycleCommandKindGitCloneRepository:
+			if err := runner.cloneGitRepositoryToTarget(request, command.Arguments); err != nil {
+				return nil, commandError(command.Name, nil, err)
+			}
 		default:
 			return nil, fmt.Errorf("不支持的生命周期命令类型: %q", command.Kind)
 		}
 	}
 	return output, nil
+}
+
+func (runner *CommandChainRunner) cloneGitRepositoryToTarget(request CommandChainRequest, arguments []string) error {
+	parameters, err := settings.GitCloneRepositoryArguments(arguments)
+	if err != nil {
+		return err
+	}
+	if runner.gitExecutor == nil {
+		return fmt.Errorf("Git 命令执行器不可用")
+	}
+	target, err := prepareGitCloneRepositoryTarget(request.WorkspacePath, parameters.Directory)
+	if err != nil {
+		return err
+	}
+	if err := runner.cloneGitRepository(parameters.Repository, target, strings.TrimSpace(request.GitCloneRepositoryBranch)); err != nil {
+		return fmt.Errorf("克隆指定 Git 仓库失败: %w", err)
+	}
+	return nil
+}
+
+func prepareGitCloneRepositoryTarget(workspacePath, directory string) (string, error) {
+	workspacePath = strings.TrimSpace(workspacePath)
+	if workspacePath == "" {
+		return "", fmt.Errorf("任务工作目录不可用")
+	}
+	workspacePath, err := filepath.Abs(workspacePath)
+	if err != nil {
+		return "", fmt.Errorf("解析任务工作目录失败: %w", err)
+	}
+	workspacePath = filepath.Clean(workspacePath)
+	workspaceInfo, err := os.Lstat(workspacePath)
+	if err != nil || !workspaceInfo.IsDir() {
+		if err != nil {
+			return "", fmt.Errorf("任务工作目录不可用: %w", err)
+		}
+		return "", fmt.Errorf("任务工作目录不可用")
+	}
+	if workspaceInfo.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("Git 克隆目标不安全: 任务工作目录不能是符号链接")
+	}
+
+	target := filepath.Clean(filepath.Join(workspacePath, directory))
+	if !isWithinWorkspace(workspacePath, target) {
+		return "", fmt.Errorf("Git 克隆目标不安全")
+	}
+	relative, err := filepath.Rel(workspacePath, target)
+	if err != nil {
+		return "", fmt.Errorf("解析 Git 克隆目标失败: %w", err)
+	}
+	current := workspacePath
+	if relative != "." {
+		for _, component := range strings.Split(relative, string(filepath.Separator)) {
+			current = filepath.Join(current, component)
+			info, err := os.Lstat(current)
+			if os.IsNotExist(err) {
+				if err := os.Mkdir(current, 0o700); err != nil {
+					return "", fmt.Errorf("创建 Git 克隆目标失败: %w", err)
+				}
+				continue
+			}
+			if err != nil {
+				return "", fmt.Errorf("检查 Git 克隆目标失败: %w", err)
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return "", fmt.Errorf("Git 克隆目标不安全: 不能使用符号链接")
+			}
+			if !info.IsDir() {
+				return "", fmt.Errorf("Git 克隆目标不可用: 目标不是目录")
+			}
+		}
+	}
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		return "", fmt.Errorf("检查 Git 克隆目标失败: %w", err)
+	}
+	if len(entries) != 0 {
+		return "", fmt.Errorf("Git 克隆目标不可用: 目标目录非空")
+	}
+	return target, nil
 }
 
 func (runner *CommandChainRunner) cloneGitRepositories(request CommandChainRequest, arguments []string) error {

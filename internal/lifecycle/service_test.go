@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +59,161 @@ func TestServiceCreatesPendingTask(t *testing.T) {
 	if len(data.Tasks) != 1 || !reflect.DeepEqual(data.Tasks[0], created) {
 		t.Errorf("CreateTask() persisted Tasks = %#v, want %#v", data.Tasks, created)
 	}
+}
+
+func TestServiceCreatesAndUpdatesCurrentTaskTemplateFields(t *testing.T) {
+	service, repository, _ := newService(t)
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{{
+		ID: "release", Name: "发布", Fields: []task.TaskTemplateField{
+			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, Required: true, DefaultValue: "production"},
+			{Key: "deploy", DisplayName: "允许部署", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false},
+		},
+	}}
+	data.Settings.ActiveTaskTemplateID = "release"
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	created, err := service.CreateTaskWithTemplateFields("发布 API", "", task.DefaultColor, map[string]any{"environment": "staging"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithTemplateFields() error = %v", err)
+	}
+	if want := map[string]any{"environment": "staging", "deploy": false}; !reflect.DeepEqual(created.TemplateFields, want) {
+		t.Fatalf("创建任务模板字段 = %#v，期望 %#v", created.TemplateFields, want)
+	}
+
+	data, err = repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Tasks[0].TemplateFields["retired_field"] = "keep"
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	updated, err := service.UpdateTaskWithTemplateFields(created.ID, "发布 API", "", task.DefaultColor, map[string]any{"environment": "production", "deploy": true})
+	if err != nil {
+		t.Fatalf("UpdateTaskWithTemplateFields() error = %v", err)
+	}
+	if want := map[string]any{"environment": "production", "deploy": true, "retired_field": "keep"}; !reflect.DeepEqual(updated.TemplateFields, want) {
+		t.Fatalf("更新任务模板字段 = %#v，期望 %#v", updated.TemplateFields, want)
+	}
+}
+
+func TestServiceCopiesTaskTemplateBranchIntoEmptyGitExtraInfoSnapshots(t *testing.T) {
+	service, repository, _ := newService(t)
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{{
+		ID: "release", Name: "发布任务", Fields: []task.TaskTemplateField{{
+			Key: "branch", DisplayName: "模板分支", InputType: task.TaskTemplateFieldInputString, DefaultValue: "",
+		}},
+	}}
+	data.Settings.ActiveTaskTemplateID = "release"
+	gitInfo, err := task.NewExtraInfoWithParameters(task.BuiltInGitTemplate(), map[string]string{
+		"name": "API", "repository": "https://example.com/api.git",
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewExtraInfoWithParameters() error = %v", err)
+	}
+	data.ExtraInfos = []task.ExtraInfo{gitInfo}
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	emptyBranch := []task.TaskExtraInfo{{InformationID: gitInfo.ID, Parameters: []task.ExtraInfoParameter{{Key: "branch", Value: ""}}}}
+	created, err := service.CreateTaskWithExtraInfoAndTemplateFields("发布 API", "", task.DefaultColor, emptyBranch, map[string]any{"branch": "release/1.2"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
+	}
+	if got := taskExtraInfoParameterValue(created.ExtraInfo[0], "branch"); got != "release/1.2" {
+		t.Fatalf("空 Git 分支回填 = %q，期望 release/1.2", got)
+	}
+
+	explicitBranch := []task.TaskExtraInfo{{InformationID: gitInfo.ID, Parameters: []task.ExtraInfoParameter{{Key: "branch", Value: "hotfix"}}}}
+	explicit, err := service.CreateTaskWithExtraInfoAndTemplateFields("热修复", "", task.DefaultColor, explicitBranch, map[string]any{"branch": "release/1.2"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() explicit error = %v", err)
+	}
+	if got := taskExtraInfoParameterValue(explicit.ExtraInfo[0], "branch"); got != "hotfix" {
+		t.Fatalf("显式 Git 分支 = %q，期望 hotfix", got)
+	}
+
+	emptyTemplate, err := service.CreateTaskWithExtraInfoAndTemplateFields("默认分支", "", task.DefaultColor, emptyBranch, nil)
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() empty template error = %v", err)
+	}
+	if got := taskExtraInfoParameterValue(emptyTemplate.ExtraInfo[0], "branch"); got != "" {
+		t.Fatalf("空模板分支不应改写 Git 分支，得到 %q", got)
+	}
+	updated, err := service.UpdateTaskWithTemplateFields(emptyTemplate.ID, "默认分支", "", task.DefaultColor, map[string]any{"branch": "stable"})
+	if err != nil {
+		t.Fatalf("UpdateTaskWithTemplateFields() error = %v", err)
+	}
+	if got := taskExtraInfoParameterValue(updated.ExtraInfo[0], "branch"); got != "stable" {
+		t.Fatalf("更新模板字段后空 Git 分支回填 = %q，期望 stable", got)
+	}
+
+	data, err = repository.Load()
+	if err != nil {
+		t.Fatalf("Load() after create error = %v", err)
+	}
+	data.Settings.TaskTemplates[0].Fields[0].DefaultValue = "main"
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() after template update error = %v", err)
+	}
+	persisted, err := service.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+	if got := taskExtraInfoParameterValue(persisted.ExtraInfo[0], "branch"); got != "release/1.2" {
+		t.Fatalf("模板后续修改改写了任务 Git 快照: %q", got)
+	}
+}
+
+func TestServiceRejectsNonStringTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
+	service, repository, _ := newService(t)
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{{
+		ID: "invalid", Name: "错误模板", Fields: []task.TaskTemplateField{{
+			Key: "branch", DisplayName: "模板分支", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false,
+		}},
+	}}
+	data.Settings.ActiveTaskTemplateID = "invalid"
+	data.Settings.LifecycleChains = append(data.Settings.LifecycleChains, settings.LifecycleCommandChain{
+		ID: "clone-template", Name: "初始化模板", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+		Commands: []settings.LifecycleCommandReference{{
+			CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=https://example.com/template.git"},
+		}},
+	})
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	_, err = service.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
+		"错误任务", "", task.DefaultColor, nil, map[string]any{"branch": true},
+		map[task.LifecycleHook]string{task.LifecycleHookBeforeStart: "clone-template"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "branch") {
+		t.Fatalf("CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains() error = %v，期望拒绝非字符串 branch", err)
+	}
+}
+
+func taskExtraInfoParameterValue(information task.TaskExtraInfo, key string) string {
+	for _, parameter := range information.Parameters {
+		if parameter.Key == key {
+			return parameter.Value
+		}
+	}
+	return ""
 }
 
 func TestServiceStartingTaskClearsShelvedFlag(t *testing.T) {

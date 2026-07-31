@@ -71,16 +71,18 @@ const (
 type LifecycleCommandKind string
 
 const (
-	LifecycleCommandKindCustom          LifecycleCommandKind = "custom"
-	LifecycleCommandKindCreateWorkspace LifecycleCommandKind = "create-workspace"
-	LifecycleCommandKindDeleteWorkspace LifecycleCommandKind = "delete-workspace"
-	LifecycleCommandKindGitClone        LifecycleCommandKind = "git-clone"
+	LifecycleCommandKindCustom             LifecycleCommandKind = "custom"
+	LifecycleCommandKindCreateWorkspace    LifecycleCommandKind = "create-workspace"
+	LifecycleCommandKindDeleteWorkspace    LifecycleCommandKind = "delete-workspace"
+	LifecycleCommandKindGitClone           LifecycleCommandKind = "git-clone"
+	LifecycleCommandKindGitCloneRepository LifecycleCommandKind = "git-clone-repository"
 
-	LifecycleCommandCreateWorkspaceID = "system.lifecycle.create-workspace"
-	LifecycleCommandDeleteWorkspaceID = "system.lifecycle.delete-workspace"
-	LifecycleCommandGitCloneID        = "system.lifecycle.git-clone"
-	LifecycleChainCreateWorkspaceID   = "system.lifecycle-chain.create-workspace"
-	LifecycleChainDeleteWorkspaceID   = "system.lifecycle-chain.delete-workspace"
+	LifecycleCommandCreateWorkspaceID    = "system.lifecycle.create-workspace"
+	LifecycleCommandDeleteWorkspaceID    = "system.lifecycle.delete-workspace"
+	LifecycleCommandGitCloneID           = "system.lifecycle.git-clone"
+	LifecycleCommandGitCloneRepositoryID = "system.lifecycle.git-clone-repository"
+	LifecycleChainCreateWorkspaceID      = "system.lifecycle-chain.create-workspace"
+	LifecycleChainDeleteWorkspaceID      = "system.lifecycle-chain.delete-workspace"
 )
 
 type LifecycleCommandChainArgumentMode string
@@ -138,6 +140,8 @@ type Settings struct {
 	LifecycleCommands        []LifecycleCommand       `json:"lifecycleCommands"`
 	LifecycleChains          []LifecycleCommandChain  `json:"lifecycleChains"`
 	LifecycleDefaultChains   map[LifecycleHook]string `json:"lifecycleDefaultChains"`
+	TaskTemplates            []task.TaskTemplate      `json:"taskTemplates"`
+	ActiveTaskTemplateID     string                   `json:"activeTaskTemplateId"`
 }
 
 func Default(applicationDataDirectory string) Settings {
@@ -152,7 +156,24 @@ func Default(applicationDataDirectory string) Settings {
 		LifecycleCommands:      DefaultLifecycleCommands(),
 		LifecycleChains:        DefaultLifecycleChains(),
 		LifecycleDefaultChains: DefaultLifecycleDefaultChains(),
+		TaskTemplates:          []task.TaskTemplate{},
 	}
+}
+
+func (current Settings) ActiveTaskTemplate() *task.TaskTemplate {
+	activeID := strings.TrimSpace(current.ActiveTaskTemplateID)
+	if activeID == "" {
+		return nil
+	}
+	for _, candidate := range current.TaskTemplates {
+		if candidate.ID != activeID {
+			continue
+		}
+		copy := candidate
+		copy.Fields = append([]task.TaskTemplateField(nil), candidate.Fields...)
+		return &copy
+	}
+	return nil
 }
 
 func DefaultTaskMenuItems() []TaskMenuItem {
@@ -168,6 +189,7 @@ func DefaultLifecycleCommands() []LifecycleCommand {
 		fixedLifecycleCommand(LifecycleCommandCreateWorkspaceID),
 		fixedLifecycleCommand(LifecycleCommandDeleteWorkspaceID),
 		fixedLifecycleCommand(LifecycleCommandGitCloneID),
+		fixedLifecycleCommand(LifecycleCommandGitCloneRepositoryID),
 	}
 }
 
@@ -228,6 +250,10 @@ func Validate(next Settings) (Settings, error) {
 		return Settings{}, err
 	}
 	next.TaskMenuItems = menuItems
+	next, err = NormalizeTaskTemplates(next)
+	if err != nil {
+		return Settings{}, err
+	}
 	next, err = NormalizeLifecycle(next)
 	if err != nil {
 		return Settings{}, err
@@ -261,6 +287,24 @@ func Validate(next Settings) (Settings, error) {
 	return next, nil
 }
 
+func NormalizeTaskTemplates(next Settings) (Settings, error) {
+	templates, err := task.ValidateTaskTemplates(next.TaskTemplates)
+	if err != nil {
+		return Settings{}, err
+	}
+	next.TaskTemplates = templates
+	next.ActiveTaskTemplateID = strings.TrimSpace(next.ActiveTaskTemplateID)
+	if next.ActiveTaskTemplateID == "" {
+		return next, nil
+	}
+	for _, template := range next.TaskTemplates {
+		if template.ID == next.ActiveTaskTemplateID {
+			return next, nil
+		}
+	}
+	return Settings{}, fmt.Errorf("当前任务模板不存在: %q", next.ActiveTaskTemplateID)
+}
+
 func fixedTaskMenuItem(id string) TaskMenuItem {
 	switch id {
 	case TaskMenuItemEditTaskID:
@@ -281,7 +325,9 @@ func fixedLifecycleCommand(id string) LifecycleCommand {
 	case LifecycleCommandDeleteWorkspaceID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindDeleteWorkspace, Name: "删除任务工作目录", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}}
 	case LifecycleCommandGitCloneID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数：dir=<相对目录>（必填）。每个内置 Git 项目将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；留空时每个内置 Git 项目将克隆到任务工作目录下的 <项目名称>。填写时使用 dir=<相对目录>，将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
+	case LifecycleCommandGitCloneRepositoryID:
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitCloneRepository, Name: "克隆指定 Git 仓库", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数：repository=<仓库地址>（必填）；dir=<相对目录>（可选）。仓库直接克隆到任务工作目录或指定子目录本身，不读取 Git 附加信息。目标必须为空目录，非空目录会失败。分支使用任务模板的 branch 字段；为空时由远程默认分支决定。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}}
 	default:
 		return LifecycleCommand{}
 	}
@@ -567,10 +613,20 @@ func normalizeLifecycleCommandReference(reference LifecycleCommandReference, com
 		}
 		reference.Arguments = arguments
 	}
+	if command.Kind == LifecycleCommandKindGitCloneRepository {
+		arguments, err := normalizeGitCloneRepositoryArguments(reference.Arguments)
+		if err != nil {
+			return LifecycleCommandReference{}, err
+		}
+		reference.Arguments = arguments
+	}
 	return reference, nil
 }
 
 func normalizeGitCloneArguments(arguments []string) ([]string, error) {
+	if len(arguments) == 0 {
+		return []string{}, nil
+	}
 	if len(arguments) != 1 {
 		return nil, fmt.Errorf("Git 仓库克隆命令必须配置唯一的 dir 参数")
 	}
@@ -594,7 +650,71 @@ func GitCloneDirectory(arguments []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(normalized) == 0 {
+		return ".", nil
+	}
 	return strings.TrimPrefix(normalized[0], "dir="), nil
+}
+
+type GitCloneRepositoryParameters struct {
+	Repository string
+	Directory  string
+}
+
+func GitCloneRepositoryArguments(arguments []string) (GitCloneRepositoryParameters, error) {
+	normalized, err := normalizeGitCloneRepositoryArguments(arguments)
+	if err != nil {
+		return GitCloneRepositoryParameters{}, err
+	}
+	parameters := GitCloneRepositoryParameters{Directory: "."}
+	for _, argument := range normalized {
+		key, value, _ := strings.Cut(argument, "=")
+		switch key {
+		case "repository":
+			parameters.Repository = value
+		case "dir":
+			parameters.Directory = value
+		}
+	}
+	return parameters, nil
+}
+
+func normalizeGitCloneRepositoryArguments(arguments []string) ([]string, error) {
+	normalized := make([]string, 0, len(arguments))
+	seenRepository := false
+	seenDirectory := false
+	for _, argument := range normalizeArguments(arguments) {
+		key, value, found := strings.Cut(argument, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !found {
+			return nil, fmt.Errorf("克隆指定 Git 仓库命令参数必须使用 repository=<仓库地址> 或 dir=<相对目录>")
+		}
+		switch key {
+		case "repository":
+			if seenRepository || value == "" {
+				return nil, fmt.Errorf("克隆指定 Git 仓库命令必须配置唯一且非空的 repository 参数")
+			}
+			seenRepository = true
+			normalized = append(normalized, "repository="+value)
+		case "dir":
+			if seenDirectory || value == "" || filepath.IsAbs(value) {
+				return nil, fmt.Errorf("克隆指定 Git 仓库命令的 dir 参数无效")
+			}
+			value = filepath.Clean(value)
+			if value == ".." || strings.HasPrefix(value, ".."+string(filepath.Separator)) {
+				return nil, fmt.Errorf("克隆指定 Git 仓库命令的 dir 参数无效")
+			}
+			seenDirectory = true
+			normalized = append(normalized, "dir="+value)
+		default:
+			return nil, fmt.Errorf("克隆指定 Git 仓库命令不支持参数: %s", key)
+		}
+	}
+	if !seenRepository {
+		return nil, fmt.Errorf("克隆指定 Git 仓库命令必须配置 repository=<仓库地址>")
+	}
+	return normalized, nil
 }
 
 func commonLifecycleHooks(references []LifecycleCommandReference, commands map[string]LifecycleCommand) []LifecycleHook {

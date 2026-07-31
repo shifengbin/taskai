@@ -85,6 +85,14 @@ func defaultData(defaultSettings settings.Settings) Data {
 
 func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, error) {
 	changed := false
+	templateSettings, err := settings.NormalizeTaskTemplates(data.Settings)
+	if err != nil {
+		return Data{}, false, fmt.Errorf("normalize task template settings: %w", err)
+	}
+	if !sameJSON(data.Settings, templateSettings) {
+		changed = true
+	}
+	data.Settings = templateSettings
 	lifecycleSettings, err := settings.NormalizeLifecycle(data.Settings)
 	if err != nil {
 		return Data{}, false, fmt.Errorf("normalize lifecycle settings: %w", err)
@@ -152,6 +160,18 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 	}
 	data.ExtraInfos = infos
 	for index := range data.Tasks {
+		if data.Tasks[index].TemplateFields == nil {
+			data.Tasks[index].TemplateFields = map[string]any{}
+			changed = true
+		}
+		templateFields, err := task.NormalizeTaskTemplateValues(data.Tasks[index].TemplateFields)
+		if err != nil {
+			return Data{}, false, fmt.Errorf("normalize task template fields: %w", err)
+		}
+		if !sameJSON(data.Tasks[index].TemplateFields, templateFields) {
+			changed = true
+		}
+		data.Tasks[index].TemplateFields = templateFields
 		if data.Tasks[index].ExtraInfo == nil {
 			data.Tasks[index].ExtraInfo = []task.TaskExtraInfo{}
 			changed = true
@@ -417,11 +437,39 @@ func (repository *Repository) SaveSettings(next settings.Settings) (settings.Set
 	if err != nil {
 		return settings.Settings{}, err
 	}
-	data.Settings = next
+	validated, err := settings.NormalizeTaskTemplates(next)
+	if err != nil {
+		return settings.Settings{}, err
+	}
+	if err := validateTaskTemplateUpdates(data.Settings, validated, data.Tasks); err != nil {
+		return settings.Settings{}, err
+	}
+	data.Settings = validated
 	if err := repository.Save(data); err != nil {
 		return settings.Settings{}, err
 	}
-	return next, nil
+	return data.Settings, nil
+}
+
+func validateTaskTemplateUpdates(previous, next settings.Settings, tasks []task.Task) error {
+	previousByID := make(map[string]task.TaskTemplate, len(previous.TaskTemplates))
+	for _, template := range previous.TaskTemplates {
+		previousByID[template.ID] = template
+	}
+	values := make([]map[string]any, 0, len(tasks))
+	for _, current := range tasks {
+		values = append(values, current.TemplateFields)
+	}
+	for _, template := range next.TaskTemplates {
+		previousTemplate, found := previousByID[template.ID]
+		if !found {
+			continue
+		}
+		if err := task.ValidateTaskTemplateUpdate(previousTemplate, template, values); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (repository *Repository) ListLifecycleCommands() ([]settings.LifecycleCommand, error) {

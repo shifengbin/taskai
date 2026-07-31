@@ -7,8 +7,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,6 +258,244 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 	finishTaskAndWait(t, app, created.ID)
 	if got, want := directories["post"], started.WorkspaceRoot; got != want {
 		t.Fatalf("postEnd 工作目录 = %q，期望根目录 %q", got, want)
+	}
+}
+
+func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
+	app := newApp(t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.TaskTemplates = []task.TaskTemplate{{
+		ID:   "release",
+		Name: "发布任务",
+		Fields: []task.TaskTemplateField{
+			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, Required: true, DefaultValue: "development"},
+			{Key: "dryRun", DisplayName: "演练", InputType: task.TaskTemplateFieldInputBool, DefaultValue: true},
+		},
+	}}
+	current.ActiveTaskTemplateID = "release"
+	current.LifecycleCommands = append(current.LifecycleCommands, settings.LifecycleCommand{
+		ID: "template-input", Kind: settings.LifecycleCommandKindCustom, Name: "读取模板输入", Command: "capture", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+		ID: "template-input", Name: "模板输入", Commands: []settings.LifecycleCommandReference{{CommandID: "template-input", Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "template-input"
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	payloads := make(chan map[string]any, 1)
+	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(invocation lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
+		payload := map[string]any{}
+		if err := json.Unmarshal(invocation.Input, &payload); err != nil {
+			return lifecycle.CommandResult{}, err
+		}
+		payloads <- payload
+		return lifecycle.CommandResult{Output: []byte("ok")}, nil
+	}))
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "production"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
+	}
+	startTaskAndWait(t, app, created.ID)
+
+	select {
+	case payload := <-payloads:
+		if got, want := payload["templateFields"], map[string]any{"environment": "production", "dryRun": true}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("生命周期命令输入模板字段 = %#v，期望 %#v", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("生命周期命令未收到模板字段输入")
+	}
+}
+
+func TestAppFreezesTaskTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
+	app := newApp(t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.TaskTemplates = []task.TaskTemplate{{
+		ID: "release", Name: "发布任务", Fields: []task.TaskTemplateField{{
+			Key: "branch", DisplayName: "模板分支", InputType: task.TaskTemplateFieldInputString, DefaultValue: "main",
+		}},
+	}}
+	current.ActiveTaskTemplateID = "release"
+	repository := filepath.Join(t.TempDir(), "template")
+	runGitTestCommand(t, "init", repository)
+	runGitTestCommand(t, "-C", repository, "config", "user.email", "taskai@example.test")
+	runGitTestCommand(t, "-C", repository, "config", "user.name", "TaskAI Test")
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("template\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGitTestCommand(t, "-C", repository, "add", "README.md")
+	runGitTestCommand(t, "-C", repository, "commit", "-m", "initial")
+	runGitTestCommand(t, "-C", repository, "branch", "-M", "remote-default")
+	runGitTestCommand(t, "-C", repository, "checkout", "-b", "release/1.2")
+	remoteRepository := filepath.Join(t.TempDir(), "template.git")
+	runGitTestCommand(t, "clone", "--bare", repository, remoteRepository)
+	runGitTestCommand(t, "-C", remoteRepository, "symbolic-ref", "HEAD", "refs/heads/remote-default")
+	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+		ID: "clone-template", Name: "初始化模板", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+		Commands: []settings.LifecycleCommandReference{
+			{CommandID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + remoteRepository}},
+		},
+	})
+	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "clone-template"
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"branch": "release/1.2"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	if started.Status != task.StatusRunning {
+		t.Fatalf("任务状态 = %q，期望执行中", started.Status)
+	}
+	branch := runGitTestCommand(t, "-C", started.WorkspacePath, "branch", "--show-current")
+	if branch != "release/1.2" {
+		t.Fatalf("指定仓库克隆分支 = %q，期望 release/1.2", branch)
+	}
+}
+
+func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testing.T) {
+	t.Run("开始前失败阻止任务启动", func(t *testing.T) {
+		app := newApp(t.TempDir())
+		current, err := app.GetSettings()
+		if err != nil {
+			t.Fatalf("GetSettings() error = %v", err)
+		}
+		current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+			ID: "clone-before-start", Name: "开始前初始化", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+			Commands: []settings.LifecycleCommandReference{{
+				CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + filepath.Join(t.TempDir(), "missing.git")},
+			}},
+		})
+		current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "clone-before-start"
+		if _, err := app.SaveSettings(current); err != nil {
+			t.Fatalf("SaveSettings() error = %v", err)
+		}
+
+		created, err := app.CreateTask("初始化失败", "", task.DefaultColor)
+		if err != nil {
+			t.Fatalf("CreateTask() error = %v", err)
+		}
+		if _, err := app.StartTask(created.ID); err != nil {
+			t.Fatalf("StartTask() error = %v", err)
+		}
+		failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusPending && current.LifecycleExecution != nil && current.LifecycleExecution.Hook == task.LifecycleHookBeforeStart && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+		})
+		if failed.Status != task.StatusPending {
+			t.Fatalf("开始前克隆失败后任务状态 = %q，期望未执行", failed.Status)
+		}
+	})
+
+	t.Run("开始后失败可重试", func(t *testing.T) {
+		app := newApp(t.TempDir())
+		current, err := app.GetSettings()
+		if err != nil {
+			t.Fatalf("GetSettings() error = %v", err)
+		}
+		remoteRepository := filepath.Join(t.TempDir(), "template.git")
+		current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+			ID: "clone-post-start", Name: "开始后初始化", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookPostStart},
+			Commands: []settings.LifecycleCommandReference{{
+				CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + remoteRepository},
+			}},
+		})
+		current.LifecycleDefaultChains[task.LifecycleHookPostStart] = "clone-post-start"
+		if _, err := app.SaveSettings(current); err != nil {
+			t.Fatalf("SaveSettings() error = %v", err)
+		}
+
+		created, err := app.CreateTask("可重试初始化", "", task.DefaultColor)
+		if err != nil {
+			t.Fatalf("CreateTask() error = %v", err)
+		}
+		if _, err := app.StartTask(created.ID); err != nil {
+			t.Fatalf("StartTask() error = %v", err)
+		}
+		failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.LifecycleExecution != nil && current.LifecycleExecution.Hook == task.LifecycleHookPostStart && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+		})
+		if failed.Status != task.StatusRunning {
+			t.Fatalf("开始后克隆失败后任务状态 = %q，期望执行中", failed.Status)
+		}
+		runGitTestCommand(t, "init", "--bare", remoteRepository)
+		if _, err := app.RetryTaskLifecycleCommandChain(created.ID); err != nil {
+			t.Fatalf("RetryTaskLifecycleCommandChain() error = %v", err)
+		}
+		retried := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+		})
+		if _, err := os.Stat(filepath.Join(retried.WorkspacePath, ".git")); err != nil {
+			t.Fatalf("重试后指定仓库未直接克隆到工作目录: %v", err)
+		}
+	})
+}
+
+func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
+	app := newApp(t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.TaskTemplates = []task.TaskTemplate{{
+		ID:   "release",
+		Name: "发布任务",
+		Fields: []task.TaskTemplateField{
+			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, DefaultValue: "", InjectEnvironment: true},
+			{Key: "deploy", DisplayName: "立即部署", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false, InjectEnvironment: true},
+			{Key: "privateNote", DisplayName: "内部备注", InputType: task.TaskTemplateFieldInputString, DefaultValue: "hidden"},
+		},
+	}}
+	current.ActiveTaskTemplateID = "release"
+	current.LifecycleCommands = append(current.LifecycleCommands, settings.LifecycleCommand{
+		ID: "capture-template-environment", Kind: settings.LifecycleCommandKindCustom, Name: "读取模板变量", Command: "capture", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+		ID: "capture-template-environment", Name: "模板变量", Commands: []settings.LifecycleCommandReference{
+			{CommandID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: "capture-template-environment", Arguments: []string{}},
+		}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "capture-template-environment"
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	environments := make(chan []string, 1)
+	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(invocation lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
+		if invocation.Command != "capture" {
+			t.Fatalf("内置命令不应调用 Shell 执行器: %#v", invocation)
+		}
+		environments <- append([]string(nil), invocation.Environment...)
+		return lifecycle.CommandResult{Output: []byte("ok")}, nil
+	}))
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "", "deploy": true})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
+	}
+	startTaskAndWait(t, app, created.ID)
+
+	select {
+	case environment := <-environments:
+		want := []string{"TASKAI_TASK_ID=" + created.ID, "TASKAI_ENVIRONMENT=", "TASKAI_DEPLOY=true"}
+		if !reflect.DeepEqual(environment, want) {
+			t.Fatalf("自定义生命周期命令环境 = %#v，期望 %#v", environment, want)
+		}
+		if containsEnvironmentValue(environment, "TASKAI_PRIVATE_NOTE=hidden") {
+			t.Fatalf("未标记字段不应注入环境变量: %#v", environment)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("自定义生命周期命令未收到环境变量")
 	}
 }
 
@@ -649,6 +889,15 @@ func finishTaskAndWait(t *testing.T, app *App, taskID string) task.Task {
 	})
 }
 
+func runGitTestCommand(t *testing.T, arguments ...string) string {
+	t.Helper()
+	output, err := exec.Command("git", arguments...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v error = %v: %s", arguments, err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
 func TestAppRecordsFailingLifecycleCommandDetails(t *testing.T) {
 	app := newApp(t.TempDir())
 	current, err := app.GetSettings()
@@ -726,6 +975,56 @@ func TestAppUpdatesLifecycleChainSelectionsOnlyForPendingTasks(t *testing.T) {
 	}
 }
 
+func TestAppCreatesAndUpdatesTaskTemplateFieldsWithExtraInfoAndLifecycleChains(t *testing.T) {
+	app := newApp(t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.TaskTemplates = []task.TaskTemplate{{
+		ID:   "release",
+		Name: "发布任务",
+		Fields: []task.TaskTemplateField{
+			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, Required: true, DefaultValue: "development"},
+			{Key: "deploy", DisplayName: "立即部署", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false},
+		},
+	}}
+	current.ActiveTaskTemplateID = "release"
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	created, err := app.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
+		"发布", "", task.DefaultColor, nil,
+		map[string]any{"environment": "staging"},
+		map[task.LifecycleHook]string{task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID},
+	)
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains() error = %v", err)
+	}
+	if got, want := created.TemplateFields, map[string]any{"environment": "staging", "deploy": false}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("创建任务模板字段 = %#v，期望 %#v", got, want)
+	}
+	if got := created.LifecycleChains[task.LifecycleHookBeforeStart]; got != settings.LifecycleChainCreateWorkspaceID {
+		t.Fatalf("创建任务生命周期命令链 = %q", got)
+	}
+
+	updated, err := app.UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
+		created.ID, "发布", "准备完成", task.DefaultColor, nil,
+		map[string]any{"environment": "production", "deploy": true},
+		map[task.LifecycleHook]string{task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID},
+	)
+	if err != nil {
+		t.Fatalf("UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains() error = %v", err)
+	}
+	if got, want := updated.TemplateFields, map[string]any{"environment": "production", "deploy": true}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("更新任务模板字段 = %#v，期望 %#v", got, want)
+	}
+	if got := updated.LifecycleChains[task.LifecycleHookPostEnd]; got != settings.LifecycleChainDeleteWorkspaceID {
+		t.Fatalf("更新任务生命周期命令链 = %q", got)
+	}
+}
+
 func TestAppHTTPTaskDetailIncludesLifecycleConfiguration(t *testing.T) {
 	app := newApp(t.TempDir())
 	selected := map[task.LifecycleHook]string{
@@ -752,6 +1051,66 @@ func TestAppHTTPTaskDetailIncludesLifecycleConfiguration(t *testing.T) {
 	}
 	if got := payload["lifecycleChains"].(map[string]any)[string(task.LifecycleHookBeforeStart)]; got != settings.LifecycleChainCreateWorkspaceID {
 		t.Fatalf("命令输入 lifecycleChains = %#v", payload["lifecycleChains"])
+	}
+}
+
+func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
+	app := newApp(t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.TaskTemplates = []task.TaskTemplate{{
+		ID:   "release",
+		Name: "发布任务",
+		Fields: []task.TaskTemplateField{
+			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, Required: true, DefaultValue: "development"},
+			{Key: "dryRun", DisplayName: "演练", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false},
+		},
+	}}
+	current.ActiveTaskTemplateID = "release"
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "staging"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
+	}
+	data, err := app.repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Tasks[0].TemplateFields["removedField"] = "preserved"
+	if err := app.repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	detail, found, err := app.httpTask(created.ID)
+	if err != nil || !found {
+		t.Fatalf("httpTask() = (%#v, %t, %v)", detail, found, err)
+	}
+	want := map[string]any{"environment": "staging", "dryRun": false}
+	if got := detail.TemplateFields; !reflect.DeepEqual(got, want) {
+		t.Fatalf("HTTP 任务详情模板字段 = %#v，期望 %#v", got, want)
+	}
+	listed, err := app.httpTasks()
+	if err != nil {
+		t.Fatalf("httpTasks() error = %v", err)
+	}
+	if got := listed[0].TemplateFields; !reflect.DeepEqual(got, want) {
+		t.Fatalf("HTTP 任务列表模板字段 = %#v，期望 %#v", got, want)
+	}
+
+	current.ActiveTaskTemplateID = ""
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("保存未启用模板设置 error = %v", err)
+	}
+	detail, found, err = app.httpTask(created.ID)
+	if err != nil || !found {
+		t.Fatalf("停用模板后的 httpTask() = (%#v, %t, %v)", detail, found, err)
+	}
+	if got := detail.TemplateFields; !reflect.DeepEqual(got, map[string]any{}) {
+		t.Fatalf("未启用模板时 HTTP 模板字段 = %#v，期望空对象", got)
 	}
 }
 

@@ -44,6 +44,7 @@ type TaskResource struct {
 	WorkspacePath      string                        `json:"workspacePath,omitempty"`
 	LifecycleChains    map[task.LifecycleHook]string `json:"lifecycleChains"`
 	LifecycleExecution *task.LifecycleExecution      `json:"lifecycleExecution,omitempty"`
+	TemplateFields     map[string]any                `json:"templateFields"`
 	ExtraInfo          *map[string][]map[string]any  `json:"extraInfo,omitempty"`
 	Terminals          *[]TerminalResource           `json:"terminals,omitempty"`
 }

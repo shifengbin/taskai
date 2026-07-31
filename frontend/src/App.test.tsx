@@ -7,9 +7,13 @@ const bindings = vi.hoisted(() => ({
   CreateTask: vi.fn(),
 	CreateTaskWithExtraInfo: vi.fn(),
 	CreateTaskWithExtraInfoAndLifecycleChains: vi.fn(),
-  UpdateTask: vi.fn(),
+	CreateTaskWithExtraInfoAndTemplateFields: vi.fn(),
+	CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains: vi.fn(),
+	UpdateTask: vi.fn(),
 	UpdateTaskWithExtraInfo: vi.fn(),
 	UpdateTaskWithExtraInfoAndLifecycleChains: vi.fn(),
+	UpdateTaskWithExtraInfoAndTemplateFields: vi.fn(),
+	UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains: vi.fn(),
 	ListTasks: vi.fn(),
 	ListExtraInfoCatalogues: vi.fn(),
 	ListExtraInfoTemplates: vi.fn(),
@@ -477,6 +481,47 @@ describe('App confirmation flows', () => {
     })
   })
 
+	it('在设置中编辑任务模板字段并选择当前模板', async () => {
+		const user = userEvent.setup()
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '任务模板'}))
+		await user.click(screen.getByRole('button', {name: '新增模板'}))
+		const editor = screen.getByRole('dialog', {name: '新增任务模板'})
+		await user.type(within(editor).getByRole('textbox', {name: /模板名称/}), '发布任务')
+		await user.type(within(editor).getByRole('textbox', {name: /字段 1 键/}), 'environment')
+		await user.type(within(editor).getByRole('textbox', {name: /字段 1 显示名称/}), '环境')
+		await user.type(within(editor).getByRole('textbox', {name: '字段 1 默认值'}), 'production')
+		await user.click(within(editor).getByLabelText('必填'))
+		await user.click(within(editor).getByLabelText('注入生命周期环境变量'))
+		await user.click(within(editor).getByRole('button', {name: '新增字段'}))
+		await user.type(within(editor).getByRole('textbox', {name: /字段 2 键/}), 'deploy')
+		await user.type(within(editor).getByRole('textbox', {name: /字段 2 显示名称/}), '立即部署')
+		await user.click(within(editor).getByRole('combobox', {name: '字段 2 类型'}))
+		await user.click(screen.getByRole('option', {name: '布尔值'}))
+		await user.click(within(editor).getByLabelText('默认选中'))
+		await user.click(within(editor).getByLabelText('必填（必须勾选）'))
+		await user.click(within(editor).getAllByLabelText('注入生命周期环境变量')[1])
+		await user.click(within(editor).getByRole('button', {name: '保存模板'}))
+
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增任务模板'})).not.toBeInTheDocument())
+		await user.click(screen.getByRole('combobox', {name: '当前任务模板'}))
+		await user.click(screen.getByRole('option', {name: '发布任务'}))
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledOnce())
+		const saved = bindings.SaveSettings.mock.calls[0][0]
+		expect(saved.taskTemplates).toEqual([expect.objectContaining({
+			name: '发布任务',
+			fields: [
+				{key: 'environment', displayName: '环境', inputType: 'string', required: true, defaultValue: 'production', injectEnvironment: true},
+				{key: 'deploy', displayName: '立即部署', inputType: 'bool', required: true, defaultValue: true, injectEnvironment: true},
+			],
+		})])
+		expect(saved.activeTaskTemplateId).toBe(saved.taskTemplates[0].id)
+	})
+
   it('通过颜色选择器创建未执行任务', async () => {
     const user = userEvent.setup()
     bindings.CreateTask.mockResolvedValue({
@@ -512,6 +557,106 @@ describe('App confirmation flows', () => {
       random.mockRestore()
     }
   })
+
+	it('当前模板字段在新建任务中显示默认值并随表单保存', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{
+				id: 'release', name: '发布任务', fields: [
+					{key: 'environment', displayName: '环境', inputType: 'string', required: true, defaultValue: 'development', injectEnvironment: true},
+					{key: 'deploy', displayName: '立即部署', inputType: 'bool', required: false, defaultValue: false, injectEnvironment: true},
+				],
+			}],
+			activeTaskTemplateId: 'release',
+		})
+		bindings.CreateTaskWithExtraInfoAndTemplateFields.mockResolvedValue({
+			id: 'task-template', title: '发布 API', description: '', color: '#4f46e5', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+			templateFields: {environment: 'production', deploy: false},
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		expect(screen.getByRole('textbox', {name: /环境/})).toHaveValue('development')
+		expect(screen.getByLabelText('立即部署')).not.toBeChecked()
+		const description = screen.getByRole('textbox', {name: '任务描述'})
+		const templateFields = screen.getByTestId('task-template-fields')
+		expect(description.compareDocumentPosition(templateFields) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+		expect(templateFields.compareDocumentPosition(screen.getByLabelText('任务颜色')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+		await user.clear(screen.getByRole('textbox', {name: /环境/}))
+		await user.type(screen.getByRole('textbox', {name: /环境/}), 'production')
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '发布 API')
+		await user.click(screen.getByRole('button', {name: '创建'}))
+
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).toHaveBeenCalledWith(
+			'发布 API', '', expect.any(String), [], {environment: 'production', deploy: false},
+		))
+	})
+
+	it('编辑旧任务时恢复当前字段值并隐藏历史字段', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'task-template-old', title: '旧发布任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			templateFields: {environment: 'production', legacy: 'preserved'},
+		}])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{id: 'release', name: '发布任务', fields: [
+				{key: 'environment', displayName: '环境', inputType: 'string', required: true, defaultValue: 'staging', injectEnvironment: false},
+			]}], activeTaskTemplateId: 'release',
+		})
+		bindings.UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains.mockResolvedValue({
+			id: 'task-template-old', title: '旧发布任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			templateFields: {environment: 'production', legacy: 'preserved'},
+		})
+		render(<App/>)
+
+		await screen.findByText('旧发布任务')
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByRole('textbox', {name: /环境/})).toHaveValue('production')
+		expect(screen.queryByText('legacy')).not.toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains).toHaveBeenCalledWith(
+			'task-template-old', '旧发布任务', '', '#4f46e5', [], {environment: 'production'}, {},
+		))
+	})
+
+	it('模板必填字符串和布尔字段阻止提交，满足后才创建任务', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{id: 'release', name: '发布任务', fields: [
+				{key: 'environment', displayName: '环境', inputType: 'string', required: true, defaultValue: '', injectEnvironment: false},
+				{key: 'deploy', displayName: '立即部署', inputType: 'bool', required: true, defaultValue: false, injectEnvironment: false},
+			]}], activeTaskTemplateId: 'release',
+		})
+		bindings.CreateTaskWithExtraInfoAndTemplateFields.mockResolvedValue({
+			id: 'task-required-template', title: '必填模板任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		const title = screen.getByRole('textbox', {name: '标题'})
+		await user.type(title, '必填模板任务')
+		const form = title.closest('form')
+		if (!form) {
+			throw new Error('未找到任务表单')
+		}
+		fireEvent.submit(form)
+		await screen.findByText('字段“环境”不能为空')
+		expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).not.toHaveBeenCalled()
+		await user.type(screen.getByRole('textbox', {name: /环境/}), 'production')
+		fireEvent.submit(form)
+		await screen.findByText('字段“立即部署”必须勾选')
+		expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).not.toHaveBeenCalled()
+		await user.click(screen.getByLabelText('立即部署'))
+		fireEvent.submit(form)
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).toHaveBeenCalledWith(
+			'必填模板任务', '', expect.any(String), [], {environment: 'production', deploy: true},
+		))
+	})
 
 	it('新建任务预选默认命令链，并通过链选择绑定保存', async () => {
 		const user = userEvent.setup()
@@ -687,7 +832,7 @@ describe('App confirmation flows', () => {
 		const gitCommand = {
 			id: 'system.lifecycle.git-clone', kind: 'git-clone', name: 'Git 仓库克隆', arguments: [],
 			chainArgumentMode: 'enabled',
-			documentation: '参数：dir=<相对目录>（必填）。每个内置 Git 项目将克隆到任务工作目录下的 <dir>/<项目名称>。',
+			documentation: '参数可留空；留空时每个内置 Git 项目将克隆到任务工作目录下的 <项目名称>。填写时使用 dir=<相对目录>，将克隆到任务工作目录下的 <dir>/<项目名称>。',
 			applicableHooks: ['beforeStart', 'beforeEnd', 'updateTask'],
 		}
 		bindings.ListLifecycleCommands.mockResolvedValue([gitCommand])
@@ -701,7 +846,7 @@ describe('App confirmation flows', () => {
 
 		await user.click(await screen.findByRole('button', {name: '设置'}))
 		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
-		expect(await screen.findByText(/dir=<相对目录>/)).toBeInTheDocument()
+		expect(await screen.findByText(/参数可留空/)).toBeInTheDocument()
 		await user.click(screen.getByRole('button', {name: '新增链'}))
 		const chainDialog = screen.getByRole('dialog', {name: '新增命令链'})
 		await user.type(within(chainDialog).getByRole('textbox', {name: '命令链名称'}), '克隆仓库')
@@ -713,6 +858,72 @@ describe('App confirmation flows', () => {
 
 		await waitFor(() => expect(bindings.SaveLifecycleCommandChain).toHaveBeenCalledWith({
 			id: '', name: '克隆仓库', commands: [{commandId: 'system.lifecycle.git-clone', arguments: ['dir=repositories']}], applicableHooks: ['beforeStart'],
+		}))
+	})
+
+	it('允许命令链将 Git 克隆目录参数留空', async () => {
+		const user = userEvent.setup()
+		const gitCommand = {
+			id: 'system.lifecycle.git-clone', kind: 'git-clone', name: 'Git 仓库克隆', arguments: [],
+			chainArgumentMode: 'enabled', documentation: '参数可留空；留空时克隆到任务工作目录。',
+			applicableHooks: ['beforeStart', 'beforeEnd', 'updateTask'],
+		}
+		bindings.ListLifecycleCommands.mockResolvedValue([gitCommand])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleCommands: [gitCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+		})
+		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'git-chain'}))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		await user.click(screen.getByRole('button', {name: '新增链'}))
+		const chainDialog = screen.getByRole('dialog', {name: '新增命令链'})
+		await user.type(within(chainDialog).getByRole('textbox', {name: '命令链名称'}), '默认目录克隆')
+		await user.click(within(chainDialog).getByLabelText('开始前'))
+		await user.click(within(chainDialog).getByLabelText('Git 仓库克隆'))
+		await user.click(within(chainDialog).getByRole('button', {name: '保存命令链'}))
+
+		await waitFor(() => expect(bindings.SaveLifecycleCommandChain).toHaveBeenCalledWith({
+			id: '', name: '默认目录克隆', commands: [{commandId: 'system.lifecycle.git-clone', arguments: []}], applicableHooks: ['beforeStart'],
+		}))
+	})
+
+	it('在命令链中配置指定 Git 仓库初始化参数并显示约束', async () => {
+		const user = userEvent.setup()
+		const cloneRepositoryCommand = {
+			id: 'system.lifecycle.git-clone-repository', kind: 'git-clone-repository', name: '克隆指定 Git 仓库', arguments: [],
+			chainArgumentMode: 'enabled',
+			documentation: '参数：repository=<仓库地址>（必填）；dir=<相对目录>（可选）。仓库直接克隆到任务工作目录或指定子目录本身，不读取 Git 附加信息。目标必须为空目录，非空目录会失败。分支使用任务模板的 branch 字段；为空时由远程默认分支决定。',
+			applicableHooks: ['beforeStart', 'postStart'],
+		}
+		bindings.ListLifecycleCommands.mockResolvedValue([cloneRepositoryCommand])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleCommands: [cloneRepositoryCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+		})
+		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'clone-template'}))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		expect(await screen.findByText(/repository=<仓库地址>（必填）/)).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '新增链'}))
+		const chainDialog = screen.getByRole('dialog', {name: '新增命令链'})
+		await user.type(within(chainDialog).getByRole('textbox', {name: '命令链名称'}), '初始化任务目录')
+		await user.click(within(chainDialog).getByLabelText('开始前'))
+		expect(within(chainDialog).getByLabelText('克隆指定 Git 仓库')).toBeInTheDocument()
+		await user.click(within(chainDialog).getByLabelText('克隆指定 Git 仓库'))
+		const argumentsInput = within(chainDialog).getByRole('textbox', {name: '克隆指定 Git 仓库 追加参数（每行一个）'})
+		await user.type(argumentsInput, 'repository=https://example.com/template.git\ndir=template')
+		expect(within(chainDialog).getByText(/目标必须为空目录，非空目录会失败/)).toBeInTheDocument()
+		await user.click(within(chainDialog).getByRole('button', {name: '保存命令链'}))
+
+		await waitFor(() => expect(bindings.SaveLifecycleCommandChain).toHaveBeenCalledWith({
+			id: '', name: '初始化任务目录', commands: [{commandId: 'system.lifecycle.git-clone-repository', arguments: ['repository=https://example.com/template.git', 'dir=template']}], applicableHooks: ['beforeStart'],
 		}))
 	})
 

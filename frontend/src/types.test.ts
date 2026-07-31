@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 
-import {settings as wailsSettings} from '../wailsjs/go/models'
+import {settings as wailsSettings, task as wailsTask} from '../wailsjs/go/models'
 import {clampTaskTreeWidth} from './types'
 
 describe('clampTaskTreeWidth', () => {
@@ -15,7 +15,7 @@ describe('clampTaskTreeWidth', () => {
       name: 'Git 仓库克隆',
       arguments: [],
 			chainArgumentMode: 'enabled',
-      documentation: '参数：dir=<相对目录>（必填）',
+			documentation: '参数可留空；填写时使用 dir=<相对目录>',
       applicableHooks: ['beforeStart', 'beforeEnd', 'updateTask'],
     })
     const chain = wailsSettings.LifecycleCommandChain.createFrom({
@@ -25,8 +25,26 @@ describe('clampTaskTreeWidth', () => {
       applicableHooks: ['beforeStart'],
     })
 
+		expect(command.documentation).toContain('参数可留空')
 		expect(command.documentation).toContain('dir=<相对目录>')
 		expect(command.chainArgumentMode).toBe('enabled')
 		expect(chain.commands).toEqual([{commandId: 'system.lifecycle.git-clone', arguments: ['dir=repositories']}])
   })
+
+	it('Wails 模型保留任务模板定义和任务字段原生值', () => {
+		const settings = wailsSettings.Settings.createFrom({
+			taskTemplates: [{
+				id: 'release', name: '发布任务', fields: [
+					{key: 'environment', displayName: '环境', inputType: 'string', required: true, defaultValue: 'production', injectEnvironment: true},
+					{key: 'deploy', displayName: '立即部署', inputType: 'bool', required: false, defaultValue: false, injectEnvironment: false},
+				],
+			}],
+			activeTaskTemplateId: 'release',
+		})
+		const task = wailsTask.Task.createFrom({id: 'task-1', templateFields: {environment: 'production', deploy: true}})
+
+		expect(settings.activeTaskTemplateId).toBe('release')
+		expect(settings.taskTemplates[0].fields[1].defaultValue).toBe(false)
+		expect(task.templateFields).toEqual({environment: 'production', deploy: true})
+	})
 })

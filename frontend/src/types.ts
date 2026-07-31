@@ -6,8 +6,10 @@ export type ColorScheme = 'light' | 'dark'
 export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'command'
 export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'
 export type LifecycleExecutionState = 'running' | 'failed'
-export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace' | 'git-clone'
+export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace' | 'git-clone' | 'git-clone-repository'
 export type LifecycleCommandChainArgumentMode = 'enabled' | 'disabled'
+export type TaskTemplateFieldInputType = 'string' | 'bool'
+export type TaskTemplateValues = Record<string, string | boolean>
 export const defaultTaskColor = '#4f46e5'
 export const taskColorOptions = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899'] as const
 
@@ -76,10 +78,26 @@ export interface TaskRecord {
   workspaceRoot?: string
 	workspacePath?: string
 	extraInfo?: TaskExtraInfo[]
+  templateFields?: TaskTemplateValues
   lifecycleChains?: Partial<Record<LifecycleHook, string>>
   lifecycleExecution?: LifecycleExecution
   lifecycleExecutionWatermark?: LifecycleExecutionWatermark
   realtimeStatus?: RealtimeStatus
+}
+
+export interface TaskTemplateField {
+	key: string
+	displayName: string
+	inputType: TaskTemplateFieldInputType
+	required: boolean
+	defaultValue: string | boolean
+	injectEnvironment: boolean
+}
+
+export interface TaskTemplate {
+	id: string
+	name: string
+	fields: TaskTemplateField[]
 }
 
 export interface ExtraInfoParameterDefinition {
@@ -173,6 +191,8 @@ export interface SettingsRecord {
   lifecycleCommands?: LifecycleCommand[]
   lifecycleChains?: LifecycleCommandChain[]
   lifecycleDefaultChains?: Partial<Record<LifecycleHook, string>>
+	taskTemplates?: TaskTemplate[]
+	activeTaskTemplateId?: string
 }
 
 export interface TaskMenuItem {

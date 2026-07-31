@@ -66,6 +66,56 @@ func TestRepositoryReturnsDefaultsForMissingDataFile(t *testing.T) {
 	}
 }
 
+func TestRepositoryNormalizesMissingTaskTemplateData(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [{"id":"legacy","title":"旧任务","color":"#4f46e5","extraInfo":[]}],
+  "settings": {"workspaceRoot":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `","taskTreeWidth":360}
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if data.Settings.TaskTemplates == nil || data.Settings.ActiveTaskTemplateID != "" {
+		t.Fatalf("旧设置的任务模板迁移 = %#v", data.Settings)
+	}
+	if data.Tasks[0].TemplateFields == nil || len(data.Tasks[0].TemplateFields) != 0 {
+		t.Fatalf("旧任务的模板字段迁移 = %#v", data.Tasks[0].TemplateFields)
+	}
+}
+
+func TestRepositoryRejectsChangingTypeOfUsedTaskTemplateField(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{{
+		ID: "release", Name: "发布", Fields: []task.TaskTemplateField{{
+			Key: "deploy", DisplayName: "允许部署", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false,
+		}},
+	}}
+	data.Settings.ActiveTaskTemplateID = "release"
+	data.Tasks = append(data.Tasks, task.Task{
+		ID: "task-1", Title: "部署任务", Color: task.DefaultColor, Status: task.StatusPending,
+		ExtraInfo: []task.TaskExtraInfo{}, TemplateFields: map[string]any{"deploy": false}, LifecycleChains: map[task.LifecycleHook]string{},
+	})
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	next := data.Settings
+	next.TaskTemplates[0].Fields[0].InputType = task.TaskTemplateFieldInputString
+	next.TaskTemplates[0].Fields[0].DefaultValue = "false"
+	if _, err := repository.SaveSettings(next); err == nil {
+		t.Fatal("SaveSettings() error = nil，期望拒绝改变已使用字段类型")
+	}
+}
+
 func TestRepositoryListsBuiltInGitTemplateAsJSONArray(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 
@@ -324,8 +374,11 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(data.Settings.LifecycleCommands) != 3 || len(data.Settings.LifecycleChains) != 2 {
+	if len(data.Settings.LifecycleCommands) != 4 || len(data.Settings.LifecycleChains) != 2 {
 		t.Fatalf("生命周期设置迁移 = %#v", data.Settings)
+	}
+	if got := data.Settings.LifecycleCommands[3].ID; got != settings.LifecycleCommandGitCloneRepositoryID {
+		t.Fatalf("迁移后的新增固定命令 ID = %q，期望 %q", got, settings.LifecycleCommandGitCloneRepositoryID)
 	}
 	if got := data.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
 		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
@@ -734,10 +787,15 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 	}
 	expectedTask := want.Tasks[0]
 	expectedTask.LifecycleChains = map[task.LifecycleHook]string{task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID}
+	expectedTask.TemplateFields = map[string]any{}
 	if len(got.Tasks) != 1 || !reflect.DeepEqual(got.Tasks[0], expectedTask) {
 		t.Errorf("Load() Tasks = %#v, want %#v", got.Tasks, expectedTask)
 	}
-	expectedSettings, err := settings.NormalizeLifecycle(want.Settings)
+	expectedSettings, err := settings.NormalizeTaskTemplates(want.Settings)
+	if err != nil {
+		t.Fatalf("NormalizeTaskTemplates() error = %v", err)
+	}
+	expectedSettings, err = settings.NormalizeLifecycle(expectedSettings)
 	if err != nil {
 		t.Fatalf("NormalizeLifecycle() error = %v", err)
 	}
@@ -822,7 +880,11 @@ func TestRepositorySaveSettingsKeepsTaskWorkspaceSnapshot(t *testing.T) {
 	if len(got.Tasks) != 1 || got.Tasks[0].WorkspacePath != originalTask.WorkspacePath || got.Tasks[0].WorkspaceRoot != originalTask.WorkspaceRoot {
 		t.Errorf("SaveSettings() changed task workspace snapshot: %#v", got.Tasks)
 	}
-	expectedSettings, err := settings.NormalizeLifecycle(nextSettings)
+	expectedSettings, err := settings.NormalizeTaskTemplates(nextSettings)
+	if err != nil {
+		t.Fatalf("NormalizeTaskTemplates() error = %v", err)
+	}
+	expectedSettings, err = settings.NormalizeLifecycle(expectedSettings)
 	if err != nil {
 		t.Fatalf("NormalizeLifecycle() error = %v", err)
 	}

@@ -19,6 +19,10 @@ export function CreateTaskWithExtraInfo(arg1:string,arg2:string,arg3:string,arg4
 
 export function CreateTaskWithExtraInfoAndLifecycleChains(arg1:string,arg2:string,arg3:string,arg4:Array<task.TaskExtraInfo>,arg5:Record<task.LifecycleHook, string>):Promise<task.Task>;
 
+export function CreateTaskWithExtraInfoAndTemplateFields(arg1:string,arg2:string,arg3:string,arg4:Array<task.TaskExtraInfo>,arg5:Record<string, any>):Promise<task.Task>;
+
+export function CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(arg1:string,arg2:string,arg3:string,arg4:Array<task.TaskExtraInfo>,arg5:Record<string, any>,arg6:Record<task.LifecycleHook, string>):Promise<task.Task>;
+
 export function CreateTerminal(arg1:string,arg2:number,arg3:number):Promise<terminal.Info>;
 
 export function DeleteExtraInfo(arg1:string):Promise<void>;
@@ -92,5 +96,9 @@ export function UpdateTask(arg1:string,arg2:string,arg3:string,arg4:string):Prom
 export function UpdateTaskWithExtraInfo(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<task.TaskExtraInfo>):Promise<task.Task>;
 
 export function UpdateTaskWithExtraInfoAndLifecycleChains(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<task.TaskExtraInfo>,arg6:Record<task.LifecycleHook, string>):Promise<task.Task>;
+
+export function UpdateTaskWithExtraInfoAndTemplateFields(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<task.TaskExtraInfo>,arg6:Record<string, any>):Promise<task.Task>;
+
+export function UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<task.TaskExtraInfo>,arg6:Record<string, any>,arg7:Record<task.LifecycleHook, string>):Promise<task.Task>;
 
 export function WriteTerminal(arg1:string,arg2:string,arg3:string):Promise<void>;

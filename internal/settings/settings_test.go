@@ -45,10 +45,10 @@ func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	current := Default(t.TempDir())
 
-	if len(current.LifecycleCommands) != 3 {
-		t.Fatalf("默认生命周期命令数量 = %d，期望 3", len(current.LifecycleCommands))
+	if len(current.LifecycleCommands) != 4 {
+		t.Fatalf("默认生命周期命令数量 = %d，期望 4", len(current.LifecycleCommands))
 	}
-	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID {
+	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID {
 		t.Fatalf("默认生命周期命令 = %#v", current.LifecycleCommands)
 	}
 	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
@@ -94,12 +94,101 @@ func TestDefaultIncludesDocumentedGitCloneLifecycleCommand(t *testing.T) {
 		if command["documentation"] == "" {
 			t.Fatalf("Git 系统命令缺少使用文档: %#v", command)
 		}
+		if documentation, _ := command["documentation"].(string); !strings.Contains(documentation, "可留空") {
+			t.Fatalf("Git 系统命令文档未说明参数可留空: %#v", command["documentation"])
+		}
 		if !reflect.DeepEqual(command["applicableHooks"], []any{"beforeStart", "beforeEnd", "updateTask"}) {
 			t.Fatalf("Git 系统命令适用范围 = %#v", command["applicableHooks"])
 		}
 		return
 	}
 	t.Fatal("Default() 未提供 Git 仓库克隆系统命令")
+}
+
+func TestDefaultIncludesDocumentedGitCloneRepositoryLifecycleCommand(t *testing.T) {
+	current := Default(t.TempDir())
+	command := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandGitCloneRepositoryID)
+	if command == nil {
+		t.Fatal("Default() 未提供克隆指定 Git 仓库系统命令")
+	}
+	if command.Kind != LifecycleCommandKindGitCloneRepository || command.Name != "克隆指定 Git 仓库" {
+		t.Fatalf("指定仓库克隆系统命令 = %#v", command)
+	}
+	if command.ChainArgumentMode != LifecycleCommandChainArgumentModeEnabled {
+		t.Fatalf("指定仓库克隆命令的链级参数模式 = %q，期望允许", command.ChainArgumentMode)
+	}
+	if want := []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}; !reflect.DeepEqual(command.ApplicableHooks, want) {
+		t.Fatalf("指定仓库克隆命令适用范围 = %#v，期望 %#v", command.ApplicableHooks, want)
+	}
+	if !strings.Contains(command.Documentation, "repository=<仓库地址>") || !strings.Contains(command.Documentation, "dir=<相对目录>") {
+		t.Fatalf("指定仓库克隆系统命令文档 = %q", command.Documentation)
+	}
+}
+
+func TestGitCloneRepositoryArgumentsRequireOneRepositoryAndOptionalSafeDirectory(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		arguments  []string
+		repository string
+		directory  string
+		valid      bool
+	}{
+		{name: "默认任务目录", arguments: []string{"repository=https://example.com/template.git"}, repository: "https://example.com/template.git", directory: ".", valid: true},
+		{name: "指定子目录且顺序无关", arguments: []string{"dir=template", "repository=https://example.com/template.git?ref=a=b"}, repository: "https://example.com/template.git?ref=a=b", directory: "template", valid: true},
+		{name: "缺少仓库", arguments: []string{"dir=template"}},
+		{name: "空仓库", arguments: []string{"repository= "}},
+		{name: "重复仓库", arguments: []string{"repository=one", "repository=two"}},
+		{name: "重复目录", arguments: []string{"repository=one", "dir=one", "dir=two"}},
+		{name: "未知参数", arguments: []string{"repository=one", "branch=main"}},
+		{name: "空目录", arguments: []string{"repository=one", "dir= "}},
+		{name: "绝对目录", arguments: []string{"repository=one", "dir=" + filepath.Join(string(filepath.Separator), "tmp", "template")}},
+		{name: "越界目录", arguments: []string{"repository=one", "dir=../template"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parsed, err := GitCloneRepositoryArguments(test.arguments)
+			if !test.valid {
+				if err == nil {
+					t.Fatalf("GitCloneRepositoryArguments(%#v) error = nil，期望拒绝", test.arguments)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GitCloneRepositoryArguments(%#v) error = %v", test.arguments, err)
+			}
+			if parsed.Repository != test.repository || parsed.Directory != test.directory {
+				t.Fatalf("解析的指定仓库克隆参数 = %#v", parsed)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsInvalidGitCloneRepositoryReference(t *testing.T) {
+	validated, err := Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		LifecycleChains: []LifecycleCommandChain{{
+			ID: "clone-template", Name: "初始化模板", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+			Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=https://example.com/template.git", "dir=template"}}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if got := validated.LifecycleChains[0].Commands[0].Arguments; !reflect.DeepEqual(got, []string{"repository=https://example.com/template.git", "dir=template"}) {
+		t.Fatalf("指定仓库克隆参数被意外改写: %#v", got)
+	}
+
+	_, err = Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		LifecycleChains: []LifecycleCommandChain{{
+			ID: "invalid-template", Name: "错误模板", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+			Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"dir=template"}}},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "repository") {
+		t.Fatalf("Validate() error = %v，期望拒绝缺少 repository", err)
+	}
 }
 
 func TestValidateNormalizesLifecycleCommandReferences(t *testing.T) {
@@ -205,6 +294,65 @@ func TestValidateRejectsGitCloneReferenceWithoutSingleValidDir(t *testing.T) {
 	_, err = Validate(next)
 	if err == nil || !strings.Contains(err.Error(), "dir") {
 		t.Fatalf("Validate() error = %v，期望拒绝无效 dir", err)
+	}
+}
+
+func TestValidateAllowsGitCloneReferenceWithoutDirectory(t *testing.T) {
+	for _, arguments := range [][]string{nil, {"   "}} {
+		validated, err := Validate(Settings{
+			WorkspaceRoot: t.TempDir(),
+			TaskTreeWidth: DefaultTaskTreeWidth,
+			LifecycleChains: []LifecycleCommandChain{{
+				ID: "clone", Name: "克隆", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandGitCloneID, Arguments: arguments}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+			}},
+		})
+		if err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		normalizedArguments := validated.LifecycleChains[0].Commands[0].Arguments
+		if !reflect.DeepEqual(normalizedArguments, []string{}) {
+			t.Fatalf("Git 克隆默认参数 = %#v，期望保留为空", normalizedArguments)
+		}
+		directory, err := GitCloneDirectory(normalizedArguments)
+		if err != nil {
+			t.Fatalf("GitCloneDirectory() error = %v", err)
+		}
+		if directory != "." {
+			t.Fatalf("GitCloneDirectory() = %q，期望 .", directory)
+		}
+	}
+}
+
+func TestGitCloneDirectoryAcceptsOnlyOneSafeExplicitDirectory(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		arguments []string
+		directory string
+		valid     bool
+	}{
+		{name: "当前任务目录", arguments: []string{"dir=."}, directory: ".", valid: true},
+		{name: "子目录", arguments: []string{" dir=repositories "}, directory: "repositories", valid: true},
+		{name: "多个参数", arguments: []string{"dir=repositories", "dir=other"}},
+		{name: "未知参数", arguments: []string{"target=repositories"}},
+		{name: "空目录", arguments: []string{"dir="}},
+		{name: "绝对路径", arguments: []string{"dir=" + filepath.Join(string(filepath.Separator), "tmp", "repositories")}},
+		{name: "父级目录", arguments: []string{"dir=../repositories"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			directory, err := GitCloneDirectory(test.arguments)
+			if test.valid {
+				if err != nil {
+					t.Fatalf("GitCloneDirectory() error = %v", err)
+				}
+				if directory != test.directory {
+					t.Fatalf("GitCloneDirectory() = %q，期望 %q", directory, test.directory)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("GitCloneDirectory(%#v) error = nil，期望拒绝", test.arguments)
+			}
+		})
 	}
 }
 

@@ -21,6 +21,7 @@ var (
 const DefaultColor = "#4f46e5"
 
 var colorPattern = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+var taskTemplateFieldKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 
 type Status string
 
@@ -67,6 +68,28 @@ const (
 	ExtraInfoParameterInputCheckbox ExtraInfoParameterInputType = "checkbox"
 )
 
+type TaskTemplateFieldInputType string
+
+const (
+	TaskTemplateFieldInputString TaskTemplateFieldInputType = "string"
+	TaskTemplateFieldInputBool   TaskTemplateFieldInputType = "bool"
+)
+
+type TaskTemplateField struct {
+	Key               string                     `json:"key"`
+	DisplayName       string                     `json:"displayName"`
+	InputType         TaskTemplateFieldInputType `json:"inputType"`
+	Required          bool                       `json:"required"`
+	DefaultValue      any                        `json:"defaultValue"`
+	InjectEnvironment bool                       `json:"injectEnvironment"`
+}
+
+type TaskTemplate struct {
+	ID     string              `json:"id"`
+	Name   string              `json:"name"`
+	Fields []TaskTemplateField `json:"fields"`
+}
+
 type Task struct {
 	ID                 string                   `json:"id"`
 	Title              string                   `json:"title"`
@@ -79,6 +102,7 @@ type Task struct {
 	WorkspaceRoot      string                   `json:"workspaceRoot,omitempty"`
 	WorkspacePath      string                   `json:"workspacePath,omitempty"`
 	ExtraInfo          []TaskExtraInfo          `json:"extraInfo"`
+	TemplateFields     map[string]any           `json:"templateFields"`
 	LifecycleChains    map[LifecycleHook]string `json:"lifecycleChains"`
 	LifecycleExecution *LifecycleExecution      `json:"lifecycleExecution,omitempty"`
 }
@@ -144,6 +168,7 @@ func NewTask(title, description, color string, now time.Time) (Task, error) {
 		Status:          StatusPending,
 		CreatedAt:       now,
 		ExtraInfo:       []TaskExtraInfo{},
+		TemplateFields:  map[string]any{},
 		LifecycleChains: map[LifecycleHook]string{},
 	}.UpdateDetails(title, description, color)
 }
@@ -230,6 +255,321 @@ func (current Task) UpdateExtraInfo(extraInfo []TaskExtraInfo) (Task, error) {
 	return current, nil
 }
 
+func (current Task) UpdateTemplateFields(template *TaskTemplate, submitted map[string]any) (Task, error) {
+	existing, err := NormalizeTaskTemplateValues(current.TemplateFields)
+	if err != nil {
+		return Task{}, err
+	}
+	if template == nil {
+		if len(submitted) > 0 {
+			return Task{}, fmt.Errorf("当前未选择任务模板，不能保存模板字段")
+		}
+		current.TemplateFields = existing
+		return current, nil
+	}
+	merged, err := MergeTaskTemplateFields(*template, existing, submitted)
+	if err != nil {
+		return Task{}, err
+	}
+	current.TemplateFields = merged
+	return current, nil
+}
+
+func NewTaskTemplate(name string, fields []TaskTemplateField) (TaskTemplate, error) {
+	return NormalizeTaskTemplate(TaskTemplate{ID: newID(), Name: name, Fields: fields})
+}
+
+func NormalizeTaskTemplate(current TaskTemplate) (TaskTemplate, error) {
+	current.ID = strings.TrimSpace(current.ID)
+	current.Name = strings.TrimSpace(current.Name)
+	if current.ID == "" || current.Name == "" || len(current.Fields) == 0 {
+		return TaskTemplate{}, fmt.Errorf("任务模板 ID、名称和字段不能为空")
+	}
+
+	fields := make([]TaskTemplateField, 0, len(current.Fields))
+	keys := make(map[string]bool, len(current.Fields))
+	for _, field := range current.Fields {
+		field.Key = strings.TrimSpace(field.Key)
+		field.DisplayName = strings.TrimSpace(field.DisplayName)
+		if field.Key == "" || field.DisplayName == "" {
+			return TaskTemplate{}, fmt.Errorf("任务模板字段键和显示名称不能为空")
+		}
+		if !taskTemplateFieldKeyPattern.MatchString(field.Key) {
+			return TaskTemplate{}, fmt.Errorf("任务模板字段键无效: %q", field.Key)
+		}
+		canonicalKey := strings.ToUpper(field.Key)
+		if keys[canonicalKey] {
+			return TaskTemplate{}, fmt.Errorf("任务模板字段键重复: %q", field.Key)
+		}
+		if isReservedTaskTemplateEnvironmentName(canonicalKey) {
+			return TaskTemplate{}, fmt.Errorf("任务模板字段键与内置环境变量冲突: %q", field.Key)
+		}
+		inputType, err := normalizeTaskTemplateFieldInputType(field.InputType)
+		if err != nil {
+			return TaskTemplate{}, err
+		}
+		defaultValue, err := normalizeTaskTemplateFieldValue(inputType, field.DefaultValue)
+		if err != nil {
+			return TaskTemplate{}, fmt.Errorf("任务模板字段 %q 的默认值无效: %w", field.DisplayName, err)
+		}
+		field.InputType = inputType
+		field.DefaultValue = defaultValue
+		keys[canonicalKey] = true
+		fields = append(fields, field)
+	}
+	current.Fields = fields
+	return current, nil
+}
+
+func ValidateTaskTemplates(templates []TaskTemplate) ([]TaskTemplate, error) {
+	normalized := make([]TaskTemplate, 0, len(templates))
+	ids := make(map[string]bool, len(templates))
+	names := make(map[string]bool, len(templates))
+	for _, current := range templates {
+		template, err := NormalizeTaskTemplate(current)
+		if err != nil {
+			return nil, err
+		}
+		if ids[template.ID] {
+			return nil, fmt.Errorf("任务模板 ID 重复: %q", template.ID)
+		}
+		canonicalName := strings.ToLower(template.Name)
+		if names[canonicalName] {
+			return nil, fmt.Errorf("任务模板名称重复: %q", template.Name)
+		}
+		ids[template.ID] = true
+		names[canonicalName] = true
+		normalized = append(normalized, template)
+	}
+	return normalized, nil
+}
+
+func ValidateTaskTemplateUpdate(previous, next TaskTemplate, taskValues []map[string]any) error {
+	normalizedPrevious, err := NormalizeTaskTemplate(previous)
+	if err != nil {
+		return err
+	}
+	normalizedNext, err := NormalizeTaskTemplate(next)
+	if err != nil {
+		return err
+	}
+	previousFields := make(map[string]TaskTemplateField, len(normalizedPrevious.Fields))
+	for _, field := range normalizedPrevious.Fields {
+		previousFields[field.Key] = field
+	}
+	for _, field := range normalizedNext.Fields {
+		previousField, found := previousFields[field.Key]
+		if !found || previousField.InputType == field.InputType {
+			continue
+		}
+		for _, values := range taskValues {
+			if _, found := values[field.Key]; found {
+				return fmt.Errorf("任务模板字段 %q 已被任务使用，不能修改类型", field.DisplayName)
+			}
+		}
+	}
+	return nil
+}
+
+func NormalizeTaskTemplateValues(values map[string]any) (map[string]any, error) {
+	normalized := make(map[string]any, len(values))
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("任务模板字段键不能为空")
+		}
+		switch value.(type) {
+		case string, bool:
+			normalized[key] = value
+		default:
+			return nil, fmt.Errorf("任务模板字段 %q 的值必须是字符串或布尔值", key)
+		}
+	}
+	return normalized, nil
+}
+
+func ResolveTaskTemplateFields(template TaskTemplate, values map[string]any) (map[string]any, error) {
+	normalizedTemplate, err := NormalizeTaskTemplate(template)
+	if err != nil {
+		return nil, err
+	}
+	normalizedValues, err := NormalizeTaskTemplateValues(values)
+	if err != nil {
+		return nil, err
+	}
+	resolved := make(map[string]any, len(normalizedTemplate.Fields))
+	for _, field := range normalizedTemplate.Fields {
+		value := field.DefaultValue
+		if current, found := normalizedValues[field.Key]; found {
+			value = current
+		}
+		value, err = normalizeTaskTemplateFieldValue(field.InputType, value)
+		if err != nil {
+			return nil, fmt.Errorf("任务模板字段 %q 的值无效: %w", field.DisplayName, err)
+		}
+		resolved[field.Key] = value
+	}
+	return resolved, nil
+}
+
+func TaskTemplateEnvironment(template *TaskTemplate, values map[string]any) ([]string, error) {
+	if template == nil {
+		return []string{}, nil
+	}
+	normalizedTemplate, err := NormalizeTaskTemplate(*template)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := ResolveTaskTemplateFields(normalizedTemplate, values)
+	if err != nil {
+		return nil, err
+	}
+	environment := make([]string, 0, len(normalizedTemplate.Fields))
+	for _, field := range normalizedTemplate.Fields {
+		if !field.InjectEnvironment {
+			continue
+		}
+		value := resolved[field.Key]
+		serialized := ""
+		switch value := value.(type) {
+		case string:
+			serialized = value
+		case bool:
+			serialized = fmt.Sprintf("%t", value)
+		}
+		environment = append(environment, "TASKAI_"+strings.ToUpper(field.Key)+"="+serialized)
+	}
+	return environment, nil
+}
+
+func TaskTemplateBranch(template *TaskTemplate, values map[string]any) (string, error) {
+	if template == nil {
+		return "", nil
+	}
+	normalizedTemplate, err := NormalizeTaskTemplate(*template)
+	if err != nil {
+		return "", err
+	}
+	for _, field := range normalizedTemplate.Fields {
+		if field.Key != "branch" {
+			continue
+		}
+		if field.InputType != TaskTemplateFieldInputString {
+			return "", fmt.Errorf("任务模板 branch 字段必须是字符串")
+		}
+		resolved, err := ResolveTaskTemplateFields(normalizedTemplate, values)
+		if err != nil {
+			return "", err
+		}
+		branch, ok := resolved[field.Key].(string)
+		if !ok {
+			return "", fmt.Errorf("任务模板 branch 字段必须是字符串")
+		}
+		return strings.TrimSpace(branch), nil
+	}
+	return "", nil
+}
+
+func MergeTaskTemplateFields(template TaskTemplate, existing, submitted map[string]any) (map[string]any, error) {
+	normalizedTemplate, err := NormalizeTaskTemplate(template)
+	if err != nil {
+		return nil, err
+	}
+	normalizedExisting, err := NormalizeTaskTemplateValues(existing)
+	if err != nil {
+		return nil, err
+	}
+	normalizedSubmitted, err := NormalizeTaskTemplateValues(submitted)
+	if err != nil {
+		return nil, err
+	}
+	fieldsByKey := make(map[string]TaskTemplateField, len(normalizedTemplate.Fields))
+	for _, field := range normalizedTemplate.Fields {
+		fieldsByKey[field.Key] = field
+	}
+	for key := range normalizedSubmitted {
+		if _, found := fieldsByKey[key]; !found {
+			return nil, fmt.Errorf("任务模板包含未定义字段: %q", key)
+		}
+	}
+
+	resolved, err := ResolveTaskTemplateFields(normalizedTemplate, normalizedExisting)
+	if err != nil {
+		return nil, err
+	}
+	for _, field := range normalizedTemplate.Fields {
+		if value, found := normalizedSubmitted[field.Key]; found {
+			normalizedValue, err := normalizeTaskTemplateFieldValue(field.InputType, value)
+			if err != nil {
+				return nil, fmt.Errorf("任务模板字段 %q 的值无效: %w", field.DisplayName, err)
+			}
+			resolved[field.Key] = normalizedValue
+		}
+		if err := validateTaskTemplateFieldValue(field, resolved[field.Key]); err != nil {
+			return nil, err
+		}
+	}
+
+	merged := make(map[string]any, len(normalizedExisting)+len(resolved))
+	for key, value := range normalizedExisting {
+		merged[key] = value
+	}
+	for key, value := range resolved {
+		merged[key] = value
+	}
+	return merged, nil
+}
+
+func normalizeTaskTemplateFieldInputType(inputType TaskTemplateFieldInputType) (TaskTemplateFieldInputType, error) {
+	switch TaskTemplateFieldInputType(strings.TrimSpace(string(inputType))) {
+	case "", TaskTemplateFieldInputString:
+		return TaskTemplateFieldInputString, nil
+	case TaskTemplateFieldInputBool:
+		return TaskTemplateFieldInputBool, nil
+	default:
+		return "", fmt.Errorf("不支持的任务模板字段类型: %q", inputType)
+	}
+}
+
+func normalizeTaskTemplateFieldValue(inputType TaskTemplateFieldInputType, value any) (any, error) {
+	switch inputType {
+	case TaskTemplateFieldInputString:
+		if value == nil {
+			return "", nil
+		}
+		if value, ok := value.(string); ok {
+			return value, nil
+		}
+	case TaskTemplateFieldInputBool:
+		if value == nil {
+			return false, nil
+		}
+		if value, ok := value.(bool); ok {
+			return value, nil
+		}
+	}
+	return nil, fmt.Errorf("期望 %s 类型", inputType)
+}
+
+func validateTaskTemplateFieldValue(field TaskTemplateField, value any) error {
+	if field.Required && field.InputType == TaskTemplateFieldInputString && strings.TrimSpace(value.(string)) == "" {
+		return fmt.Errorf("任务模板字段不能为空: %s", field.DisplayName)
+	}
+	if field.Required && field.InputType == TaskTemplateFieldInputBool && !value.(bool) {
+		return fmt.Errorf("任务模板字段必须为 true: %s", field.DisplayName)
+	}
+	return nil
+}
+
+func isReservedTaskTemplateEnvironmentName(key string) bool {
+	switch "TASKAI_" + key {
+	case "TASKAI_TASK_ID", "TASKAI_TERMINAL_ID", "TASKAI_STATUS_API", "TASKAI_EXEC_COMMAND", "TASKAI_EXEC_ARGUMENTS":
+		return true
+	default:
+		return false
+	}
+}
+
 func NewExtraInfoTemplate(catalogue, displayName string, fields []ExtraInfoField, parameters []ExtraInfoParameterDefinition) (ExtraInfoTemplate, error) {
 	return NormalizeExtraInfoTemplate(ExtraInfoTemplate{
 		ID:          newID(),
@@ -299,6 +639,13 @@ func NormalizeExtraInfoTemplate(current ExtraInfoTemplate) (ExtraInfoTemplate, e
 		parameters = append(parameters, parameter)
 	}
 	current.Parameters = parameters
+	if current.BuiltIn && current.Catalogue == "git" {
+		for index := range current.Parameters {
+			if current.Parameters[index].Key == "branch" {
+				current.Parameters[index].Required = false
+			}
+		}
+	}
 	if current.BuiltIn {
 		if err := validateBuiltInGitTemplate(current); err != nil {
 			return ExtraInfoTemplate{}, err

@@ -40,6 +40,9 @@ func TestNewTaskStartsPendingWithConfiguredColor(t *testing.T) {
 	if task.LifecycleChains == nil {
 		t.Fatal("NewTask() LifecycleChains = nil, want empty map")
 	}
+	if task.TemplateFields == nil {
+		t.Fatal("NewTask() TemplateFields = nil, want empty map")
+	}
 }
 
 func TestTaskPersistsShelvedFlagAndDefaultsLegacyData(t *testing.T) {
@@ -423,8 +426,12 @@ func TestBuiltInGitTemplateProtectsBuiltInKeysAndLabels(t *testing.T) {
 			{Key: "environment", DisplayName: "环境"},
 		},
 	}
-	if _, err := NormalizeExtraInfoTemplate(gitTemplate); err != nil {
+	normalized, err := NormalizeExtraInfoTemplate(gitTemplate)
+	if err != nil {
 		t.Fatalf("NormalizeExtraInfoTemplate() error = %v", err)
+	}
+	if normalized.Parameters[0].Required {
+		t.Fatal("Git 内置 branch 参数仍为必填，期望迁移为可选")
 	}
 
 	gitTemplate.Fields[1].DisplayName = "地址"
@@ -436,6 +443,13 @@ func TestBuiltInGitTemplateProtectsBuiltInKeysAndLabels(t *testing.T) {
 	gitTemplate.Parameters = gitTemplate.Parameters[1:]
 	if _, err := NormalizeExtraInfoTemplate(gitTemplate); err == nil {
 		t.Fatal("NormalizeExtraInfoTemplate() error = nil，期望 Git 内置参数删除被拒绝")
+	}
+}
+
+func TestBuiltInGitTemplateBranchIsAlwaysOptional(t *testing.T) {
+	template := BuiltInGitTemplate()
+	if len(template.Parameters) != 1 || template.Parameters[0].Key != "branch" || template.Parameters[0].Required {
+		t.Fatalf("内置 Git 模板 branch 参数 = %#v，期望可选", template.Parameters)
 	}
 }
 

@@ -4,6 +4,8 @@ import {
 	CreateTask,
 	CreateTaskWithExtraInfo,
 	CreateTaskWithExtraInfoAndLifecycleChains,
+	CreateTaskWithExtraInfoAndTemplateFields,
+	CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains,
 	CopyLifecycleCommandChain,
 	CreateCommandTerminal,
 	CreateTerminal,
@@ -43,21 +45,27 @@ import {
 	UpdateTask,
 	UpdateTaskWithExtraInfo,
 	UpdateTaskWithExtraInfoAndLifecycleChains,
+	UpdateTaskWithExtraInfoAndTemplateFields,
+	UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains,
   WriteTerminal,
 } from '../wailsjs/go/main/App'
 import {settings as settingsModel} from '../wailsjs/go/models'
 import {task as taskModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TerminalEvent, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
 	createTaskWithExtraInfo: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => CreateTaskWithExtraInfo(title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item))) as Promise<TaskRecord>,
 	createTaskWithExtraInfoAndLifecycleChains: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[], chains: Partial<Record<LifecycleHook, string>>) => CreateTaskWithExtraInfoAndLifecycleChains(title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), chains) as Promise<TaskRecord>,
+	createTaskWithExtraInfoAndTemplateFields: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[], templateFields: TaskTemplateValues) => CreateTaskWithExtraInfoAndTemplateFields(title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), templateFields) as Promise<TaskRecord>,
+	createTaskWithExtraInfoTemplateFieldsAndLifecycleChains: (title: string, description: string, color: string, extraInfo: TaskExtraInfo[], templateFields: TaskTemplateValues, chains: Partial<Record<LifecycleHook, string>>) => CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), templateFields, chains) as Promise<TaskRecord>,
   updateTask: (taskID: string, title: string, description: string, color: string) => UpdateTask(taskID, title, description, color) as Promise<TaskRecord>,
 	updateTaskWithExtraInfo: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[]) => UpdateTaskWithExtraInfo(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item))) as Promise<TaskRecord>,
 	updateTaskWithExtraInfoAndLifecycleChains: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[], chains: Partial<Record<LifecycleHook, string>>) => UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), chains) as Promise<TaskRecord>,
+	updateTaskWithExtraInfoAndTemplateFields: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[], templateFields: TaskTemplateValues) => UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), templateFields) as Promise<TaskRecord>,
+	updateTaskWithExtraInfoTemplateFieldsAndLifecycleChains: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[], templateFields: TaskTemplateValues, chains: Partial<Record<LifecycleHook, string>>) => UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), templateFields, chains) as Promise<TaskRecord>,
   listTasks: () => ListTasks() as Promise<TaskRecord[]>,
 	listExtraInfoTemplates: async () => {
 		const templates = await ListExtraInfoTemplates()
@@ -104,6 +112,12 @@ export const api = {
 				lifecycleCommands: settings.lifecycleCommands ?? [],
 				lifecycleChains: settings.lifecycleChains ?? [],
 				lifecycleDefaultChains: settings.lifecycleDefaultChains ?? {},
+			})
+		}
+		if (settings.taskTemplates || settings.activeTaskTemplateId !== undefined) {
+			Object.assign(payload, {
+				taskTemplates: settings.taskTemplates ?? [],
+				activeTaskTemplateId: settings.activeTaskTemplateId ?? '',
 			})
 		}
 		return SaveSettings(payload) as Promise<SettingsRecord>
