@@ -1,5 +1,6 @@
 import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {readFileSync} from 'node:fs'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const bindings = vi.hoisted(() => ({
@@ -73,6 +74,8 @@ vi.mock('./components/TerminalView', async () => {
 
 import App from './App'
 import type {TaskRecord} from './types'
+
+const appStyles = readFileSync('src/App.css', 'utf8')
 
 const fixedTaskMenuItems = [
   {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
@@ -225,6 +228,21 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByText('清理临时文件'))
 
     expect(screen.getByText('未启用任务模板')).toBeInTheDocument()
+  })
+
+  it('暗色任务详情使用高对比栏目标题并占满右侧区域', async () => {
+    const user = userEvent.setup()
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'dark', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByText('清理临时文件'))
+
+    const sectionTitle = screen.getByText('任务模板')
+    expect(sectionTitle).toHaveClass('taskai-detail-section__title')
+    expect(sectionTitle.closest('.taskai-task-detail')).toHaveStyle({maxWidth: 'none', width: '100%'})
   })
 
   it('结束执行中的任务后保持当前任务标签', async () => {
@@ -631,6 +649,20 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '创建'}))
 
     expect(bindings.CreateTask).toHaveBeenCalledWith('彩色任务', '', '#22c55e')
+  })
+
+  it('长任务表单在弹窗内滚动并保持创建操作可达', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '新建任务'}))
+
+    const dialog = screen.getByRole('dialog', {name: '新建任务'})
+    const form = dialog.querySelector('form')
+    expect(form).not.toBeNull()
+    expect(form).toHaveStyle({display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: '0'})
+    expect(within(dialog).getByTestId('task-dialog-content')).toHaveStyle({overflowY: 'auto', minHeight: '0'})
+    expect(within(dialog).getByRole('button', {name: '创建'})).toBeVisible()
   })
 
   it('新建任务随机预选颜色并将其用于创建请求', async () => {
@@ -1603,14 +1635,18 @@ describe('App confirmation flows', () => {
     expect(within(taskTreeHeader).getByRole('button', {name: '展开全部任务'})).toBeInTheDocument()
   })
 
-  it('暗色模式默认使用低对比但可见的面板分割条', async () => {
+  it('暗色模式使用松林夜跑的反光分割条', async () => {
     bindings.GetSettings.mockResolvedValue({
       workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'dark', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
     })
     render(<App/>)
 
     const divider = await screen.findByRole('separator', {name: '调整任务树宽度'})
-    expect(getComputedStyle(divider).backgroundColor).toBe('rgb(30, 41, 59)')
+    expect(getComputedStyle(divider).backgroundColor).toBe('rgb(213, 245, 224)')
+  })
+
+  it('选中任务不显示容易误解为状态的斜纹尾标', () => {
+    expect(appStyles).not.toContain('.taskai-task-row[data-task-selected="true"]::after')
   })
 
   it('通过任务操作编辑标题、描述和颜色', async () => {

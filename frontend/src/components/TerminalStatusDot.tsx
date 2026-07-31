@@ -7,9 +7,9 @@ interface TerminalStatusDotProps {
 }
 
 const statusColor: Record<RealtimeStatus, string> = {
-  idle: 'grey.500',
+  idle: 'text.secondary',
   working: 'success.main',
-  unread: '#8b5cf6',
+  unread: 'secondary.main',
   error: 'error.main',
 }
 
@@ -36,7 +36,7 @@ export function TerminalStatusDot({status}: TerminalStatusDotProps) {
             inset: -4,
             pointerEvents: 'none',
             border: '1px solid',
-            borderColor: status === 'working' ? 'success.main' : '#8b5cf6',
+            borderColor: status === 'working' ? 'success.main' : 'secondary.main',
             borderRadius: 'inherit',
             animation: 'taskai-status-pulse 1.4s ease-out infinite',
           },

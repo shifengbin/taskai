@@ -1,4 +1,5 @@
 import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
+import {ThemeProvider, createTheme} from '@mui/material'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const terminalInstances = vi.hoisted(() => [] as Array<{
@@ -13,6 +14,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   onData: ReturnType<typeof vi.fn>
   dispose: ReturnType<typeof vi.fn>
   reset: ReturnType<typeof vi.fn>
+  options: {theme?: {background?: string}}
   triggerSelectionChange(): void
 }>)
 
@@ -34,6 +36,7 @@ vi.mock('@xterm/xterm', () => ({
     onData = vi.fn(() => ({dispose: vi.fn()}))
     getSelection = vi.fn(() => '')
     focus = vi.fn()
+    options: {theme?: {background?: string}}
     selectionChangeListener: (() => void) | undefined
     onSelectionChange = vi.fn((listener: () => void) => {
       this.selectionChangeListener = listener
@@ -46,7 +49,8 @@ vi.mock('@xterm/xterm', () => ({
       this.selectionChangeListener?.()
     }
 
-    constructor() {
+    constructor(options: {theme?: {background?: string}}) {
+      this.options = options
       terminalInstances.push(this)
     }
   },
@@ -100,6 +104,36 @@ describe('TerminalView', () => {
     const title = screen.getByTestId('terminal-view-title')
     expect(title).toHaveStyle({whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'})
     expect(screen.getByTestId('terminal-view-title-container')).toHaveStyle({flex: '1', minWidth: '0'})
+  })
+
+  it('暗色模式使用更深的松林夜跑终端底色', () => {
+    render(
+      <ThemeProvider theme={createTheme({palette: {mode: 'dark'}})}>
+        <TerminalView
+          terminal={{id: 'terminal-1', taskId: 'task-1', state: 'active'}}
+          onWrite={vi.fn()}
+          onResize={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </ThemeProvider>,
+    )
+
+    expect(terminalInstances[0].options.theme?.background).toBe('#030b06')
+  })
+
+  it('亮色模式仍使用深色终端底色', () => {
+    render(
+      <ThemeProvider theme={createTheme({palette: {mode: 'light'}})}>
+        <TerminalView
+          terminal={{id: 'terminal-1', taskId: 'task-1', state: 'active'}}
+          onWrite={vi.fn()}
+          onResize={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </ThemeProvider>,
+    )
+
+    expect(terminalInstances[0].options.theme?.background).toBe('#07130e')
   })
 
   it('挂载活动终端后自动聚焦 xterm 输入区', () => {

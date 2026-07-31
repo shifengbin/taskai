@@ -846,10 +846,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline/>
-      <Box sx={{height: '100vh', minWidth: 720, display: 'grid', gridTemplateRows: '52px minmax(0, 1fr)', overflow: 'hidden'}}>
-        <AppBar position="static" color="transparent" elevation={0} sx={{borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
-          <Toolbar variant="dense" sx={{minHeight: '52px !important', gap: 1}}>
-            <TaskAltOutlinedIcon color="primary"/>
+      <Box className={`taskai-app taskai-app--${colorScheme}`} data-color-scheme={colorScheme} sx={{height: '100vh', minWidth: 720, display: 'grid', gridTemplateRows: '52px minmax(0, 1fr)', overflow: 'hidden'}}>
+        <AppBar className="taskai-topbar" position="static" color="transparent" elevation={0} sx={{borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
+          <Toolbar className="taskai-topbar__toolbar" variant="dense" sx={{minHeight: '52px !important', gap: 1}}>
+            <TaskAltOutlinedIcon className="taskai-brand-mark" color="primary"/>
             <Typography variant="subtitle1" sx={{fontWeight: 800, letterSpacing: 0.3}}>任务工作台</Typography>
             <Box sx={{flex: 1}}/>
 			<Tooltip title="额外信息管理">
@@ -892,8 +892,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         </AppBar>
 
         <Box sx={{display: 'grid', gridTemplateColumns: `${treeWidth}px 6px minmax(0, 1fr)`, minHeight: 0}}>
-          <Box sx={{minWidth: 0, minHeight: 0, display: 'grid', gridTemplateRows: '42px minmax(0, 1fr)', borderRight: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
-            <Box sx={{height: 42, display: 'flex', alignItems: 'center', px: 1.25, borderBottom: 1, borderColor: 'divider'}}>
+          <Box className="taskai-sidebar-shell" sx={{minWidth: 0, minHeight: 0, display: 'grid', gridTemplateRows: '42px minmax(0, 1fr)', borderRight: 1, borderColor: 'divider', bgcolor: 'background.paper'}}>
+            <Box className="taskai-sidebar-header" sx={{height: 42, display: 'flex', alignItems: 'center', px: 1.25, borderBottom: 1, borderColor: 'divider'}}>
               <Typography variant="overline" color="text.secondary">任务与终端</Typography>
               <Box sx={{flex: 1}}/>
               <Tooltip title={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'}>
@@ -921,6 +921,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 menuItems={taskMenuItems}
                 activeStatus={activeTaskStatus}
                 expandedTasks={expandedTasks}
+                selectedTaskID={selectedTaskID}
                 selectedTerminalId={selectedTerminalID}
                 startedTaskFeedback={startedTaskFeedback}
                 onChangeStatus={(status) => void changeActiveTaskStatus(status)}
@@ -971,9 +972,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               event.currentTarget.releasePointerCapture(event.pointerId)
               void persistPanelWidth()
             }}
+            className="taskai-panel-resizer"
             sx={{cursor: 'col-resize', bgcolor: 'divider', '&:hover': {bgcolor: 'primary.main'}}}
           />
-          <Box sx={{minWidth: 0, minHeight: 0, bgcolor: 'background.default'}}>
+          <Box className="taskai-content-pane" sx={{minWidth: 0, minHeight: 0, bgcolor: 'background.default'}}>
             {selectedTerminal ? (
               <TerminalView
                 key={selectedTerminal.id}
@@ -993,10 +995,17 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         </Box>
       </Box>
 
-      <Dialog open={taskDialogOpen} onClose={closeTaskDialog} fullWidth maxWidth="sm">
-        <Box component="form" onSubmit={saveTask}>
-          <DialogTitle>{editingTask ? '编辑任务' : '新建任务'}</DialogTitle>
-          <DialogContent sx={{display: 'grid', gap: 2, pt: '12px !important'}}>
+      <Dialog
+        open={taskDialogOpen}
+        onClose={closeTaskDialog}
+        scroll="paper"
+        fullWidth
+        maxWidth="sm"
+        slotProps={{paper: {sx: {maxHeight: 'calc(100dvh - 32px)'}}}}
+      >
+        <Box component="form" onSubmit={saveTask} sx={{display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, overflow: 'hidden'}}>
+          <DialogTitle sx={{flexShrink: 0}}>{editingTask ? '编辑任务' : '新建任务'}</DialogTitle>
+          <DialogContent data-testid="task-dialog-content" sx={{display: 'grid', gap: 2, flex: '1 1 auto', minHeight: 0, overflowY: 'auto', pt: '12px !important'}}>
             <TextField autoFocus required label="标题" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)}/>
             <TextField label="任务描述" value={draftDescription} multiline minRows={3} onChange={(event) => setDraftDescription(event.target.value)}/>
 			<TaskTemplateFieldsEditor template={activeTaskTemplate} values={taskTemplateFieldsDraft} onChange={setTaskTemplateFieldsDraft}/>
@@ -1024,7 +1033,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				disabled={editingTask?.status !== undefined && editingTask.status !== 'pending'}
 			/>
           </DialogContent>
-          <DialogActions>
+          <DialogActions sx={{flexShrink: 0}}>
             <Button onClick={closeTaskDialog}>取消</Button>
             <Button type="submit" variant="contained">{editingTask ? '保存' : '创建'}</Button>
           </DialogActions>
@@ -1633,17 +1642,83 @@ function HTTPCodeBlock({children}: {children: string}) {
 }
 
 function createAppTheme(colorScheme: ColorScheme) {
+  const isDark = colorScheme === 'dark'
+  const colors = isDark
+    ? {
+        canvas: '#07130e', paper: '#0e2118', sidebar: '#173a28', detail: '#0a1911', ink: '#edfff4', muted: '#afcfbd', divider: '#d5f5e0',
+        primary: '#6cd39a', accent: '#ffad6c', track: '#d5ff5f', error: '#ff8a7a', warning: '#ffbc7b', info: '#85d8ff', contrast: '#07130e',
+      }
+    : {
+        canvas: '#edf3ed', paper: '#fbfffb', sidebar: '#d7e5d9', detail: '#ffffff', ink: '#10291e', muted: '#3d604d', divider: '#20533d',
+        primary: '#176b4b', accent: '#ff8a3d', track: '#b6e338', error: '#b9332f', warning: '#8f3d00', info: '#155d88', contrast: '#fbfffb',
+      }
+  const secondaryContrast = isDark ? colors.contrast : colors.ink
+
   return createTheme({
     palette: {
       mode: colorScheme,
-      primary: {main: '#0f766e'},
-      background: colorScheme === 'dark'
-        ? {default: '#0f172a', paper: '#111827'}
-        : {default: '#f8fafc', paper: '#ffffff'},
-      divider: colorScheme === 'dark' ? '#1e293b' : '#cbd5e1',
+      primary: {main: colors.primary, contrastText: colors.contrast},
+      secondary: {main: colors.accent, contrastText: secondaryContrast},
+      success: {main: colors.primary, contrastText: colors.contrast},
+      warning: {main: colors.warning, contrastText: colors.contrast},
+      error: {main: colors.error, contrastText: colors.contrast},
+      info: {main: colors.info, contrastText: colors.contrast},
+      background: {default: colors.canvas, paper: colors.paper},
+      text: {primary: colors.ink, secondary: colors.muted},
+      divider: colors.divider,
+      action: {
+        active: colors.primary,
+        hover: isDark ? 'rgba(108, 211, 154, 0.14)' : 'rgba(23, 107, 75, 0.10)',
+        selected: isDark ? 'rgba(108, 211, 154, 0.20)' : 'rgba(23, 107, 75, 0.16)',
+        disabled: isDark ? 'rgba(237, 255, 244, 0.34)' : 'rgba(16, 41, 30, 0.35)',
+        disabledBackground: isDark ? 'rgba(237, 255, 244, 0.10)' : 'rgba(16, 41, 30, 0.08)',
+      },
     },
-    shape: {borderRadius: 8},
-    typography: {fontFamily: 'Inter, "Noto Sans SC", system-ui, sans-serif'},
+    shape: {borderRadius: 6},
+    typography: {
+      fontFamily: 'Nunito, "Noto Sans SC", sans-serif',
+      button: {fontWeight: 800, letterSpacing: '0.01em'},
+      overline: {fontWeight: 900, letterSpacing: '0.12em'},
+      h5: {fontWeight: 900, letterSpacing: '-0.035em'},
+    },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          '*': {boxSizing: 'border-box'},
+          '::selection': {backgroundColor: colors.track, color: colors.ink},
+        },
+      },
+      MuiPaper: {styleOverrides: {root: {backgroundImage: 'none'}}},
+      MuiAppBar: {styleOverrides: {root: {color: colors.ink, backgroundImage: 'none'}}},
+      MuiButtonBase: {styleOverrides: {root: {'&:focus-visible': {outline: `3px solid ${colors.track}`, outlineOffset: 2}}}},
+      MuiIconButton: {styleOverrides: {root: {
+        border: '1px solid transparent', borderRadius: 5,
+        '&:hover': {borderColor: colors.divider, backgroundColor: isDark ? 'rgba(108, 211, 154, 0.16)' : 'rgba(182, 227, 56, 0.32)'},
+      }}},
+      MuiButton: {styleOverrides: {root: {borderRadius: '5px 13px 5px 13px', boxShadow: 'none'}, contained: {
+        boxShadow: `3px 3px 0 ${colors.divider}`,
+        '&:hover': {boxShadow: `4px 4px 0 ${colors.divider}`},
+      }}},
+      MuiDialog: {styleOverrides: {paper: {
+        border: `2px solid ${colors.divider}`, borderRadius: '12px 30px 12px 30px', boxShadow: `10px 10px 0 ${colors.accent}`, overflow: 'hidden',
+      }}},
+      MuiDialogTitle: {styleOverrides: {root: {
+        padding: '16px 20px', color: colors.ink, fontWeight: 900,
+        backgroundImage: `repeating-linear-gradient(-33deg, ${colors.paper} 0 18px, ${colors.track} 19px 23px, ${colors.paper} 24px 42px)`,
+      }}},
+      MuiDialogActions: {styleOverrides: {root: {padding: '14px 20px', borderTop: `1px solid ${colors.divider}`, backgroundColor: colors.sidebar}}},
+      MuiOutlinedInput: {styleOverrides: {root: {borderRadius: '5px 13px 5px 13px', backgroundColor: colors.detail, '&:hover .MuiOutlinedInput-notchedOutline': {borderColor: colors.primary}, '&.Mui-focused .MuiOutlinedInput-notchedOutline': {borderColor: colors.primary, borderWidth: 2}}}},
+      MuiInputLabel: {styleOverrides: {root: {fontWeight: 800}}},
+      MuiTabs: {styleOverrides: {indicator: {height: 4, borderRadius: 99, backgroundColor: colors.accent}}},
+      MuiTab: {styleOverrides: {root: {fontWeight: 900, '&.Mui-selected': {color: colors.ink, backgroundColor: isDark ? 'rgba(213, 255, 95, 0.18)' : 'rgba(182, 227, 56, 0.36)'}}}},
+      MuiChip: {styleOverrides: {root: {borderRadius: '4px 11px 4px 11px', fontWeight: 800}}},
+      MuiAccordion: {styleOverrides: {root: {backgroundColor: colors.detail, '&.Mui-expanded': {boxShadow: `inset 4px 0 0 ${colors.primary}`}}}},
+      MuiMenu: {styleOverrides: {paper: {border: `2px solid ${colors.divider}`, borderRadius: '6px 16px 6px 16px', boxShadow: `6px 6px 0 ${colors.accent}`}}},
+      MuiMenuItem: {styleOverrides: {root: {gap: 0.5, fontWeight: 800, '&:hover': {backgroundColor: isDark ? 'rgba(213, 255, 95, 0.16)' : 'rgba(182, 227, 56, 0.30)'}}}},
+      MuiAlert: {styleOverrides: {root: {borderRadius: '6px 16px 6px 16px', fontWeight: 700}}},
+      MuiTooltip: {styleOverrides: {tooltip: {border: `1px solid ${colors.divider}`, borderRadius: 4, color: colors.ink, backgroundColor: colors.detail, fontWeight: 700}}},
+      MuiSwitch: {styleOverrides: {track: {opacity: 1, backgroundColor: colors.muted}, switchBase: {'&.Mui-checked + .MuiSwitch-track': {opacity: 1, backgroundColor: colors.primary}}}},
+    },
   })
 }
 
@@ -1652,6 +1727,7 @@ function StartupScreen() {
     <Box
       role="status"
       aria-label="正在加载任务工作台"
+      className="taskai-startup"
       sx={{height: '100vh', minWidth: 720, display: 'grid', placeItems: 'center', bgcolor: 'background.default'}}
     >
       <Box sx={{display: 'grid', placeItems: 'center', gap: 1.5, color: 'text.secondary'}}>
@@ -2274,8 +2350,8 @@ function TaskDetail({
 }) {
   if (!task) {
     return (
-      <Box sx={{height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary', textAlign: 'center', p: 3}}>
-        <Box>
+      <Box className="taskai-detail-empty" sx={{height: '100%', display: 'grid', placeItems: 'center', color: 'text.secondary', textAlign: 'center', p: 3}}>
+        <Box className="taskai-detail-empty__card">
           <FolderOutlinedIcon color="disabled" sx={{fontSize: 42, mb: 1}}/>
           <Typography>从左侧选择任务，或创建一个新任务开始。</Typography>
         </Box>
@@ -2284,17 +2360,17 @@ function TaskDetail({
   }
 	const templateValues = resolveTaskTemplateValues(template, task.templateFields)
   return (
-    <Box sx={{height: '100%', overflow: 'auto', p: {xs: 3, md: 5}, maxWidth: 900}}>
-      <Box sx={{display: 'flex', alignItems: 'center', gap: 1, mb: 2}}>
+    <Box className="taskai-task-detail" sx={{height: '100%', width: '100%', overflow: 'auto', p: {xs: 3, md: 5}, maxWidth: 'none'}}>
+      <Box className="taskai-task-detail__heading" sx={{display: 'flex', alignItems: 'center', gap: 1, mb: 2}}>
         <Typography variant="h5" sx={{fontWeight: 750}}>{task.title}</Typography>
         <Chip label={taskStatusLabel[task.status]} size="small" variant="outlined"/>
       </Box>
       <Typography variant="body1" sx={{whiteSpace: 'pre-wrap', color: task.description ? 'text.primary' : 'text.secondary', mb: 4}}>
         {task.description || '暂无任务描述'}
       </Typography>
-		<Box component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
-			<Typography variant="overline" color="text.secondary">任务模板</Typography>
-			{template ? <Box sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
+		<Box className="taskai-detail-section" component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
+			<Typography className="taskai-detail-section__title" variant="overline" color="text.secondary">任务模板</Typography>
+			{template ? <Box className="taskai-detail-card" sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
 				<Typography variant="subtitle2">{template.name}</Typography>
 				{template.fields.map((field) => {
 					const value = taskTemplateFieldDisplayValue(templateValues[field.key])
@@ -2308,10 +2384,10 @@ function TaskDetail({
 				})}
 			</Box> : <Alert severity="info" variant="outlined">未启用任务模板</Alert>}
 		</Box>
-		<Box component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
-			<Typography variant="overline" color="text.secondary">额外信息</Typography>
+		<Box className="taskai-detail-section" component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
+			<Typography className="taskai-detail-section__title" variant="overline" color="text.secondary">额外信息</Typography>
 			{task.extraInfo?.length ? Object.entries(groupTaskExtraInfoByCatalogue(task.extraInfo)).map(([catalogue, items]) => (
-				<Box key={catalogue} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
+				<Box className="taskai-detail-card" key={catalogue} sx={{display: 'grid', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5}}>
 					<Typography variant="subtitle2">{catalogue}</Typography>
 					{items.map((item, itemIndex) => (
 						<Box key={item.id || `${catalogue}-${itemIndex}`} sx={{display: 'grid', gap: 1, borderTop: itemIndex === 0 ? 0 : 1, borderColor: 'divider', pt: itemIndex === 0 ? 0 : 1.25}}>
@@ -2325,8 +2401,8 @@ function TaskDetail({
 				</Box>
 			)) : <Alert severity="info" variant="outlined">未添加额外信息</Alert>}
 		</Box>
-		<Box component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
-			<Typography variant="overline" color="text.secondary">系统环境变量</Typography>
+		<Box className="taskai-detail-section" component="section" sx={{display: 'grid', gap: 1, mb: 3}}>
+			<Typography className="taskai-detail-section__title" variant="overline" color="text.secondary">系统环境变量</Typography>
 			<Box sx={{display: 'grid', gap: 0.75}}>
 				<TaskDetailValue label="TASKAI_TASK_ID" value="任务关联的自定义命令和前后置脚本"/>
 				<TaskDetailValue label="TASKAI_TERMINAL_ID" value="仅新建的普通终端和显示终端的自定义命令"/>
@@ -2357,7 +2433,7 @@ function groupTaskExtraInfoByCatalogue(items: TaskExtraInfo[]): Record<string, T
 }
 
 function TaskDetailValue({label, value}: {label: string, value: string}) {
-	return <Box sx={{display: 'grid', gap: 0.25, minWidth: 0}}>
+	return <Box className="taskai-detail-value" sx={{display: 'grid', gap: 0.25, minWidth: 0}}>
 		<Typography variant="caption" color="text.secondary" sx={{overflowWrap: 'anywhere'}}>{label}</Typography>
 		<Typography variant="body2" sx={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{value}</Typography>
 	</Box>

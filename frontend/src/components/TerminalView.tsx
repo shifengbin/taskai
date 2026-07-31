@@ -1,5 +1,5 @@
-import {useEffect, useRef} from 'react'
-import {Box, IconButton, Tooltip, Typography} from '@mui/material'
+import {useEffect, useMemo, useRef} from 'react'
+import {Box, IconButton, Tooltip, Typography, useTheme} from '@mui/material'
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
 import {FitAddon} from '@xterm/addon-fit'
@@ -18,9 +18,11 @@ interface TerminalViewProps {
 }
 
 export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalViewProps) {
+  const appTheme = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal>()
   const outputRef = useRef('')
+  const terminalTheme = useMemo(() => terminalVisualTheme(appTheme.palette.mode), [appTheme.palette.mode])
 
   useEffect(() => {
     const instance = new Terminal({
@@ -28,7 +30,7 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
       lineHeight: 1.35,
-      theme: {background: '#111827', foreground: '#e5e7eb', cursor: '#5eead4', selectionBackground: '#334155'},
+      theme: terminalTheme,
     })
     const fitAddon = new FitAddon()
     instance.loadAddon(fitAddon)
@@ -75,6 +77,12 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
   }, [terminal.id])
 
   useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = terminalTheme
+    }
+  }, [terminalTheme])
+
+  useEffect(() => {
     const instance = terminalRef.current
     const output = terminal.output ?? ''
     if (!instance) {
@@ -90,8 +98,8 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
   }, [terminal.output])
 
   return (
-    <Box sx={{height: '100%', minWidth: 0, display: 'grid', gridTemplateRows: '44px minmax(0, 1fr)'}}>
-      <Box sx={{display: 'flex', alignItems: 'center', gap: 1, px: 1.5, borderBottom: 1, borderColor: 'divider'}}>
+    <Box className="taskai-terminal" sx={{height: '100%', minWidth: 0, display: 'grid', gridTemplateRows: '44px minmax(0, 1fr)'}}>
+      <Box className="taskai-terminal__header" sx={{display: 'flex', alignItems: 'center', gap: 1, px: 1.5, borderBottom: 1, borderColor: 'divider'}}>
         <TerminalOutlinedIcon fontSize="small" color="primary"/>
         <Box data-testid="terminal-view-title-container" sx={{flex: 1, minWidth: 0}}>
           <Typography
@@ -113,6 +121,7 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
       </Box>
       <Box
         ref={containerRef}
+        className="taskai-terminal__content"
         data-testid="terminal-content"
         onContextMenu={(event) => {
           event.preventDefault()
@@ -122,8 +131,14 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
             }
           }).catch(() => {})
         }}
-        sx={{minHeight: 0, overflow: 'hidden', bgcolor: '#111827', p: 1}}
+        sx={{minHeight: 0, overflow: 'hidden', bgcolor: terminalTheme.background, p: 1}}
       />
     </Box>
   )
+}
+
+function terminalVisualTheme(mode: 'light' | 'dark') {
+  return mode === 'dark'
+    ? {background: '#030b06', foreground: '#edfff4', cursor: '#d5ff5f', selectionBackground: '#173a28'}
+    : {background: '#07130e', foreground: '#edfff4', cursor: '#b6e338', selectionBackground: '#24553c'}
 }

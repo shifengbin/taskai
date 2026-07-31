@@ -72,6 +72,7 @@ interface TaskTreeProps {
   menuItems?: TaskMenuItem[]
   activeStatus: TaskStatus
   expandedTasks?: Record<string, boolean>
+  selectedTaskID?: string
   selectedTerminalId?: string
   startedTaskFeedback?: TaskStartFeedback
   onChangeStatus(status: TaskStatus): void
@@ -96,6 +97,7 @@ export function TaskTree({
   menuItems = defaultTaskMenuItems,
   activeStatus,
   expandedTasks,
+  selectedTaskID,
   selectedTerminalId,
   startedTaskFeedback,
   onChangeStatus,
@@ -304,7 +306,7 @@ export function TaskTree({
   const activeMenuItems = taskMenuTask && !taskMenuTask.lifecycleExecution ? menuItems.filter((item) => taskMenuTask.status === 'running' || item.kind === 'edit-task') : []
 
   return (
-    <Box component="nav" aria-label="任务和终端" sx={{height: '100%', minHeight: 0, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)'}}>
+    <Box className="taskai-task-tree" component="nav" aria-label="任务和终端" sx={{height: '100%', minHeight: 0, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)'}}>
       <Tabs
         value={activeStatus}
         onChange={(_event, status: TaskStatus) => onChangeStatus(status)}
@@ -316,10 +318,11 @@ export function TaskTree({
         <Tab value="running" label={`执行中 (${taskCounts.running})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
         <Tab value="completed" label={`已完成 (${taskCounts.completed})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
       </Tabs>
-      <List ref={taskListRef} data-testid="task-tree-list" disablePadding dense sx={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': {display: 'none'}}}>
+      <List className="taskai-task-tree__list" ref={taskListRef} data-testid="task-tree-list" disablePadding dense sx={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': {display: 'none'}}}>
         {visibleTasks.map((task) => {
           const childTerminals = terminalsByTask[task.id] ?? []
           const isExpanded = expanded[task.id] ?? true
+          const isSelectedTask = task.id === selectedTaskID
           const taskColor = task.color || defaultTaskColor
           const dropPosition = dropTarget?.taskID === task.id ? dropTarget.position : undefined
 			const execution = task.lifecycleExecution
@@ -336,6 +339,7 @@ export function TaskTree({
             >
               {isFirstShelvedTask && (
                 <ListItemButton
+                  className="taskai-task-row taskai-task-row--shelved"
                   aria-label={shelvedExpanded ? '收起已搁置任务' : '展开已搁置任务'}
                   onClick={() => setShelvedExpanded((current) => !current)}
                   sx={{minHeight: 44, gap: 0.75, borderTop: 1, borderColor: 'divider'}}
@@ -355,8 +359,11 @@ export function TaskTree({
                 slotProps={{tooltip: {sx: {maxWidth: 480, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}}}
               >
                 <ListItemButton
+                  className="taskai-task-row"
                   data-task-id={task.id}
+						data-task-selected={isSelectedTask || undefined}
 						data-task-start-feedback={startFeedbackMode}
+                  selected={isSelectedTask}
                   onClick={(event) => {
                     if (suppressTaskClickRef.current) {
                       suppressTaskClickRef.current = false
@@ -382,11 +389,15 @@ export function TaskTree({
                     gap: 0.5,
                     borderLeft: 4,
                     borderLeftStyle: 'solid',
-                    bgcolor: `${taskColor}14`,
+                    position: 'relative',
+                    borderRadius: '3px 15px 3px 15px',
+                    bgcolor: isSelectedTask ? `${taskColor}2e` : `${taskColor}14`,
                     opacity: draggedTaskID === task.id ? 0.5 : 1,
                     outline: draggedTaskID === task.id ? '2px solid' : '2px solid transparent',
 						outlineColor: draggedTaskID === task.id ? 'primary.main' : 'transparent',
 						outlineOffset: -2,
+						'&.Mui-selected': {backgroundColor: `${taskColor}2e`, boxShadow: `inset -3px 0 0 ${taskColor}, inset 0 0 0 1px ${taskColor}`},
+						'&.Mui-selected:hover': {backgroundColor: `${taskColor}3b`},
 						...(startFeedbackMode === 'static' && {boxShadow: `inset 0 0 0 2px ${taskColor}`}),
 						...(startFeedbackMode === 'flash' && {
 							animation: 'taskai-task-start-feedback 350ms ease-in-out 2',
@@ -490,6 +501,7 @@ export function TaskTree({
                 <List disablePadding dense sx={{pl: 3.25}}>
                   {childTerminals.map((terminal) => (
                     <ListItemButton
+                      className="taskai-terminal-row"
                       key={terminal.id}
                       selected={terminal.id === selectedTerminalId}
                       onClick={() => onSelectTerminal(terminal)}
@@ -542,6 +554,7 @@ export function TaskTree({
       </List>
       {draggedTask && dragPreviewPosition && <TaskDragPreview task={draggedTask} position={dragPreviewPosition}/>}
       <Menu
+        className="taskai-task-menu"
         open={taskMenu !== null}
         onClose={() => setTaskMenu(null)}
         anchorEl={taskMenu?.anchorEl}
@@ -607,7 +620,7 @@ function TaskDropIndicator({taskTitle, position}: {taskTitle: string; position: 
       role="status"
       aria-label={`将任务插入“${taskTitle}”${positionLabel}`}
       sx={{
-        height: 12,
+        height: 14,
         mx: 1,
         position: 'relative',
         pointerEvents: 'none',
@@ -618,9 +631,9 @@ function TaskDropIndicator({taskTitle, position}: {taskTitle: string; position: 
           top: '50%',
           right: 0,
           left: 0,
-          height: 3,
-          borderRadius: 99,
-          bgcolor: 'primary.main',
+          height: 4,
+          borderRadius: 2,
+          backgroundImage: (theme) => `repeating-linear-gradient(-33deg, ${theme.palette.secondary.main} 0 8px, ${theme.palette.primary.main} 9px 15px)`,
           transform: 'translateY(-50%)',
         },
         '&::after': {
@@ -630,8 +643,8 @@ function TaskDropIndicator({taskTitle, position}: {taskTitle: string; position: 
           left: -4,
           width: 10,
           height: 10,
-          borderRadius: '50%',
-          bgcolor: 'primary.main',
+          borderRadius: '2px 8px 2px 8px',
+          bgcolor: 'secondary.main',
           transform: 'translateY(-50%)',
           boxShadow: (theme) => `0 0 0 2px ${theme.palette.background.paper}`,
         },
@@ -646,6 +659,7 @@ function TaskDragPreview({task, position}: {task: TaskRecord; position: TaskDrag
     <Box
       role="status"
       aria-label={`正在调整任务“${task.title}”`}
+      className="taskai-task-drag-preview"
       sx={{
         position: 'fixed',
         zIndex: (theme) => theme.zIndex.tooltip,
@@ -663,9 +677,9 @@ function TaskDragPreview({task, position}: {task: TaskRecord; position: TaskDrag
         borderLeft: 4,
         borderLeftStyle: 'solid',
         borderLeftColor: taskColor,
-        borderRadius: 1,
+        borderRadius: '5px 16px 5px 16px',
         bgcolor: 'background.paper',
-        boxShadow: 3,
+        boxShadow: (theme) => `6px 6px 0 ${theme.palette.secondary.main}`,
         pointerEvents: 'none',
       }}
     >
