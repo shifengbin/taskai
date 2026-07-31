@@ -14,11 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"taskai/internal/lifecycle"
 	"taskai/internal/realtime"
 	"taskai/internal/settings"
 	"taskai/internal/task"
 	"taskai/internal/terminal"
+	"taskai/internal/workspace"
 )
 
 func TestDefaultDataDirectoryUsesApplicationName(t *testing.T) {
@@ -362,6 +365,210 @@ func TestAppFreezesTaskTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
 	if branch != "release/1.2" {
 		t.Fatalf("指定仓库克隆分支 = %q，期望 release/1.2", branch)
 	}
+}
+
+func TestLifecycleTemplateBranchIncludesManifestFileCommand(t *testing.T) {
+	template := &task.TaskTemplate{
+		ID: "release", Name: "发布任务", Fields: []task.TaskTemplateField{{
+			Key: "branch", DisplayName: "模板分支", InputType: task.TaskTemplateFieldInputString,
+		}},
+	}
+	branch, err := lifecycleTemplateBranch(template, map[string]any{"branch": "android2.45-0727"}, []settings.LifecycleCommand{{
+		ID: settings.LifecycleCommandManifestFileID, Kind: settings.LifecycleCommandKindManifestFile, Name: "生成清单文件",
+	}})
+	if err != nil {
+		t.Fatalf("lifecycleTemplateBranch() error = %v", err)
+	}
+	if branch != "android2.45-0727" {
+		t.Fatalf("清单文件命令的模板分支 = %q，期望 android2.45-0727", branch)
+	}
+}
+
+func TestAppManifestFilePreservesLifecycleFailureSemantics(t *testing.T) {
+	t.Run("开始前失败阻止启动，重试后写入模板分支", func(t *testing.T) {
+		app := newManifestLifecycleApp(t, task.LifecycleHookBeforeStart, true)
+		created := createManifestLifecycleTask(t, app, "开始前清单")
+		workspacePath := prepareManifestTargetAsDirectory(t, app, created.ID)
+
+		if _, err := app.StartTask(created.ID); err != nil {
+			t.Fatalf("StartTask() error = %v", err)
+		}
+		failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusPending && lifecycleHookFailed(current, task.LifecycleHookBeforeStart)
+		})
+		if failed.Status != task.StatusPending {
+			t.Fatalf("开始前清单失败后的任务状态 = %q，期望未执行", failed.Status)
+		}
+		if err := os.Remove(filepath.Join(workspacePath, "manifest.yaml")); err != nil {
+			t.Fatalf("移除阻塞目标: %v", err)
+		}
+		if _, err := app.RetryTaskLifecycleCommandChain(created.ID); err != nil {
+			t.Fatalf("RetryTaskLifecycleCommandChain() error = %v", err)
+		}
+		started := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+		})
+		manifest := decodeAppManifestFile(t, filepath.Join(started.WorkspacePath, "manifest.yaml"))
+		if len(manifest.Repositories) != 1 || manifest.Repositories[0].Branch != "android2.45-0727" {
+			t.Fatalf("开始前重试后的清单分支 = %#v", manifest.Repositories)
+		}
+	})
+
+	t.Run("开始后失败保持执行中并可重试", func(t *testing.T) {
+		app := newManifestLifecycleApp(t, task.LifecycleHookPostStart, false)
+		created := createManifestLifecycleTask(t, app, "开始后清单")
+		workspacePath := prepareManifestTargetAsDirectory(t, app, created.ID)
+
+		if _, err := app.StartTask(created.ID); err != nil {
+			t.Fatalf("StartTask() error = %v", err)
+		}
+		failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && lifecycleHookFailed(current, task.LifecycleHookPostStart)
+		})
+		if failed.Status != task.StatusRunning {
+			t.Fatalf("开始后清单失败后的任务状态 = %q，期望执行中", failed.Status)
+		}
+		if err := os.Remove(filepath.Join(workspacePath, "manifest.yaml")); err != nil {
+			t.Fatalf("移除阻塞目标: %v", err)
+		}
+		if _, err := app.RetryTaskLifecycleCommandChain(created.ID); err != nil {
+			t.Fatalf("RetryTaskLifecycleCommandChain() error = %v", err)
+		}
+		waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+		})
+		if _, err := os.Stat(filepath.Join(workspacePath, "manifest.yaml")); err != nil {
+			t.Fatalf("开始后重试未生成清单文件: %v", err)
+		}
+	})
+
+	t.Run("更新失败保留已提交内容并可重试", func(t *testing.T) {
+		app := newManifestLifecycleApp(t, task.LifecycleHookUpdateTask, false)
+		created := createManifestLifecycleTask(t, app, "更新前清单")
+		started := startTaskAndWait(t, app, created.ID)
+		if err := os.Mkdir(filepath.Join(started.WorkspacePath, "manifest.yaml"), 0o700); err != nil {
+			t.Fatalf("创建阻塞目标: %v", err)
+		}
+
+		if _, err := app.UpdateTask(created.ID, "更新后清单", "已保存", task.DefaultColor); err != nil {
+			t.Fatalf("UpdateTask() error = %v", err)
+		}
+		failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.Title == "更新后清单" && lifecycleHookFailed(current, task.LifecycleHookUpdateTask)
+		})
+		if failed.Title != "更新后清单" {
+			t.Fatalf("更新清单失败后标题 = %q，期望保留已提交内容", failed.Title)
+		}
+		if err := os.Remove(filepath.Join(started.WorkspacePath, "manifest.yaml")); err != nil {
+			t.Fatalf("移除阻塞目标: %v", err)
+		}
+		if _, err := app.RetryTaskLifecycleCommandChain(created.ID); err != nil {
+			t.Fatalf("RetryTaskLifecycleCommandChain() error = %v", err)
+		}
+		waitForTask(t, app, created.ID, func(current task.Task) bool {
+			return current.Status == task.StatusRunning && current.LifecycleExecution == nil
+		})
+		manifest := decodeAppManifestFile(t, filepath.Join(started.WorkspacePath, "manifest.yaml"))
+		if manifest.Iteration != "更新后清单" || manifest.Description != "已保存" {
+			t.Fatalf("更新重试后的清单 = %#v", manifest)
+		}
+	})
+}
+
+func newManifestLifecycleApp(t *testing.T, hook task.LifecycleHook, includeCreateWorkspace bool) *App {
+	t.Helper()
+	app := newApp(t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.TaskTemplates = []task.TaskTemplate{{
+		ID: "release", Name: "发布任务", Fields: []task.TaskTemplateField{{
+			Key: "branch", DisplayName: "分支", InputType: task.TaskTemplateFieldInputString,
+		}},
+	}}
+	current.ActiveTaskTemplateID = "release"
+	chainID := "manifest-" + string(hook)
+	commands := []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandManifestFileID}}
+	if includeCreateWorkspace {
+		commands = append([]settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandCreateWorkspaceID}}, commands...)
+	}
+	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+		ID: chainID, Name: "生成清单文件", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHook(hook)}, Commands: commands,
+	})
+	current.LifecycleDefaultChains[settings.LifecycleHook(hook)] = chainID
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	return app
+}
+
+func createManifestLifecycleTask(t *testing.T, app *App, title string) task.Task {
+	t.Helper()
+	gitTemplate := task.BuiltInGitTemplate()
+	information, err := app.SaveExtraInfo(task.ExtraInfo{
+		TemplateID: gitTemplate.ID,
+		Catalogue:  gitTemplate.Catalogue,
+		Fields: []task.ExtraInfoField{
+			{Key: "name", Value: "istudy-v2"},
+			{Key: "repository", Value: "git@gitlab.jiandan100.cn:webdev/istudy-v2.git"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveExtraInfo() error = %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields(title, "任务描述", task.DefaultColor, []task.TaskExtraInfo{{
+		InformationID: information.ID,
+		Parameters:    []task.ExtraInfoParameter{{Key: "branch", Value: ""}},
+	}}, map[string]any{"branch": "android2.45-0727"})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
+	}
+	return created
+}
+
+func prepareManifestTargetAsDirectory(t *testing.T, app *App, taskID string) string {
+	t.Helper()
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	_, workspacePath, err := workspace.TaskPath(current.WorkspaceRoot, taskID)
+	if err != nil {
+		t.Fatalf("TaskPath() error = %v", err)
+	}
+	if err := os.MkdirAll(workspacePath, 0o700); err != nil {
+		t.Fatalf("创建任务工作目录: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(workspacePath, "manifest.yaml"), 0o700); err != nil {
+		t.Fatalf("创建阻塞目标: %v", err)
+	}
+	return workspacePath
+}
+
+func lifecycleHookFailed(current task.Task, hook task.LifecycleHook) bool {
+	return current.LifecycleExecution != nil && current.LifecycleExecution.Hook == hook && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+}
+
+type appManifestFile struct {
+	Iteration    string `yaml:"iteration"`
+	Description  string `yaml:"desc"`
+	Repositories []struct {
+		Branch string `yaml:"branch"`
+	} `yaml:"repos"`
+}
+
+func decodeAppManifestFile(t *testing.T, path string) appManifestFile {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", path, err)
+	}
+	var manifest appManifestFile
+	if err := yaml.Unmarshal(contents, &manifest); err != nil {
+		t.Fatalf("Unmarshal(%q) error = %v", contents, err)
+	}
+	return manifest
 }
 
 func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testing.T) {

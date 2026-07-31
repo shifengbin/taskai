@@ -103,6 +103,10 @@ func (runner *CommandChainRunner) Run(request CommandChainRequest) ([]byte, erro
 			if err := runner.cloneGitRepositoryToTarget(request, command.Arguments); err != nil {
 				return nil, commandError(command.Name, nil, err)
 			}
+		case settings.LifecycleCommandKindManifestFile:
+			if err := runner.writeManifestFile(request, command.Arguments); err != nil {
+				return nil, commandError(command.Name, nil, err)
+			}
 		default:
 			return nil, fmt.Errorf("不支持的生命周期命令类型: %q", command.Kind)
 		}

@@ -76,11 +76,13 @@ const (
 	LifecycleCommandKindDeleteWorkspace    LifecycleCommandKind = "delete-workspace"
 	LifecycleCommandKindGitClone           LifecycleCommandKind = "git-clone"
 	LifecycleCommandKindGitCloneRepository LifecycleCommandKind = "git-clone-repository"
+	LifecycleCommandKindManifestFile       LifecycleCommandKind = "manifest-file"
 
 	LifecycleCommandCreateWorkspaceID    = "system.lifecycle.create-workspace"
 	LifecycleCommandDeleteWorkspaceID    = "system.lifecycle.delete-workspace"
 	LifecycleCommandGitCloneID           = "system.lifecycle.git-clone"
 	LifecycleCommandGitCloneRepositoryID = "system.lifecycle.git-clone-repository"
+	LifecycleCommandManifestFileID       = "system.lifecycle.manifest-file"
 	LifecycleChainCreateWorkspaceID      = "system.lifecycle-chain.create-workspace"
 	LifecycleChainDeleteWorkspaceID      = "system.lifecycle-chain.delete-workspace"
 )
@@ -190,6 +192,7 @@ func DefaultLifecycleCommands() []LifecycleCommand {
 		fixedLifecycleCommand(LifecycleCommandDeleteWorkspaceID),
 		fixedLifecycleCommand(LifecycleCommandGitCloneID),
 		fixedLifecycleCommand(LifecycleCommandGitCloneRepositoryID),
+		fixedLifecycleCommand(LifecycleCommandManifestFileID),
 	}
 }
 
@@ -328,6 +331,8 @@ func fixedLifecycleCommand(id string) LifecycleCommand {
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；留空时每个内置 Git 项目将克隆到任务工作目录下的 <项目名称>。填写时使用 dir=<相对目录>，将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
 	case LifecycleCommandGitCloneRepositoryID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitCloneRepository, Name: "克隆指定 Git 仓库", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数：repository=<仓库地址>（必填）；dir=<相对目录>（可选）。仓库直接克隆到任务工作目录或指定子目录本身，不读取 Git 附加信息。目标必须为空目录，非空目录会失败。分支使用任务模板的 branch 字段；为空时由远程默认分支决定。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}}
+	case LifecycleCommandManifestFileID:
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindManifestFile, Name: "生成清单文件", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；dir=<相对目录>（可选）指定任务工作目录内的输出目录，name=<文件名>（可选）指定清单文件名。默认生成 <任务工作目录>/manifest.yaml。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
 	default:
 		return LifecycleCommand{}
 	}
@@ -410,8 +415,8 @@ func NormalizeLifecycle(next Settings) (Settings, error) {
 }
 
 func normalizeLifecycleCommands(commands []LifecycleCommand) ([]LifecycleCommand, error) {
-	normalized := make([]LifecycleCommand, 0, len(commands)+3)
-	seen := make(map[string]bool, len(commands)+3)
+	normalized := make([]LifecycleCommand, 0, len(commands)+4)
+	seen := make(map[string]bool, len(commands)+4)
 	for _, command := range commands {
 		command.ID = strings.TrimSpace(command.ID)
 		if command.ID == "" {
@@ -620,6 +625,13 @@ func normalizeLifecycleCommandReference(reference LifecycleCommandReference, com
 		}
 		reference.Arguments = arguments
 	}
+	if command.Kind == LifecycleCommandKindManifestFile {
+		arguments, err := normalizeManifestFileArguments(reference.Arguments)
+		if err != nil {
+			return LifecycleCommandReference{}, err
+		}
+		reference.Arguments = arguments
+	}
 	return reference, nil
 }
 
@@ -677,6 +689,70 @@ func GitCloneRepositoryArguments(arguments []string) (GitCloneRepositoryParamete
 		}
 	}
 	return parameters, nil
+}
+
+type ManifestFileParameters struct {
+	Directory string
+	Name      string
+}
+
+func ManifestFileArguments(arguments []string) (ManifestFileParameters, error) {
+	normalized, err := normalizeManifestFileArguments(arguments)
+	if err != nil {
+		return ManifestFileParameters{}, err
+	}
+	parameters := ManifestFileParameters{Directory: ".", Name: "manifest.yaml"}
+	for _, argument := range normalized {
+		key, value, _ := strings.Cut(argument, "=")
+		switch key {
+		case "dir":
+			parameters.Directory = value
+		case "name":
+			parameters.Name = value
+		}
+	}
+	return parameters, nil
+}
+
+func normalizeManifestFileArguments(arguments []string) ([]string, error) {
+	var directory, name string
+	seenDirectory := false
+	seenName := false
+	for _, argument := range normalizeArguments(arguments) {
+		key, value, found := strings.Cut(argument, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !found {
+			return nil, fmt.Errorf("生成清单文件命令参数必须使用 dir=<相对目录> 或 name=<文件名>")
+		}
+		switch key {
+		case "dir":
+			if seenDirectory || value == "" || filepath.IsAbs(value) {
+				return nil, fmt.Errorf("生成清单文件命令的 dir 参数无效")
+			}
+			directory = filepath.Clean(value)
+			if directory == ".." || strings.HasPrefix(directory, ".."+string(filepath.Separator)) {
+				return nil, fmt.Errorf("生成清单文件命令的 dir 参数无效")
+			}
+			seenDirectory = true
+		case "name":
+			if seenName || value == "" || filepath.IsAbs(value) || value == "." || value == ".." || strings.ContainsAny(value, `/\\`) || filepath.Base(value) != value {
+				return nil, fmt.Errorf("生成清单文件命令的 name 参数无效")
+			}
+			name = value
+			seenName = true
+		default:
+			return nil, fmt.Errorf("生成清单文件命令不支持参数: %s", key)
+		}
+	}
+	normalized := make([]string, 0, 2)
+	if seenDirectory {
+		normalized = append(normalized, "dir="+directory)
+	}
+	if seenName {
+		normalized = append(normalized, "name="+name)
+	}
+	return normalized, nil
 }
 
 func normalizeGitCloneRepositoryArguments(arguments []string) ([]string, error) {

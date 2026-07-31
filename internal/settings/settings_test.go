@@ -45,10 +45,10 @@ func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	current := Default(t.TempDir())
 
-	if len(current.LifecycleCommands) != 4 {
-		t.Fatalf("默认生命周期命令数量 = %d，期望 4", len(current.LifecycleCommands))
+	if len(current.LifecycleCommands) != 5 {
+		t.Fatalf("默认生命周期命令数量 = %d，期望 5", len(current.LifecycleCommands))
 	}
-	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID {
+	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID || current.LifecycleCommands[4].ID != "system.lifecycle.manifest-file" {
 		t.Fatalf("默认生命周期命令 = %#v", current.LifecycleCommands)
 	}
 	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
@@ -122,6 +122,66 @@ func TestDefaultIncludesDocumentedGitCloneRepositoryLifecycleCommand(t *testing.
 	}
 	if !strings.Contains(command.Documentation, "repository=<仓库地址>") || !strings.Contains(command.Documentation, "dir=<相对目录>") {
 		t.Fatalf("指定仓库克隆系统命令文档 = %q", command.Documentation)
+	}
+}
+
+func TestDefaultIncludesManifestFileLifecycleCommand(t *testing.T) {
+	current := Default(t.TempDir())
+	command := lifecycleCommandByID(current.LifecycleCommands, "system.lifecycle.manifest-file")
+	if command == nil {
+		t.Fatal("Default() 未提供生成清单文件系统命令")
+	}
+	if command.Kind != LifecycleCommandKind("manifest-file") || command.Name != "生成清单文件" {
+		t.Fatalf("清单文件系统命令 = %#v", command)
+	}
+	if command.ChainArgumentMode != LifecycleCommandChainArgumentModeEnabled {
+		t.Fatalf("清单文件命令的链级参数模式 = %q，期望允许", command.ChainArgumentMode)
+	}
+	if want := []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}; !reflect.DeepEqual(command.ApplicableHooks, want) {
+		t.Fatalf("清单文件命令适用范围 = %#v，期望 %#v", command.ApplicableHooks, want)
+	}
+	if !strings.Contains(command.Documentation, "dir=<相对目录>") || !strings.Contains(command.Documentation, "name=<文件名>") {
+		t.Fatalf("清单文件系统命令文档 = %q", command.Documentation)
+	}
+}
+
+func TestValidateNormalizesManifestFileArguments(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		arguments []string
+		want      []string
+		valid     bool
+	}{
+		{name: "默认参数", arguments: nil, want: []string{}, valid: true},
+		{name: "指定目录与文件名", arguments: []string{" name=iteration.yaml ", " dir=configs/task "}, want: []string{"dir=configs/task", "name=iteration.yaml"}, valid: true},
+		{name: "重复目录", arguments: []string{"dir=one", "dir=two"}},
+		{name: "重复文件名", arguments: []string{"name=one.yaml", "name=two.yaml"}},
+		{name: "目录越界", arguments: []string{"dir=../outside"}},
+		{name: "文件名包含目录", arguments: []string{"name=config/manifest.yaml"}},
+		{name: "未知参数", arguments: []string{"format=json"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			validated, err := Validate(Settings{
+				WorkspaceRoot: t.TempDir(),
+				TaskTreeWidth: DefaultTaskTreeWidth,
+				LifecycleChains: []LifecycleCommandChain{{
+					ID: "manifest", Name: "生成清单", ApplicableHooks: []LifecycleHook{LifecycleHookPostStart},
+					Commands: []LifecycleCommandReference{{CommandID: "system.lifecycle.manifest-file", Arguments: test.arguments}},
+				}},
+			})
+			if !test.valid {
+				if err == nil {
+					t.Fatalf("Validate() 对参数 %#v 的错误 = nil，期望拒绝", test.arguments)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if got := validated.LifecycleChains[0].Commands[0].Arguments; !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("清单文件参数 = %#v，期望 %#v", got, test.want)
+			}
+		})
 	}
 }
 

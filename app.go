@@ -572,7 +572,7 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
-	gitCloneRepositoryBranch, err := lifecycleGitCloneRepositoryBranch(data.Settings.ActiveTaskTemplate(), inputTask.TemplateFields, commands)
+	templateBranch, err := lifecycleTemplateBranch(data.Settings.ActiveTaskTemplate(), inputTask.TemplateFields, commands)
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
@@ -601,7 +601,7 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 			Environment:              append(app.taskCommandEnvironment(current.ID), templateEnvironment...),
 			Input:                    append([]byte(nil), input...),
 			Commands:                 copyLifecycleCommands(commands),
-			GitCloneRepositoryBranch: gitCloneRepositoryBranch,
+			GitCloneRepositoryBranch: templateBranch,
 		},
 	}
 	go app.executeLifecycleRun(run)
@@ -729,9 +729,9 @@ func isCurrentLifecycleExecution(current task.Task, execution task.LifecycleExec
 	return current.LifecycleExecution != nil && current.LifecycleExecution.RunID == execution.RunID && current.LifecycleExecution.Revision == execution.Revision
 }
 
-func lifecycleGitCloneRepositoryBranch(template *task.TaskTemplate, values map[string]any, commands []settings.LifecycleCommand) (string, error) {
+func lifecycleTemplateBranch(template *task.TaskTemplate, values map[string]any, commands []settings.LifecycleCommand) (string, error) {
 	for _, command := range commands {
-		if command.Kind == settings.LifecycleCommandKindGitCloneRepository {
+		if command.Kind == settings.LifecycleCommandKindGitCloneRepository || command.Kind == settings.LifecycleCommandKindManifestFile {
 			return task.TaskTemplateBranch(template, values)
 		}
 	}

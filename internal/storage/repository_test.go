@@ -374,11 +374,14 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(data.Settings.LifecycleCommands) != 4 || len(data.Settings.LifecycleChains) != 2 {
+	if len(data.Settings.LifecycleCommands) != 5 || len(data.Settings.LifecycleChains) != 2 {
 		t.Fatalf("生命周期设置迁移 = %#v", data.Settings)
 	}
 	if got := data.Settings.LifecycleCommands[3].ID; got != settings.LifecycleCommandGitCloneRepositoryID {
 		t.Fatalf("迁移后的新增固定命令 ID = %q，期望 %q", got, settings.LifecycleCommandGitCloneRepositoryID)
+	}
+	if got := data.Settings.LifecycleCommands[4].ID; got != settings.LifecycleCommandManifestFileID {
+		t.Fatalf("迁移后的清单文件命令 ID = %q，期望 %q", got, settings.LifecycleCommandManifestFileID)
 	}
 	if got := data.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
 		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
