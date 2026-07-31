@@ -2,9 +2,7 @@
 
 ## Purpose
 定义任务详情中额外信息快照、系统与模板环境变量的展示边界，以及生命周期命令链输入快照复制的构造、内容和反馈规则。
-
 ## Requirements
-
 ### Requirement: 任务详情展示额外信息快照
 
 系统 MUST 在用户选中任务且未选中终端时的任务详情中展示该任务保存的额外信息。系统 MUST 按 `catalogue` 分组，并在每条信息中展示保存时的展示名称、固定字段显示名称和值，以及动态参数显示名称和值。复选框动态参数 MUST 以可读的布尔值展示；没有额外信息时系统 MUST 提供明确的空态提示。
@@ -23,11 +21,23 @@
 
 ### Requirement: 任务详情仅展示系统环境变量
 
-系统 MUST 在任务详情中提供“系统环境变量”说明区，并且只展示应用稳定注入的 `TASKAI_TASK_ID`、`TASKAI_TERMINAL_ID` 及条件性注入的 `TASKAI_STATUS_API`。说明区 MUST 标明每个变量的适用范围：任务 ID 用于任务关联的自定义命令和脚本，终端 ID 用于新建终端，状态 API 仅在 HTTP 状态管理模式下用于新建终端。系统 MUST 不在该区展示模板字段派生的环境变量或 Shell 运行器内部变量。
+系统 MUST 在任务详情中提供“系统环境变量”说明区，并且只展示应用稳定注入的 `TASKAI_TASK_ID`、`TASKAI_TERMINAL_ID` 及条件性注入的 `TASKAI_STATUS_API`。说明区 MUST 标明每个变量的适用范围：任务 ID 用于任务关联的自定义命令和脚本，终端 ID 用于新建终端，状态 API 在本机 HTTP 服务正在监听时注入到之后新建的终端。`TASKAI_STATUS_API` 的值 MUST 等于当前状态 API 基址。系统 MUST 不在该区展示模板字段派生的环境变量或 Shell 运行器内部变量。
 
-#### Scenario: 默认状态下展示系统变量范围
-- **WHEN** 用户查看任意任务的详情且未启用 HTTP 状态管理
-- **THEN** 系统展示 `TASKAI_TASK_ID` 和 `TASKAI_TERMINAL_ID` 的适用范围，并说明 `TASKAI_STATUS_API` 仅在 HTTP 状态管理模式下注入
+#### Scenario: 本机 HTTP 服务未监听时展示变量范围
+- **WHEN** 用户查看任意任务详情且本机 HTTP 服务未监听
+- **THEN** 系统展示 `TASKAI_TASK_ID` 和 `TASKAI_TERMINAL_ID` 的适用范围，并说明 `TASKAI_STATUS_API` 仅在本机 HTTP 服务正在监听时注入到之后新建的终端
+
+#### Scenario: 独立 HTTP 服务为新终端注入状态 API
+- **WHEN** 用户保持标题变化状态管理、启用独立本机 HTTP 服务并在服务监听后新建终端
+- **THEN** 该终端环境包含值等于当前状态 API 基址的 `TASKAI_STATUS_API`
+
+#### Scenario: HTTP 状态管理为新终端注入状态 API
+- **WHEN** 用户选择 HTTP 状态管理方式并在服务监听后新建终端
+- **THEN** 该终端环境包含值等于当前状态 API 基址的 `TASKAI_STATUS_API`
+
+#### Scenario: 设置变更不修改已有终端环境
+- **WHEN** 用户在终端已创建后启用、关闭或重新配置本机 HTTP 服务
+- **THEN** 已有终端的进程环境保持不变，之后新建的终端根据当时的 HTTP 服务监听状态获得环境变量
 
 #### Scenario: 不展示模板派生变量
 - **WHEN** 当前任务模板将字段 `environment` 标记为生命周期环境变量注入
