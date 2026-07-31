@@ -90,6 +90,11 @@ import {
 import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import './App.css'
 
+type Notification = {
+  text: string
+  severity: 'success' | 'error'
+}
+
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [terminals, setTerminals] = useState<TerminalRecord[]>([])
@@ -130,7 +135,8 @@ export default function App() {
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
   const [taskMenuItemEditorTab, setTaskMenuItemEditorTab] = useState<'basic' | 'scripts'>('basic')
   const [scriptHelpAnchor, setScriptHelpAnchor] = useState<HTMLElement>()
-  const [message, setMessage] = useState<string>()
+  const [message, setMessage] = useState<Notification>()
+  const showErrorMessage = (text: string) => setMessage({text, severity: 'error'})
   const [startedTaskFeedback, setStartedTaskFeedback] = useState<TaskStartFeedback>()
   const dragging = useRef(false)
   const currentTreeWidth = useRef(treeWidth)
@@ -199,7 +205,7 @@ export default function App() {
       }
       setTerminals((current) => applyTerminalEvent(current, event, title))
       if (event.type === 'error') {
-        setMessage(event.data || '终端发生错误')
+        showErrorMessage(event.data || '终端发生错误')
       }
     })
     return () => {
@@ -217,9 +223,9 @@ export default function App() {
 
   useEffect(() => api.onCloseRequested(() => setQuitDialogOpen(true)), [])
 
-  useEffect(() => api.onTaskScriptError((message) => setMessage(message)), [])
+  useEffect(() => api.onTaskScriptError((message) => showErrorMessage(message)), [])
 
-  useEffect(() => api.onRealtimeStatusError((message) => setMessage(message)), [])
+  useEffect(() => api.onRealtimeStatusError((message) => showErrorMessage(message)), [])
 
 	useEffect(() => api.onLifecycleEvent((updated) => {
 		setTasks((current) => mergeLifecycleTask(current, updated))
@@ -286,7 +292,7 @@ export default function App() {
 		if (!await ClipboardSetText(input)) {
 			throw new Error('无法写入系统剪贴板')
 		}
-		setMessage('已复制当前命令链输入 JSON')
+		setMessage({text: '已复制当前命令链输入 JSON', severity: 'success'})
 	}
 
   const toggleTaskExpanded = (taskID: string) => {
@@ -329,22 +335,22 @@ export default function App() {
   const saveTask = async (event: FormEvent) => {
     event.preventDefault()
     if (!draftTitle.trim()) {
-      setMessage('任务标题不能为空')
+      showErrorMessage('任务标题不能为空')
       return
     }
 		const missingParameter = taskExtraInfoDraft.flatMap((item) => item.parameters).find((parameter) => parameter.required && !parameter.value.trim())
 		if (missingParameter) {
-			setMessage(`参数“${missingParameter.displayName}”不能为空`)
+			showErrorMessage(`参数“${missingParameter.displayName}”不能为空`)
 			return
 		}
 		const invalidParameter = taskExtraInfoDraft.flatMap((item) => item.parameters).find((parameter) => !parameter.key.trim() || !parameter.displayName.trim())
 		if (invalidParameter) {
-			setMessage('动态参数的键和显示名称不能为空')
+			showErrorMessage('动态参数的键和显示名称不能为空')
 			return
 		}
 		const duplicateParameter = taskExtraInfoDraft.find((item) => new Set(item.parameters.map((parameter) => parameter.key.trim())).size !== item.parameters.length)
 		if (duplicateParameter) {
-			setMessage(`信息“${duplicateParameter.displayName ?? duplicateParameter.catalogue}”包含重复的动态参数键`)
+			showErrorMessage(`信息“${duplicateParameter.displayName ?? duplicateParameter.catalogue}”包含重复的动态参数键`)
 			return
 		}
 		const missingTemplateField = activeTaskTemplate?.fields.find((field) => {
@@ -355,7 +361,7 @@ export default function App() {
 			return field.inputType === 'bool' ? value !== true : !String(value ?? '').trim()
 		})
 		if (missingTemplateField) {
-			setMessage(missingTemplateField.inputType === 'bool'
+			showErrorMessage(missingTemplateField.inputType === 'bool'
 				? `字段“${missingTemplateField.displayName}”必须勾选`
 				: `字段“${missingTemplateField.displayName}”不能为空`)
 			return
@@ -490,7 +496,7 @@ export default function App() {
 		}
 		const creating = !extraInfoDraft.id
 		if (!extraInfoName(extraInfoDraft).trim()) {
-			setMessage('信息名称不能为空')
+			showErrorMessage('信息名称不能为空')
 			return
 		}
 		try {
@@ -752,7 +758,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       afterScript: normalizeTaskScript(taskMenuItemDraft.afterScript),
     }
     if (!item.name || !item.command) {
-      setMessage('菜单名称和启动命令不能为空')
+      showErrorMessage('菜单名称和启动命令不能为空')
       return
     }
     setSettingsDraft((current) => current ? {
@@ -1583,7 +1589,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       </Dialog>
 
       <Snackbar open={Boolean(message)} autoHideDuration={5000} onClose={() => setMessage(undefined)}>
-        <Alert severity="error" variant="filled" onClose={() => setMessage(undefined)}>{message}</Alert>
+        <Alert severity={message?.severity ?? 'error'} variant="filled" onClose={() => setMessage(undefined)}>{message?.text}</Alert>
       </Snackbar>
     </ThemeProvider>
   )
@@ -2500,6 +2506,6 @@ function createCustomTaskMenuItem(): TaskMenuItem {
   }
 }
 
-function showError(error: unknown, setMessage: (message: string) => void) {
-  setMessage(error instanceof Error ? error.message : String(error))
+function showError(error: unknown, setMessage: Dispatch<SetStateAction<Notification | undefined>>) {
+	setMessage({text: error instanceof Error ? error.message : String(error), severity: 'error'})
 }
