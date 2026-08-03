@@ -1224,6 +1224,79 @@ describe('App confirmation flows', () => {
 		})))
 	})
 
+	it('填写 Git 仓库地址时为未填写的项目名称自动提取仓库名', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [
+				{key: 'name', displayName: '项目名称', defaultValue: '   '},
+				{key: 'repository', displayName: '仓库地址', defaultValue: ''},
+			],
+			parameters: [],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		const repository = screen.getByRole('textbox', {name: '仓库地址'})
+		await user.type(repository, '  git@gitlab.jiandan100.cn:webdev/interact-study.git  ')
+
+		expect(screen.getByRole('textbox', {name: '项目名称'})).toHaveValue('interact-study')
+		expect(repository).toHaveValue('  git@gitlab.jiandan100.cn:webdev/interact-study.git  ')
+		await user.clear(repository)
+		await user.type(repository, 'git@gitlab.jiandan100.cn:webdev/next-project.git')
+		expect(screen.getByRole('textbox', {name: '项目名称'})).toHaveValue('interact-study')
+	})
+
+	it('填写 Git 仓库地址不会覆盖已有项目名称，且无效地址不回填', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [
+				{key: 'name', displayName: '项目名称', defaultValue: ''},
+				{key: 'repository', displayName: '仓库地址', defaultValue: ''},
+			],
+			parameters: [],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		const projectName = screen.getByRole('textbox', {name: '项目名称'})
+		const repository = screen.getByRole('textbox', {name: '仓库地址'})
+		await user.type(projectName, '互动学习')
+		await user.type(repository, 'git@gitlab.jiandan100.cn:webdev/interact-study.git')
+		expect(projectName).toHaveValue('互动学习')
+
+		await user.clear(projectName)
+		await user.clear(repository)
+		await user.type(repository, 'git@gitlab.jiandan100.cn:webdev/interact-study')
+		expect(projectName).toHaveValue('')
+
+		await user.clear(repository)
+		await user.type(repository, 'git@gitlab.jiandan100.cn:interact-study.git')
+		expect(projectName).toHaveValue('')
+	})
+
+	it('非 Git 分类的仓库地址不自动修改名称', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'source-template', catalogue: 'source', displayName: '源代码', builtIn: false,
+			fields: [
+				{key: 'name', displayName: '名称', defaultValue: ''},
+				{key: 'repository', displayName: '仓库地址', defaultValue: ''},
+			],
+			parameters: [],
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(screen.getByRole('button', {name: '新增信息'}))
+		await user.type(screen.getByRole('textbox', {name: '仓库地址'}), 'git@gitlab.jiandan100.cn:webdev/interact-study.git')
+
+		expect(screen.getByRole('textbox', {name: '名称'})).toHaveValue('')
+	})
+
 	it('收起分类模板时仍可新建模板，并按当前会话预选且切换新增信息模板', async () => {
 		const user = userEvent.setup()
 		bindings.ListExtraInfoTemplates.mockResolvedValue([

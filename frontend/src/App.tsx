@@ -491,6 +491,30 @@ export default function App() {
 		setExtraInfoDraft(createExtraInfoDraft(template))
 	}
 
+	const updateExtraInfoDraftField = (key: string, value: string) => {
+		setExtraInfoDraft((current) => {
+			if (!current) {
+				return current
+			}
+			const name = extraInfoName(current)
+			const inferredName = current.catalogue === 'git' && key === 'repository' && !name.trim()
+				? gitRepositoryName(value)
+				: ''
+			return {
+				...current,
+				fields: current.fields.map((field) => {
+					if (field.key === key) {
+						return {...field, value}
+					}
+					if (inferredName && field.key === 'name') {
+						return {...field, value: inferredName}
+					}
+					return field
+				}),
+			}
+		})
+	}
+
 	const saveExtraInfo = async () => {
 		if (!extraInfoDraft) {
 			return
@@ -1127,7 +1151,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					{extraInfoTemplates.map((template) => <MenuItem key={template.id} value={template.id}>{`${template.displayName || template.catalogue}（${template.catalogue}）`}</MenuItem>)}
 				</TextField> : <Typography variant="caption" color="text.secondary">{extraInfoDraft.catalogue}</Typography>}
 				{extraInfoDraft && <Box data-testid="extra-info-draft-fields" sx={{display: 'grid', gridTemplateColumns: '1fr', gap: 1.5, minWidth: 0}}>
-					{extraInfoDraft.fields.map((field, index) => <TextField key={field.key} required={field.key === 'name'} size="small" label={field.displayName} value={field.value ?? ''} onChange={(event) => setExtraInfoDraft((current) => current ? {...current, fields: current.fields.map((item, fieldIndex) => fieldIndex === index ? {...item, value: event.target.value} : item)} : current)}/>) }
+					{extraInfoDraft.fields.map((field) => <TextField key={field.key} required={field.key === 'name'} size="small" label={field.displayName} value={field.value ?? ''} onChange={(event) => updateExtraInfoDraftField(field.key, event.target.value)}/>) }
 				</Box>}
 				{extraInfoDraft && <Box sx={{display: 'grid', gap: 1.25, pt: 0.5}}>
 					<Typography variant="subtitle2">动态参数</Typography>
@@ -2501,6 +2525,16 @@ function cloneExtraInfo(info: ExtraInfo): ExtraInfo {
 
 function extraInfoName(info: ExtraInfo): string {
 	return info.fields.find((field) => field.key === 'name')?.value ?? ''
+}
+
+function gitRepositoryName(repository: string): string {
+	const normalized = repository.trim()
+	if (!normalized.endsWith('.git')) {
+		return ''
+	}
+	const path = normalized.slice(0, -'.git'.length)
+	const slashIndex = path.lastIndexOf('/')
+	return slashIndex < 0 ? '' : path.slice(slashIndex + 1)
 }
 
 function extraInfoParameterInputType(parameter: {inputType?: ExtraInfoParameterInputType}): ExtraInfoParameterInputType {
