@@ -41,3 +41,26 @@ describe('api.saveSettings', () => {
 		expect(payload).not.toHaveProperty('lifecycleDefaultChains')
 	})
 })
+
+describe('api.deleteCompletedTasks', () => {
+	const deleteCompletedTasks = vi.fn()
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		deleteCompletedTasks.mockResolvedValue([])
+		Object.assign(window, {go: {main: {App: {DeleteCompletedTasks: deleteCompletedTasks}}}})
+	})
+
+	afterEach(() => {
+		delete (window as {go?: unknown}).go
+	})
+
+	it('转发全部待删除任务 ID', async () => {
+		const deleteTasks = (api as typeof api & {deleteCompletedTasks?: (taskIDs: string[]) => Promise<unknown>}).deleteCompletedTasks
+
+		expect(deleteTasks).toEqual(expect.any(Function))
+		await deleteTasks?.(['completed-1', 'completed-2'])
+
+		expect(deleteCompletedTasks).toHaveBeenCalledWith(['completed-1', 'completed-2'])
+	})
+})

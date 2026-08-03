@@ -42,6 +42,10 @@ export function CreateTerminal(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateTerminal'](arg1, arg2, arg3);
 }
 
+export function DeleteCompletedTasks(arg1) {
+  return window['go']['main']['App']['DeleteCompletedTasks'](arg1);
+}
+
 export function DeleteExtraInfo(arg1) {
   return window['go']['main']['App']['DeleteExtraInfo'](arg1);
 }
