@@ -36,16 +36,17 @@ func (function CommandExecutorFunc) Run(invocation CommandInvocation) (CommandRe
 }
 
 type CommandChainRequest struct {
-	Task                     task.Task
-	Directory                string
-	WorkspaceRoot            string
-	WorkspacePath            string
-	ShellPath                string
-	Environment              []string
-	Input                    []byte
-	Commands                 []settings.LifecycleCommand
-	GitCloneRepositoryBranch string
-	OnProgress               func(index, count int, command settings.LifecycleCommand)
+	Task           task.Task
+	TemplateFields map[string]any
+	Directory      string
+	WorkspaceRoot  string
+	WorkspacePath  string
+	ShellPath      string
+	Environment    []string
+	Input          []byte
+	Commands       []settings.LifecycleCommand
+	DefaultBranch  string
+	OnProgress     func(index, count int, command settings.LifecycleCommand)
 }
 
 type CommandChainRunner struct {
@@ -65,6 +66,7 @@ func NewCommandChainRunner(executor CommandExecutor) *CommandChainRunner {
 }
 
 func (runner *CommandChainRunner) Run(request CommandChainRequest) ([]byte, error) {
+	request.Task = copyTaskForCommandChain(request.Task)
 	output := append([]byte(nil), request.Input...)
 	for index, command := range request.Commands {
 		if request.OnProgress != nil {
@@ -107,6 +109,10 @@ func (runner *CommandChainRunner) Run(request CommandChainRequest) ([]byte, erro
 			if err := runner.writeManifestFile(request, command.Arguments); err != nil {
 				return nil, commandError(command.Name, nil, err)
 			}
+		case settings.LifecycleCommandKindUpdateDefaultBranch:
+			if err := runner.updateDefaultBranch(&request, command.Arguments); err != nil {
+				return nil, commandError(command.Name, nil, err)
+			}
 		default:
 			return nil, fmt.Errorf("不支持的生命周期命令类型: %q", command.Kind)
 		}
@@ -126,10 +132,54 @@ func (runner *CommandChainRunner) cloneGitRepositoryToTarget(request CommandChai
 	if err != nil {
 		return err
 	}
-	if err := runner.cloneGitRepository(parameters.Repository, target, strings.TrimSpace(request.GitCloneRepositoryBranch)); err != nil {
+	if err := runner.cloneGitRepository(parameters.Repository, target, strings.TrimSpace(request.DefaultBranch)); err != nil {
 		return fmt.Errorf("克隆指定 Git 仓库失败: %w", err)
 	}
 	return nil
+}
+
+func (runner *CommandChainRunner) updateDefaultBranch(request *CommandChainRequest, arguments []string) error {
+	field, err := settings.UpdateDefaultBranchTemplateField(arguments)
+	if err != nil {
+		return err
+	}
+	value, found := request.TemplateFields[field]
+	if !found {
+		request.DefaultBranch = ""
+		return nil
+	}
+	branch, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("任务模板字段 %q 必须是字符串", field)
+	}
+	request.DefaultBranch = strings.TrimSpace(branch)
+	if request.DefaultBranch == "" {
+		return nil
+	}
+	for infoIndex := range request.Task.ExtraInfo {
+		information := &request.Task.ExtraInfo[infoIndex]
+		if information.TemplateID != task.BuiltInGitTemplate().ID {
+			continue
+		}
+		for parameterIndex := range information.Parameters {
+			parameter := &information.Parameters[parameterIndex]
+			if parameter.Key == "branch" && strings.TrimSpace(parameter.Value) == "" {
+				parameter.Value = request.DefaultBranch
+			}
+		}
+	}
+	return nil
+}
+
+func copyTaskForCommandChain(current task.Task) task.Task {
+	copy := current
+	copy.ExtraInfo = make([]task.TaskExtraInfo, len(current.ExtraInfo))
+	for index, information := range current.ExtraInfo {
+		copy.ExtraInfo[index] = information
+		copy.ExtraInfo[index].Fields = append([]task.ExtraInfoField(nil), information.Fields...)
+		copy.ExtraInfo[index].Parameters = append([]task.ExtraInfoParameter(nil), information.Parameters...)
+	}
+	return copy
 }
 
 func prepareGitCloneRepositoryTarget(workspacePath, directory string) (string, error) {

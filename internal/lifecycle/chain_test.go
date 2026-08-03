@@ -131,15 +131,17 @@ func TestCommandChainRunnerClonesSpecifiedRepositoryDirectlyToTarget(t *testing.
 	})
 
 	input := []byte(`{"taskId":"task-1"}`)
-	output, err := runner.Run(CommandChainRequest{
-		Task:                     task.Task{ID: "task-1", ExtraInfo: []task.TaskExtraInfo{builtInGitTaskInfo("ignored", "https://example.com/ignored.git", "ignored")}},
-		WorkspacePath:            workspacePath,
-		GitCloneRepositoryBranch: "release/1.2",
-		Input:                    input,
-		Commands: []settings.LifecycleCommand{{
-			ID: settings.LifecycleCommandGitCloneRepositoryID, Kind: settings.LifecycleCommandKindGitCloneRepository, Name: "克隆指定 Git 仓库", Arguments: []string{"repository=https://example.com/template.git", "dir=template"},
-		}},
-	})
+	request := CommandChainRequest{
+		Task:           task.Task{ID: "task-1", ExtraInfo: []task.TaskExtraInfo{builtInGitTaskInfo("ignored", "https://example.com/ignored.git", "")}},
+		TemplateFields: map[string]any{"branch": "release/1.2"},
+		WorkspacePath:  workspacePath,
+		Input:          input,
+		Commands: []settings.LifecycleCommand{
+			{ID: settings.LifecycleCommandUpdateDefaultBranchID, Kind: settings.LifecycleCommandKindUpdateDefaultBranch, Name: "更新默认分支"},
+			{ID: settings.LifecycleCommandGitCloneRepositoryID, Kind: settings.LifecycleCommandKindGitCloneRepository, Name: "克隆指定 Git 仓库", Arguments: []string{"repository=https://example.com/template.git", "dir=template"}},
+		},
+	}
+	output, err := runner.Run(request)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -155,6 +157,105 @@ func TestCommandChainRunnerClonesSpecifiedRepositoryDirectlyToTarget(t *testing.
 	}
 	if info, err := os.Stat(filepath.Join(workspacePath, "template")); err != nil || !info.IsDir() {
 		t.Fatalf("安全目标目录未创建: info=%#v, err=%v", info, err)
+	}
+	if got := taskExtraInfoBranch(request.Task.ExtraInfo[0]); got != "" {
+		t.Fatalf("更新默认分支不应改写任务快照，得到 %q", got)
+	}
+}
+
+func TestCommandChainRunnerUpdatesDefaultBranchFromSpecifiedTemplateField(t *testing.T) {
+	workspacePath := filepath.Join(t.TempDir(), "task-1")
+	if err := os.MkdirAll(workspacePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	input := []byte(`{"taskId":"task-1"}`)
+	var received []byte
+	var calls []GitInvocation
+	runner := NewCommandChainRunner(CommandExecutorFunc(func(invocation CommandInvocation) (CommandResult, error) {
+		received = append([]byte(nil), invocation.Input...)
+		return CommandResult{Output: invocation.Input}, nil
+	}))
+	runner.gitExecutor = GitExecutorFunc(func(invocation GitInvocation) (CommandResult, error) {
+		calls = append(calls, invocation)
+		if invocation.Arguments[0] == "clone" {
+			if err := os.MkdirAll(invocation.Arguments[len(invocation.Arguments)-1], 0o700); err != nil {
+				t.Fatalf("模拟 clone 创建目录: %v", err)
+			}
+		}
+		return CommandResult{}, nil
+	})
+	request := CommandChainRequest{
+		Task: task.Task{ID: "task-1", ExtraInfo: []task.TaskExtraInfo{
+			builtInGitTaskInfo("api", "https://example.com/api.git", ""),
+			builtInGitTaskInfo("web", "https://example.com/web.git", "hotfix"),
+		}},
+		TemplateFields: map[string]any{"release_branch": " release/2.0 "},
+		Directory:      workspacePath,
+		WorkspacePath:  workspacePath,
+		Input:          input,
+		Commands: []settings.LifecycleCommand{
+			{ID: settings.LifecycleCommandUpdateDefaultBranchID, Kind: settings.LifecycleCommandKindUpdateDefaultBranch, Name: "更新默认分支", Arguments: []string{"templateField=release_branch"}},
+			{ID: "custom", Kind: settings.LifecycleCommandKindCustom, Name: "自定义", Command: "custom"},
+			{ID: settings.LifecycleCommandGitCloneID, Kind: settings.LifecycleCommandKindGitClone, Name: "Git 仓库克隆"},
+		},
+	}
+
+	output, err := runner.Run(request)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if string(output) != string(input) || string(received) != string(input) {
+		t.Fatalf("更新默认分支不应改变自定义命令输入: output=%q received=%q", output, received)
+	}
+	if got, want := calls, []GitInvocation{
+		{Directory: workspacePath, Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/api.git", "refs/heads/release/2.0"}},
+		{Directory: workspacePath, Arguments: []string{"clone", "--branch", "release/2.0", "--", "https://example.com/api.git", filepath.Join(workspacePath, "api")}},
+		{Directory: workspacePath, Arguments: []string{"ls-remote", "--exit-code", "--heads", "--", "https://example.com/web.git", "refs/heads/hotfix"}},
+		{Directory: workspacePath, Arguments: []string{"clone", "--branch", "hotfix", "--", "https://example.com/web.git", filepath.Join(workspacePath, "web")}},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Git 调用 = %#v，期望 %#v", got, want)
+	}
+	if got := taskExtraInfoBranch(request.Task.ExtraInfo[0]); got != "" {
+		t.Fatalf("空 Git 分支不应写回任务快照，得到 %q", got)
+	}
+	if got := taskExtraInfoBranch(request.Task.ExtraInfo[1]); got != "hotfix" {
+		t.Fatalf("显式 Git 分支被改写，得到 %q", got)
+	}
+}
+
+func TestCommandChainRunnerHandlesMissingOrInvalidDefaultBranchTemplateField(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		fields         map[string]any
+		wantError      bool
+		wantTaskBranch string
+	}{
+		{name: "字段不存在", fields: map[string]any{}, wantTaskBranch: ""},
+		{name: "字段为空", fields: map[string]any{"branch": "  "}, wantTaskBranch: ""},
+		{name: "字段不是字符串", fields: map[string]any{"branch": true}, wantError: true, wantTaskBranch: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := CommandChainRequest{
+				Task:           task.Task{ID: "task-1", ExtraInfo: []task.TaskExtraInfo{builtInGitTaskInfo("api", "https://example.com/api.git", "")}},
+				TemplateFields: test.fields,
+				Commands: []settings.LifecycleCommand{{
+					ID: settings.LifecycleCommandUpdateDefaultBranchID, Kind: settings.LifecycleCommandKindUpdateDefaultBranch, Name: "更新默认分支",
+				}},
+			}
+			_, err := NewCommandChainRunner(nil).Run(request)
+			if test.wantError {
+				if err == nil || !strings.Contains(err.Error(), "字符串") {
+					t.Fatalf("Run() error = %v，期望拒绝非字符串字段", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			if got := taskExtraInfoBranch(request.Task.ExtraInfo[0]); got != test.wantTaskBranch {
+				t.Fatalf("任务 Git 分支 = %q，期望 %q", got, test.wantTaskBranch)
+			}
+		})
 	}
 }
 
@@ -480,6 +581,15 @@ func builtInGitTaskInfo(name, repository, branch string) task.TaskExtraInfo {
 		},
 		Parameters: []task.ExtraInfoParameter{{Key: "branch", Value: branch}},
 	}
+}
+
+func taskExtraInfoBranch(information task.TaskExtraInfo) string {
+	for _, parameter := range information.Parameters {
+		if parameter.Key == "branch" {
+			return parameter.Value
+		}
+	}
+	return ""
 }
 
 func TestShellCommandExecutorRunsCommandWithInputAndWorkingDirectory(t *testing.T) {

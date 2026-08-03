@@ -2,7 +2,6 @@ package lifecycle
 
 import (
 	"fmt"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -27,27 +26,23 @@ func (runner *CommandChainRunner) writeManifestFile(request CommandChainRequest,
 	if err != nil {
 		return err
 	}
-	contents, err := manifestFileContents(request.Task, request.GitCloneRepositoryBranch)
+	contents, err := manifestFileContents(request.Task)
 	if err != nil {
 		return err
 	}
 	return writeManifestContents(request.WorkspacePath, parameters.Directory, parameters.Name, contents)
 }
 
-func manifestFileContents(current task.Task, templateBranch string) ([]byte, error) {
+func manifestFileContents(current task.Task) ([]byte, error) {
 	manifest := manifestFile{
 		Iteration:    current.Title,
 		Description:  current.Description,
 		Repositories: make([]manifestRepository, 0),
 	}
-	templateBranch = strings.TrimSpace(templateBranch)
 	for _, information := range builtInGitInfos(current.ExtraInfo) {
 		name, repository, branch, err := gitInformationValues(information)
 		if err != nil {
 			return nil, fmt.Errorf("解析清单 Git 项目失败: %w", err)
-		}
-		if branch == "" {
-			branch = templateBranch
 		}
 		manifest.Repositories = append(manifest.Repositories, manifestRepository{Name: name, URL: repository, Branch: branch})
 	}

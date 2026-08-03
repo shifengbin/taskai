@@ -47,10 +47,10 @@ func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	current := Default(t.TempDir())
 
-	if len(current.LifecycleCommands) != 5 {
-		t.Fatalf("默认生命周期命令数量 = %d，期望 5", len(current.LifecycleCommands))
+	if len(current.LifecycleCommands) != 6 {
+		t.Fatalf("默认生命周期命令数量 = %d，期望 6", len(current.LifecycleCommands))
 	}
-	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID || current.LifecycleCommands[4].ID != "system.lifecycle.manifest-file" {
+	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID || current.LifecycleCommands[4].ID != "system.lifecycle.manifest-file" || current.LifecycleCommands[5].ID != "system.lifecycle.update-default-branch" {
 		t.Fatalf("默认生命周期命令 = %#v", current.LifecycleCommands)
 	}
 	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
@@ -73,6 +73,12 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	}
 	if got := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandGitCloneID).ChainArgumentMode; got != LifecycleCommandChainArgumentModeEnabled {
 		t.Fatalf("Git 仓库克隆命令的链级参数模式 = %q，期望允许", got)
+	}
+}
+
+func TestDefaultLifecycleConfigurationValidates(t *testing.T) {
+	if _, err := Validate(Default(t.TempDir())); err != nil {
+		t.Fatalf("Validate(Default()) error = %v", err)
 	}
 }
 
@@ -103,6 +109,7 @@ func TestDefaultSeedsDefaultBranchTemplateAndRepositoryPresetChains(t *testing.T
 		t.Fatalf("iterations-ai 链范围 = %#v", iterations)
 	}
 	if want := []LifecycleCommandReference{
+		{CommandID: "system.lifecycle.update-default-branch", Arguments: []string{}},
 		{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
 		{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=git@gitlab.jiandan100.cn:webdev/iterations-ai.git"}},
 		{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
@@ -119,6 +126,7 @@ func TestDefaultSeedsDefaultBranchTemplateAndRepositoryPresetChains(t *testing.T
 		t.Fatalf("更新仓库链范围 = %#v", updateRepositories)
 	}
 	if want := []LifecycleCommandReference{
+		{CommandID: "system.lifecycle.update-default-branch", Arguments: []string{}},
 		{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
 		{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
 	}; !reflect.DeepEqual(updateRepositories.Commands, want) {
@@ -133,14 +141,105 @@ func TestDefaultSeedsDefaultBranchTemplateAndRepositoryPresetChains(t *testing.T
 	}
 }
 
+func TestDefaultIncludesUpdateDefaultBranchLifecycleCommand(t *testing.T) {
+	current := Default(t.TempDir())
+	command := lifecycleCommandByID(current.LifecycleCommands, "system.lifecycle.update-default-branch")
+	if command == nil {
+		t.Fatal("Default() 未提供更新默认分支系统命令")
+	}
+	if command.Kind != LifecycleCommandKind("update-default-branch") || command.Name != "更新默认分支" {
+		t.Fatalf("更新默认分支系统命令 = %#v", command)
+	}
+	if command.ChainArgumentMode != LifecycleCommandChainArgumentModeEnabled {
+		t.Fatalf("更新默认分支命令的链级参数模式 = %q，期望允许", command.ChainArgumentMode)
+	}
+	if want := []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}; !reflect.DeepEqual(command.ApplicableHooks, want) {
+		t.Fatalf("更新默认分支命令适用范围 = %#v，期望 %#v", command.ApplicableHooks, want)
+	}
+	if !strings.Contains(command.Documentation, "templateField=<字段键>") || !strings.Contains(command.Documentation, "branch") {
+		t.Fatalf("更新默认分支系统命令文档 = %q", command.Documentation)
+	}
+}
+
+func TestValidateNormalizesUpdateDefaultBranchArguments(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		arguments []string
+		want      []string
+		valid     bool
+	}{
+		{name: "默认字段", arguments: nil, want: []string{}, valid: true},
+		{name: "指定字段", arguments: []string{" templateField=release_branch "}, want: []string{"templateField=release_branch"}, valid: true},
+		{name: "空字段", arguments: []string{"templateField= "}},
+		{name: "重复字段", arguments: []string{"templateField=branch", "templateField=release"}},
+		{name: "未知参数", arguments: []string{"branch=main"}},
+		{name: "没有等号", arguments: []string{"branch"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			validated, err := Validate(Settings{
+				WorkspaceRoot: t.TempDir(),
+				TaskTreeWidth: DefaultTaskTreeWidth,
+				LifecycleChains: []LifecycleCommandChain{{
+					ID: "default-branch", Name: "默认分支", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+					Commands: []LifecycleCommandReference{{CommandID: "system.lifecycle.update-default-branch", Arguments: test.arguments}},
+				}},
+			})
+			if !test.valid {
+				if err == nil {
+					t.Fatalf("Validate() 对参数 %#v 的错误 = nil，期望拒绝", test.arguments)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if got := validated.LifecycleChains[0].Commands[0].Arguments; !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("更新默认分支参数 = %#v，期望 %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestApplyPresetMigrationAddsDefaultBranchCommandOnlyToUnmodifiedVersionThreePresetChains(t *testing.T) {
+	legacy := Default(t.TempDir())
+	legacy.PresetVersion = 3
+	legacy.LifecycleChains = defaultLifecycleChainsVersionThree()
+
+	modified := legacy
+	modified.LifecycleChains = defaultLifecycleChainsVersionThree()
+	chain := lifecycleChainByID(modified.LifecycleChains, LifecycleChainIterationsAIID)
+	chain.Name = "已修改 iterations-ai"
+
+	migrated, changed := ApplyPresetMigration(legacy)
+	if !changed || migrated.PresetVersion != CurrentPresetVersion {
+		t.Fatalf("预置版本迁移 = (%d, %t)，期望 (%d, true)", migrated.PresetVersion, changed, CurrentPresetVersion)
+	}
+	for _, chainID := range []string{LifecycleChainIterationsAIID, LifecycleChainUpdateRepositoriesID} {
+		chain := lifecycleChainByID(migrated.LifecycleChains, chainID)
+		if chain == nil || len(chain.Commands) == 0 || chain.Commands[0].CommandID != "system.lifecycle.update-default-branch" {
+			t.Fatalf("%s 预置链未前置更新默认分支命令: %#v", chainID, chain)
+		}
+	}
+	for _, chainID := range []string{LifecycleChainCreateWorkspaceID, LifecycleChainDeleteWorkspaceID} {
+		chain := lifecycleChainByID(migrated.LifecycleChains, chainID)
+		if chain == nil || len(chain.Commands) != 1 || chain.Commands[0].CommandID == "system.lifecycle.update-default-branch" {
+			t.Fatalf("%s 不应被默认分支迁移改写: %#v", chainID, chain)
+		}
+	}
+
+	migrated, changed = ApplyPresetMigration(modified)
+	if !changed {
+		t.Fatal("已修改预置链的版本迁移未触发")
+	}
+	if got := lifecycleChainByID(migrated.LifecycleChains, LifecycleChainIterationsAIID); got.Name != "已修改 iterations-ai" || got.Commands[0].CommandID == "system.lifecycle.update-default-branch" {
+		t.Fatalf("已修改预置链不应被改写: %#v", got)
+	}
+}
+
 func TestApplyPresetMigrationMovesUnmodifiedIterationsAIToBeforeStart(t *testing.T) {
 	legacy := Default(t.TempDir())
 	legacy.PresetVersion = 1
-	for index := range legacy.LifecycleChains {
-		if legacy.LifecycleChains[index].ID == LifecycleChainIterationsAIID {
-			legacy.LifecycleChains[index].ApplicableHooks = []LifecycleHook{LifecycleHookPostStart}
-		}
-	}
+	legacy.LifecycleChains = defaultLifecycleChainsVersionOne()
 
 	migrated, changed := ApplyPresetMigration(legacy)
 	if !changed {
@@ -639,6 +738,15 @@ func lifecycleCommandByID(commands []LifecycleCommand, id string) *LifecycleComm
 	for index := range commands {
 		if commands[index].ID == id {
 			return &commands[index]
+		}
+	}
+	return nil
+}
+
+func lifecycleChainByID(chains []LifecycleCommandChain, id string) *LifecycleCommandChain {
+	for index := range chains {
+		if chains[index].ID == id {
+			return &chains[index]
 		}
 	}
 	return nil

@@ -31,12 +31,13 @@ func TestCommandChainRunnerWritesManifestFile(t *testing.T) {
 				builtInGitTaskInfo("ucv2", "git@gitlab.jiandan100.cn:webdev/ucv2.git", "dev-cj-1.2"),
 			},
 		},
-		WorkspacePath:            workspacePath,
-		GitCloneRepositoryBranch: "android2.45-0727",
-		Input:                    input,
-		Commands: []settings.LifecycleCommand{{
-			ID: settings.LifecycleCommandManifestFileID, Kind: settings.LifecycleCommandKindManifestFile, Name: "生成清单文件", Arguments: []string{"dir=configs/task", "name=iteration.yaml"},
-		}},
+		TemplateFields: map[string]any{"branch": "android2.45-0727"},
+		WorkspacePath:  workspacePath,
+		Input:          input,
+		Commands: []settings.LifecycleCommand{
+			{ID: settings.LifecycleCommandUpdateDefaultBranchID, Kind: settings.LifecycleCommandKindUpdateDefaultBranch, Name: "更新默认分支"},
+			{ID: settings.LifecycleCommandManifestFileID, Kind: settings.LifecycleCommandKindManifestFile, Name: "生成清单文件", Arguments: []string{"dir=configs/task", "name=iteration.yaml"}},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)

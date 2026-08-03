@@ -176,6 +176,113 @@ func TestRepositorySeedsRepositoryPresetChainsOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestRepositoryMigratesVersionThreeDefaultBranchPresetChains(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*settings.Settings)
+		verify func(*testing.T, settings.Settings)
+	}{
+		{
+			name: "精确匹配的预置链前置默认分支命令",
+			verify: func(t *testing.T, current settings.Settings) {
+				t.Helper()
+				for _, chainID := range []string{settings.LifecycleChainIterationsAIID, settings.LifecycleChainUpdateRepositoriesID} {
+					index := lifecycleCommandChainIndex(current.LifecycleChains, chainID)
+					if index < 0 || len(current.LifecycleChains[index].Commands) == 0 || current.LifecycleChains[index].Commands[0].CommandID != settings.LifecycleCommandUpdateDefaultBranchID {
+						t.Fatalf("%s 迁移后的命令链 = %#v", chainID, current.LifecycleChains)
+					}
+				}
+			},
+		},
+		{
+			name: "已修改的预置链保持不变",
+			mutate: func(current *settings.Settings) {
+				index := lifecycleCommandChainIndex(current.LifecycleChains, settings.LifecycleChainIterationsAIID)
+				current.LifecycleChains[index].Name = "自定义 iterations-ai"
+			},
+			verify: func(t *testing.T, current settings.Settings) {
+				t.Helper()
+				index := lifecycleCommandChainIndex(current.LifecycleChains, settings.LifecycleChainIterationsAIID)
+				chain := current.LifecycleChains[index]
+				if chain.Name != "自定义 iterations-ai" || chain.Commands[0].CommandID == settings.LifecycleCommandUpdateDefaultBranchID {
+					t.Fatalf("已修改的预置链被改写: %#v", chain)
+				}
+			},
+		},
+		{
+			name: "已删除的预置链不重建",
+			mutate: func(current *settings.Settings) {
+				index := lifecycleCommandChainIndex(current.LifecycleChains, settings.LifecycleChainUpdateRepositoriesID)
+				current.LifecycleChains = append(current.LifecycleChains[:index], current.LifecycleChains[index+1:]...)
+			},
+			verify: func(t *testing.T, current settings.Settings) {
+				t.Helper()
+				if lifecycleCommandChainIndex(current.LifecycleChains, settings.LifecycleChainUpdateRepositoriesID) >= 0 {
+					t.Fatalf("已删除的预置链被重建: %#v", current.LifecycleChains)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dataPath := filepath.Join(t.TempDir(), "state.json")
+			legacySettings := versionThreeRepositoryPresetSettings(t.TempDir())
+			if test.mutate != nil {
+				test.mutate(&legacySettings)
+			}
+			contents, err := json.Marshal(Data{
+				Tasks:               []task.Task{},
+				ExtraInfoTemplates:  []task.ExtraInfoTemplate{},
+				ExtraInfos:          []task.ExtraInfo{},
+				ExtraInfoCatalogues: []string{},
+				Settings:            legacySettings,
+			})
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+			if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if data.Settings.PresetVersion != settings.CurrentPresetVersion {
+				t.Fatalf("迁移后的预置版本 = %d，期望 %d", data.Settings.PresetVersion, settings.CurrentPresetVersion)
+			}
+			test.verify(t, data.Settings)
+
+			reloaded, err := New(dataPath, settings.Default(t.TempDir())).Load()
+			if err != nil {
+				t.Fatalf("第二次 Load() error = %v", err)
+			}
+			test.verify(t, reloaded.Settings)
+		})
+	}
+}
+
+func versionThreeRepositoryPresetSettings(workspaceRoot string) settings.Settings {
+	current := settings.Default(workspaceRoot)
+	current.PresetVersion = 3
+	for index := range current.LifecycleChains {
+		switch current.LifecycleChains[index].ID {
+		case settings.LifecycleChainIterationsAIID:
+			current.LifecycleChains[index].Commands = []settings.LifecycleCommandReference{
+				{CommandID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+				{CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + settings.IterationsAIRepository}},
+				{CommandID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
+				{CommandID: settings.LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+			}
+		case settings.LifecycleChainUpdateRepositoriesID:
+			current.LifecycleChains[index].Commands = []settings.LifecycleCommandReference{
+				{CommandID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
+				{CommandID: settings.LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+			}
+		}
+	}
+	return current
+}
+
 func TestRepositoryPresetMigrationKeepsExistingActiveTaskTemplate(t *testing.T) {
 	dataPath := filepath.Join(t.TempDir(), "state.json")
 	contents := []byte(`{
@@ -495,7 +602,7 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(data.Settings.LifecycleCommands) != 5 || len(data.Settings.LifecycleChains) != 4 {
+	if len(data.Settings.LifecycleCommands) != 6 || len(data.Settings.LifecycleChains) != 4 {
 		t.Fatalf("生命周期设置迁移 = %#v", data.Settings)
 	}
 	if got := data.Settings.LifecycleCommands[3].ID; got != settings.LifecycleCommandGitCloneRepositoryID {
@@ -503,6 +610,9 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	}
 	if got := data.Settings.LifecycleCommands[4].ID; got != settings.LifecycleCommandManifestFileID {
 		t.Fatalf("迁移后的清单文件命令 ID = %q，期望 %q", got, settings.LifecycleCommandManifestFileID)
+	}
+	if got := data.Settings.LifecycleCommands[5].ID; got != settings.LifecycleCommandUpdateDefaultBranchID {
+		t.Fatalf("迁移后的默认分支命令 ID = %q，期望 %q", got, settings.LifecycleCommandUpdateDefaultBranchID)
 	}
 	if got := data.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
 		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,

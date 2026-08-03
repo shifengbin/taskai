@@ -442,34 +442,6 @@ func TaskTemplateEnvironment(template *TaskTemplate, values map[string]any) ([]s
 	return environment, nil
 }
 
-func TaskTemplateBranch(template *TaskTemplate, values map[string]any) (string, error) {
-	if template == nil {
-		return "", nil
-	}
-	normalizedTemplate, err := NormalizeTaskTemplate(*template)
-	if err != nil {
-		return "", err
-	}
-	for _, field := range normalizedTemplate.Fields {
-		if field.Key != "branch" {
-			continue
-		}
-		if field.InputType != TaskTemplateFieldInputString {
-			return "", fmt.Errorf("任务模板 branch 字段必须是字符串")
-		}
-		resolved, err := ResolveTaskTemplateFields(normalizedTemplate, values)
-		if err != nil {
-			return "", err
-		}
-		branch, ok := resolved[field.Key].(string)
-		if !ok {
-			return "", fmt.Errorf("任务模板 branch 字段必须是字符串")
-		}
-		return strings.TrimSpace(branch), nil
-	}
-	return "", nil
-}
-
 func MergeTaskTemplateFields(template TaskTemplate, existing, submitted map[string]any) (map[string]any, error) {
 	normalizedTemplate, err := NormalizeTaskTemplate(template)
 	if err != nil {

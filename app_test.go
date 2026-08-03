@@ -413,6 +413,7 @@ func TestAppFreezesTaskTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: "clone-template", Name: "初始化模板", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
 		Commands: []settings.LifecycleCommandReference{
+			{CommandID: settings.LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
 			{CommandID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
 			{CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + remoteRepository}},
 		},
@@ -434,20 +435,19 @@ func TestAppFreezesTaskTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
 	}
 }
 
-func TestLifecycleTemplateBranchIncludesManifestFileCommand(t *testing.T) {
+func TestLifecycleTemplateFieldsFreezeVisibleValues(t *testing.T) {
 	template := &task.TaskTemplate{
-		ID: "release", Name: "发布任务", Fields: []task.TaskTemplateField{{
-			Key: "branch", DisplayName: "模板分支", InputType: task.TaskTemplateFieldInputString,
-		}},
+		ID: "release", Name: "发布任务", Fields: []task.TaskTemplateField{
+			{Key: "branch", DisplayName: "模板分支", InputType: task.TaskTemplateFieldInputString},
+			{Key: "deploy", DisplayName: "立即部署", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false},
+		},
 	}
-	branch, err := lifecycleTemplateBranch(template, map[string]any{"branch": "android2.45-0727"}, []settings.LifecycleCommand{{
-		ID: settings.LifecycleCommandManifestFileID, Kind: settings.LifecycleCommandKindManifestFile, Name: "生成清单文件",
-	}})
+	fields, err := lifecycleTemplateFields(template, map[string]any{"branch": "android2.45-0727", "retired": "忽略"})
 	if err != nil {
-		t.Fatalf("lifecycleTemplateBranch() error = %v", err)
+		t.Fatalf("lifecycleTemplateFields() error = %v", err)
 	}
-	if branch != "android2.45-0727" {
-		t.Fatalf("清单文件命令的模板分支 = %q，期望 android2.45-0727", branch)
+	if want := map[string]any{"branch": "android2.45-0727", "deploy": false}; !reflect.DeepEqual(fields, want) {
+		t.Fatalf("冻结的模板字段 = %#v，期望 %#v", fields, want)
 	}
 }
 
@@ -556,10 +556,11 @@ func newManifestLifecycleApp(t *testing.T, hook task.LifecycleHook, includeCreat
 	}}
 	current.ActiveTaskTemplateID = "release"
 	chainID := "manifest-" + string(hook)
-	commands := []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandManifestFileID}}
+	commands := []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandUpdateDefaultBranchID}}
 	if includeCreateWorkspace {
-		commands = append([]settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandCreateWorkspaceID}}, commands...)
+		commands = append(commands, settings.LifecycleCommandReference{CommandID: settings.LifecycleCommandCreateWorkspaceID})
 	}
+	commands = append(commands, settings.LifecycleCommandReference{CommandID: settings.LifecycleCommandManifestFileID})
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: chainID, Name: "生成清单文件", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHook(hook)}, Commands: commands,
 	})
@@ -802,6 +803,7 @@ func TestLifecyclePresetChainsResolveWithConfiguredParameters(t *testing.T) {
 		ID        string
 		Arguments []string
 	}{
+		{ID: settings.LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + settings.IterationsAIRepository}},
 		{ID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
@@ -821,6 +823,7 @@ func TestLifecyclePresetChainsResolveWithConfiguredParameters(t *testing.T) {
 		ID        string
 		Arguments []string
 	}{
+		{ID: settings.LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
 	}) {

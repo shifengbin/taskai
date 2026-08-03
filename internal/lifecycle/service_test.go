@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -103,7 +102,7 @@ func TestServiceCreatesAndUpdatesCurrentTaskTemplateFields(t *testing.T) {
 	}
 }
 
-func TestServiceCopiesTaskTemplateBranchIntoEmptyGitExtraInfoSnapshots(t *testing.T) {
+func TestServiceDoesNotCopyTaskTemplateBranchIntoGitExtraInfoSnapshots(t *testing.T) {
 	service, repository, _ := newService(t)
 	data, err := repository.Load()
 	if err != nil {
@@ -131,8 +130,8 @@ func TestServiceCopiesTaskTemplateBranchIntoEmptyGitExtraInfoSnapshots(t *testin
 	if err != nil {
 		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
 	}
-	if got := taskExtraInfoParameterValue(created.ExtraInfo[0], "branch"); got != "release/1.2" {
-		t.Fatalf("空 Git 分支回填 = %q，期望 release/1.2", got)
+	if got := taskExtraInfoParameterValue(created.ExtraInfo[0], "branch"); got != "" {
+		t.Fatalf("创建任务不应回填 Git 分支，得到 %q", got)
 	}
 
 	explicitBranch := []task.TaskExtraInfo{{InformationID: gitInfo.ID, Parameters: []task.ExtraInfoParameter{{Key: "branch", Value: "hotfix"}}}}
@@ -155,8 +154,8 @@ func TestServiceCopiesTaskTemplateBranchIntoEmptyGitExtraInfoSnapshots(t *testin
 	if err != nil {
 		t.Fatalf("UpdateTaskWithTemplateFields() error = %v", err)
 	}
-	if got := taskExtraInfoParameterValue(updated.ExtraInfo[0], "branch"); got != "stable" {
-		t.Fatalf("更新模板字段后空 Git 分支回填 = %q，期望 stable", got)
+	if got := taskExtraInfoParameterValue(updated.ExtraInfo[0], "branch"); got != "" {
+		t.Fatalf("更新模板字段不应回填 Git 分支，得到 %q", got)
 	}
 
 	data, err = repository.Load()
@@ -171,12 +170,12 @@ func TestServiceCopiesTaskTemplateBranchIntoEmptyGitExtraInfoSnapshots(t *testin
 	if err != nil {
 		t.Fatalf("GetTask() error = %v", err)
 	}
-	if got := taskExtraInfoParameterValue(persisted.ExtraInfo[0], "branch"); got != "release/1.2" {
+	if got := taskExtraInfoParameterValue(persisted.ExtraInfo[0], "branch"); got != "" {
 		t.Fatalf("模板后续修改改写了任务 Git 快照: %q", got)
 	}
 }
 
-func TestServiceRejectsNonStringTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
+func TestServiceAllowsNonStringTemplateBranchUntilDefaultBranchCommandRuns(t *testing.T) {
 	service, repository, _ := newService(t)
 	data, err := repository.Load()
 	if err != nil {
@@ -198,12 +197,15 @@ func TestServiceRejectsNonStringTemplateBranchForSpecifiedRepositoryClone(t *tes
 		t.Fatalf("Save() error = %v", err)
 	}
 
-	_, err = service.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
+	created, err := service.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
 		"错误任务", "", task.DefaultColor, nil, map[string]any{"branch": true},
 		map[task.LifecycleHook]string{task.LifecycleHookBeforeStart: "clone-template"},
 	)
-	if err == nil || !strings.Contains(err.Error(), "branch") {
-		t.Fatalf("CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains() error = %v，期望拒绝非字符串 branch", err)
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains() error = %v", err)
+	}
+	if got := created.TemplateFields["branch"]; got != true {
+		t.Fatalf("任务模板字段 = %#v，期望保留 true", created.TemplateFields)
 	}
 }
 

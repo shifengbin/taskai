@@ -1102,6 +1102,38 @@ describe('App confirmation flows', () => {
 		}))
 	})
 
+	it('在命令链中配置更新默认分支参数', async () => {
+		const user = userEvent.setup()
+		const updateDefaultBranchCommand = {
+			id: 'system.lifecycle.update-default-branch', kind: 'update-default-branch', name: '更新默认分支', arguments: [],
+			chainArgumentMode: 'enabled', documentation: '参数可留空；templateField=<字段键>（可选），省略时使用 branch。',
+			applicableHooks: ['beforeStart', 'postStart', 'updateTask'],
+		}
+		bindings.ListLifecycleCommands.mockResolvedValue([updateDefaultBranchCommand])
+		bindings.ListLifecycleCommandChains.mockResolvedValue([])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleCommands: [updateDefaultBranchCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+		})
+		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'default-branch-chain'}))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		expect(await screen.findByText(/templateField=<字段键>/)).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '新增链'}))
+		const chainDialog = screen.getByRole('dialog', {name: '新增命令链'})
+		await user.type(within(chainDialog).getByRole('textbox', {name: '命令链名称'}), '设置发布分支')
+		await user.click(within(chainDialog).getByLabelText('开始前'))
+		await user.click(within(chainDialog).getByLabelText('更新默认分支'))
+		await user.type(within(chainDialog).getByRole('textbox', {name: '更新默认分支 追加参数（每行一个）'}), 'templateField=release_branch')
+		await user.click(within(chainDialog).getByRole('button', {name: '保存命令链'}))
+
+		await waitFor(() => expect(bindings.SaveLifecycleCommandChain).toHaveBeenCalledWith({
+			id: '', name: '设置发布分支', commands: [{commandId: 'system.lifecycle.update-default-branch', arguments: ['templateField=release_branch']}], applicableHooks: ['beforeStart'],
+		}))
+	})
+
 	it('禁止链级追加参数时隐藏输入框但保留历史值', async () => {
 		const user = userEvent.setup()
 		const command = {

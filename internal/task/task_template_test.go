@@ -125,28 +125,3 @@ func TestTaskTemplateEnvironmentIncludesOptedInFields(t *testing.T) {
 		t.Fatalf("模板环境变量 = %#v，期望 %#v", environment, want)
 	}
 }
-
-func TestTaskTemplateBranchUsesCurrentStringFieldAndRemoteDefaultFallback(t *testing.T) {
-	stringTemplate := TaskTemplate{ID: "release", Name: "发布", Fields: []TaskTemplateField{{
-		Key: "branch", DisplayName: "模板分支", InputType: TaskTemplateFieldInputString, DefaultValue: "",
-	}}}
-	branch, err := TaskTemplateBranch(&stringTemplate, map[string]any{"branch": " release/1.2 "})
-	if err != nil || branch != "release/1.2" {
-		t.Fatalf("TaskTemplateBranch() = %q, %v", branch, err)
-	}
-	branch, err = TaskTemplateBranch(&stringTemplate, nil)
-	if err != nil || branch != "" {
-		t.Fatalf("空模板分支 = %q, %v，期望由远程默认分支处理", branch, err)
-	}
-	branch, err = TaskTemplateBranch(nil, map[string]any{"branch": "ignored"})
-	if err != nil || branch != "" {
-		t.Fatalf("无当前模板分支 = %q, %v", branch, err)
-	}
-
-	boolTemplate := TaskTemplate{ID: "invalid", Name: "错误", Fields: []TaskTemplateField{{
-		Key: "branch", DisplayName: "模板分支", InputType: TaskTemplateFieldInputBool, DefaultValue: false,
-	}}}
-	if _, err := TaskTemplateBranch(&boolTemplate, map[string]any{"branch": true}); err == nil {
-		t.Fatal("TaskTemplateBranch() error = nil，期望拒绝非字符串 branch 字段")
-	}
-}

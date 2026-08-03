@@ -78,14 +78,7 @@ func (service *Service) createTask(title, description, color string, extraInfo [
 	if err != nil {
 		return task.Task{}, err
 	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, currentTemplate, created.LifecycleChains, created.TemplateFields); err != nil {
-		return task.Task{}, err
-	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, nil, extraInfo)
-	if err != nil {
-		return task.Task{}, err
-	}
-	snapshots, err = applyTaskTemplateBranchToGitExtraInfo(snapshots, currentTemplate, created.TemplateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -260,14 +253,7 @@ func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, colo
 	if err != nil {
 		return task.Task{}, err
 	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
-		return task.Task{}, err
-	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, data.Tasks[index].ExtraInfo, extraInfo)
-	if err != nil {
-		return task.Task{}, err
-	}
-	snapshots, err = applyTaskTemplateBranchToGitExtraInfo(snapshots, activeTaskTemplate(data.Settings), updated.TemplateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -299,14 +285,7 @@ func (service *Service) UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, 
 	if err != nil {
 		return task.Task{}, err
 	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
-		return task.Task{}, err
-	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, data.Tasks[index].ExtraInfo, extraInfo)
-	if err != nil {
-		return task.Task{}, err
-	}
-	snapshots, err = applyTaskTemplateBranchToGitExtraInfo(snapshots, activeTaskTemplate(data.Settings), updated.TemplateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -335,17 +314,6 @@ func (service *Service) UpdateTaskWithTemplateFields(taskID, title, description,
 		return task.Task{}, err
 	}
 	updated, err = updated.UpdateTemplateFields(activeTaskTemplate(data.Settings), templateFields)
-	if err != nil {
-		return task.Task{}, err
-	}
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
-		return task.Task{}, err
-	}
-	snapshots, err := applyTaskTemplateBranchToGitExtraInfo(updated.ExtraInfo, activeTaskTemplate(data.Settings), updated.TemplateFields)
-	if err != nil {
-		return task.Task{}, err
-	}
-	updated, err = updated.UpdateExtraInfo(snapshots)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -381,14 +349,7 @@ func (service *Service) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title,
 		return task.Task{}, err
 	}
 	updated.LifecycleChains = selected
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
-		return task.Task{}, err
-	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, current.ExtraInfo, extraInfo)
-	if err != nil {
-		return task.Task{}, err
-	}
-	snapshots, err = applyTaskTemplateBranchToGitExtraInfo(snapshots, activeTaskTemplate(data.Settings), updated.TemplateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -432,14 +393,7 @@ func (service *Service) UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
 		return task.Task{}, err
 	}
 	updated.LifecycleChains = selected
-	if err := validateGitCloneRepositoryTemplateBranch(data.Settings, activeTaskTemplate(data.Settings), updated.LifecycleChains, updated.TemplateFields); err != nil {
-		return task.Task{}, err
-	}
 	snapshots, err := buildTaskExtraInfoSnapshots(data, current.ExtraInfo, extraInfo)
-	if err != nil {
-		return task.Task{}, err
-	}
-	snapshots, err = applyTaskTemplateBranchToGitExtraInfo(snapshots, activeTaskTemplate(data.Settings), updated.TemplateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -570,72 +524,8 @@ func lifecycleChainSupportsHook(chain settings.LifecycleCommandChain, hook task.
 	return false
 }
 
-func validateGitCloneRepositoryTemplateBranch(current settings.Settings, template *task.TaskTemplate, selections map[task.LifecycleHook]string, templateFields map[string]any) error {
-	chains := make(map[string]settings.LifecycleCommandChain, len(current.LifecycleChains))
-	for _, chain := range current.LifecycleChains {
-		chains[chain.ID] = chain
-	}
-	commands := make(map[string]settings.LifecycleCommand, len(current.LifecycleCommands))
-	for _, command := range current.LifecycleCommands {
-		commands[command.ID] = command
-	}
-	for _, chainID := range selections {
-		chain, found := chains[chainID]
-		if !found {
-			continue
-		}
-		for _, reference := range chain.Commands {
-			if commands[reference.CommandID].Kind == settings.LifecycleCommandKindGitCloneRepository {
-				_, err := task.TaskTemplateBranch(template, templateFields)
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func activeTaskTemplate(current settings.Settings) *task.TaskTemplate {
 	return current.ActiveTaskTemplate()
-}
-
-func applyTaskTemplateBranchToGitExtraInfo(snapshots []task.TaskExtraInfo, template *task.TaskTemplate, templateFields map[string]any) ([]task.TaskExtraInfo, error) {
-	needsBranch := false
-	for _, snapshot := range snapshots {
-		if snapshot.TemplateID != task.BuiltInGitTemplate().ID {
-			continue
-		}
-		for _, parameter := range snapshot.Parameters {
-			if parameter.Key == "branch" && strings.TrimSpace(parameter.Value) == "" {
-				needsBranch = true
-				break
-			}
-		}
-		if needsBranch {
-			break
-		}
-	}
-	if !needsBranch {
-		return snapshots, nil
-	}
-	branch, err := task.TaskTemplateBranch(template, templateFields)
-	if err != nil {
-		return nil, err
-	}
-	if branch == "" {
-		return snapshots, nil
-	}
-	for index := range snapshots {
-		if snapshots[index].TemplateID != task.BuiltInGitTemplate().ID {
-			continue
-		}
-		for parameterIndex := range snapshots[index].Parameters {
-			parameter := &snapshots[index].Parameters[parameterIndex]
-			if parameter.Key == "branch" && strings.TrimSpace(parameter.Value) == "" {
-				parameter.Value = branch
-			}
-		}
-	}
-	return task.ValidateTaskExtraInfo(snapshots)
 }
 
 func buildTaskExtraInfoSnapshots(data storage.Data, existing, requested []task.TaskExtraInfo) ([]task.TaskExtraInfo, error) {

@@ -13,7 +13,7 @@ const DefaultTaskTreeWidth = 360
 const MinimumTaskTreeWidth = 280
 
 const (
-	CurrentPresetVersion               = 3
+	CurrentPresetVersion               = 4
 	DefaultBranchTaskTemplateID        = "preset.task-template.default-branch"
 	LifecycleChainIterationsAIID       = "preset.lifecycle-chain.iterations-ai"
 	LifecycleChainUpdateRepositoriesID = "preset.lifecycle-chain.update-repositories"
@@ -79,20 +79,22 @@ const (
 type LifecycleCommandKind string
 
 const (
-	LifecycleCommandKindCustom             LifecycleCommandKind = "custom"
-	LifecycleCommandKindCreateWorkspace    LifecycleCommandKind = "create-workspace"
-	LifecycleCommandKindDeleteWorkspace    LifecycleCommandKind = "delete-workspace"
-	LifecycleCommandKindGitClone           LifecycleCommandKind = "git-clone"
-	LifecycleCommandKindGitCloneRepository LifecycleCommandKind = "git-clone-repository"
-	LifecycleCommandKindManifestFile       LifecycleCommandKind = "manifest-file"
+	LifecycleCommandKindCustom              LifecycleCommandKind = "custom"
+	LifecycleCommandKindCreateWorkspace     LifecycleCommandKind = "create-workspace"
+	LifecycleCommandKindDeleteWorkspace     LifecycleCommandKind = "delete-workspace"
+	LifecycleCommandKindGitClone            LifecycleCommandKind = "git-clone"
+	LifecycleCommandKindGitCloneRepository  LifecycleCommandKind = "git-clone-repository"
+	LifecycleCommandKindManifestFile        LifecycleCommandKind = "manifest-file"
+	LifecycleCommandKindUpdateDefaultBranch LifecycleCommandKind = "update-default-branch"
 
-	LifecycleCommandCreateWorkspaceID    = "system.lifecycle.create-workspace"
-	LifecycleCommandDeleteWorkspaceID    = "system.lifecycle.delete-workspace"
-	LifecycleCommandGitCloneID           = "system.lifecycle.git-clone"
-	LifecycleCommandGitCloneRepositoryID = "system.lifecycle.git-clone-repository"
-	LifecycleCommandManifestFileID       = "system.lifecycle.manifest-file"
-	LifecycleChainCreateWorkspaceID      = "system.lifecycle-chain.create-workspace"
-	LifecycleChainDeleteWorkspaceID      = "system.lifecycle-chain.delete-workspace"
+	LifecycleCommandCreateWorkspaceID     = "system.lifecycle.create-workspace"
+	LifecycleCommandDeleteWorkspaceID     = "system.lifecycle.delete-workspace"
+	LifecycleCommandGitCloneID            = "system.lifecycle.git-clone"
+	LifecycleCommandGitCloneRepositoryID  = "system.lifecycle.git-clone-repository"
+	LifecycleCommandManifestFileID        = "system.lifecycle.manifest-file"
+	LifecycleCommandUpdateDefaultBranchID = "system.lifecycle.update-default-branch"
+	LifecycleChainCreateWorkspaceID       = "system.lifecycle-chain.create-workspace"
+	LifecycleChainDeleteWorkspaceID       = "system.lifecycle-chain.delete-workspace"
 )
 
 type LifecycleCommandChainArgumentMode string
@@ -204,10 +206,34 @@ func DefaultLifecycleCommands() []LifecycleCommand {
 		fixedLifecycleCommand(LifecycleCommandGitCloneID),
 		fixedLifecycleCommand(LifecycleCommandGitCloneRepositoryID),
 		fixedLifecycleCommand(LifecycleCommandManifestFileID),
+		fixedLifecycleCommand(LifecycleCommandUpdateDefaultBranchID),
 	}
 }
 
 func DefaultLifecycleChains() []LifecycleCommandChain {
+	return defaultLifecycleChainsVersionFour()
+}
+
+func defaultLifecycleChainsVersionFour() []LifecycleCommandChain {
+	return []LifecycleCommandChain{
+		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
+		{ID: LifecycleChainIterationsAIID, Name: "iterations-ai", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
+			{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + IterationsAIRepository}},
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainUpdateRepositoriesID, Name: "更新仓库", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookUpdateTask}},
+	}
+}
+
+func defaultLifecycleChainsVersionThree() []LifecycleCommandChain {
 	return []LifecycleCommandChain{
 		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
 		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
@@ -217,6 +243,40 @@ func DefaultLifecycleChains() []LifecycleCommandChain {
 			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
 			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
 		}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainUpdateRepositoriesID, Name: "更新仓库", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookUpdateTask}},
+	}
+}
+
+func defaultLifecycleChainsVersionTwo() []LifecycleCommandChain {
+	return []LifecycleCommandChain{
+		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
+		{ID: LifecycleChainIterationsAIID, Name: "iterations-ai", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + IterationsAIRepository}},
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainUpdateRepositoriesID, Name: "更新仓库", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookUpdateTask}},
+	}
+}
+
+func defaultLifecycleChainsVersionOne() []LifecycleCommandChain {
+	return []LifecycleCommandChain{
+		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
+		{ID: LifecycleChainIterationsAIID, Name: "iterations-ai", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + IterationsAIRepository}},
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookPostStart}},
 		{ID: LifecycleChainUpdateRepositoriesID, Name: "更新仓库", Commands: []LifecycleCommandReference{
 			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
 			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
@@ -263,6 +323,9 @@ func ApplyPresetMigration(next Settings) (Settings, bool) {
 	if next.PresetVersion < 3 {
 		ensureDefaultBranchTemplate(&next)
 	}
+	if next.PresetVersion < 4 {
+		migrateDefaultBranchLifecycleCommands(&next)
+	}
 	next.PresetVersion = CurrentPresetVersion
 	return next, true
 }
@@ -289,13 +352,33 @@ func ensureDefaultBranchTemplate(next *Settings) {
 }
 
 func migrateIterationsAIHook(next *Settings) {
+	var target LifecycleCommandChain
+	for _, preset := range defaultLifecycleChainsVersionTwo() {
+		if preset.ID == LifecycleChainIterationsAIID {
+			target = preset
+			break
+		}
+	}
 	for index := range next.LifecycleChains {
 		chain := &next.LifecycleChains[index]
 		if !isVersionOneIterationsAIChain(*chain) {
 			continue
 		}
-		chain.ApplicableHooks = []LifecycleHook{LifecycleHookBeforeStart}
+		chain.ApplicableHooks = append([]LifecycleHook(nil), target.ApplicableHooks...)
 		return
+	}
+}
+
+func migrateDefaultBranchLifecycleCommands(next *Settings) {
+	for index := range next.LifecycleChains {
+		chain := &next.LifecycleChains[index]
+		if chain.ID != LifecycleChainIterationsAIID && chain.ID != LifecycleChainUpdateRepositoriesID {
+			continue
+		}
+		if !isVersionThreeRepositoryPresetChain(*chain) {
+			continue
+		}
+		chain.Commands = append([]LifecycleCommandReference{{CommandID: LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}}}, chain.Commands...)
 	}
 }
 
@@ -303,8 +386,17 @@ func isVersionOneIterationsAIChain(chain LifecycleCommandChain) bool {
 	if chain.ID != LifecycleChainIterationsAIID || chain.Name != "iterations-ai" || !sameLifecycleHooks(chain.ApplicableHooks, []LifecycleHook{LifecycleHookPostStart}) {
 		return false
 	}
-	for _, preset := range DefaultLifecycleChains() {
+	for _, preset := range defaultLifecycleChainsVersionOne() {
 		if preset.ID == LifecycleChainIterationsAIID {
+			return sameLifecycleCommandReferences(chain.Commands, preset.Commands)
+		}
+	}
+	return false
+}
+
+func isVersionThreeRepositoryPresetChain(chain LifecycleCommandChain) bool {
+	for _, preset := range defaultLifecycleChainsVersionThree() {
+		if chain.ID == preset.ID && chain.Name == preset.Name && sameLifecycleHooks(chain.ApplicableHooks, preset.ApplicableHooks) {
 			return sameLifecycleCommandReferences(chain.Commands, preset.Commands)
 		}
 	}
@@ -467,9 +559,11 @@ func fixedLifecycleCommand(id string) LifecycleCommand {
 	case LifecycleCommandGitCloneID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitClone, Name: "Git 仓库克隆", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；留空时每个内置 Git 项目将克隆到任务工作目录下的 <项目名称>。填写时使用 dir=<相对目录>，将克隆到任务工作目录下的 <dir>/<项目名称>；目标已存在时跳过。指定分支存在时克隆该分支，不存在时从远程默认分支创建同名本地分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookBeforeEnd, LifecycleHookUpdateTask}}
 	case LifecycleCommandGitCloneRepositoryID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitCloneRepository, Name: "克隆指定 Git 仓库", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数：repository=<仓库地址>（必填）；dir=<相对目录>（可选）。仓库直接克隆到任务工作目录或指定子目录本身，不读取 Git 附加信息。目标必须为空目录，非空目录会失败。分支使用任务模板的 branch 字段；为空时由远程默认分支决定。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindGitCloneRepository, Name: "克隆指定 Git 仓库", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数：repository=<仓库地址>（必填）；dir=<相对目录>（可选）。仓库直接克隆到任务工作目录或指定子目录本身，不读取 Git 附加信息。目标必须为空目录，非空目录会失败。分支由此前的更新默认分支命令决定；未执行时使用远程默认分支。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}}
 	case LifecycleCommandManifestFileID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindManifestFile, Name: "生成清单文件", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；dir=<相对目录>（可选）指定任务工作目录内的输出目录，name=<文件名>（可选）指定清单文件名。默认生成 <任务工作目录>/manifest.yaml。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
+	case LifecycleCommandUpdateDefaultBranchID:
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindUpdateDefaultBranch, Name: "更新默认分支", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；templateField=<字段键>（可选）指定从任务模板读取默认分支的字段，省略时使用 branch。仅在当前命令链执行期间，将空的内置 Git 项目 branch 参数更新为该字段值。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
 	default:
 		return LifecycleCommand{}
 	}
@@ -769,6 +863,13 @@ func normalizeLifecycleCommandReference(reference LifecycleCommandReference, com
 		}
 		reference.Arguments = arguments
 	}
+	if command.Kind == LifecycleCommandKindUpdateDefaultBranch {
+		arguments, err := normalizeUpdateDefaultBranchArguments(reference.Arguments)
+		if err != nil {
+			return LifecycleCommandReference{}, err
+		}
+		reference.Arguments = arguments
+	}
 	return reference, nil
 }
 
@@ -849,6 +950,35 @@ func ManifestFileArguments(arguments []string) (ManifestFileParameters, error) {
 		}
 	}
 	return parameters, nil
+}
+
+func UpdateDefaultBranchTemplateField(arguments []string) (string, error) {
+	normalized, err := normalizeUpdateDefaultBranchArguments(arguments)
+	if err != nil {
+		return "", err
+	}
+	if len(normalized) == 0 {
+		return "branch", nil
+	}
+	return strings.TrimPrefix(normalized[0], "templateField="), nil
+}
+
+func normalizeUpdateDefaultBranchArguments(arguments []string) ([]string, error) {
+	if len(arguments) == 0 {
+		return []string{}, nil
+	}
+	if len(arguments) != 1 {
+		return nil, fmt.Errorf("更新默认分支命令必须配置唯一的 templateField 参数")
+	}
+	key, value, found := strings.Cut(strings.TrimSpace(arguments[0]), "=")
+	if !found || strings.TrimSpace(key) != "templateField" {
+		return nil, fmt.Errorf("更新默认分支命令参数必须使用 templateField=<字段键>")
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, fmt.Errorf("更新默认分支命令的 templateField 参数不能为空")
+	}
+	return []string{"templateField=" + value}, nil
 }
 
 func normalizeManifestFileArguments(arguments []string) ([]string, error) {

@@ -533,11 +533,12 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
-	templateBranch, err := lifecycleTemplateBranch(data.Settings.ActiveTaskTemplate(), inputTask.TemplateFields, commands)
+	activeTemplate := data.Settings.ActiveTaskTemplate()
+	templateFields, err := lifecycleTemplateFields(activeTemplate, inputTask.TemplateFields)
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
-	templateEnvironment, err := task.TaskTemplateEnvironment(data.Settings.ActiveTaskTemplate(), inputTask.TemplateFields)
+	templateEnvironment, err := task.TaskTemplateEnvironment(activeTemplate, templateFields)
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
@@ -554,15 +555,15 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 		hook:      hook,
 		execution: execution,
 		request: lifecycle.CommandChainRequest{
-			Task:                     current,
-			Directory:                directory,
-			WorkspaceRoot:            current.WorkspaceRoot,
-			WorkspacePath:            current.WorkspacePath,
-			ShellPath:                data.Settings.ShellPath,
-			Environment:              append(app.taskCommandEnvironment(current.ID), templateEnvironment...),
-			Input:                    append([]byte(nil), input...),
-			Commands:                 copyLifecycleCommands(commands),
-			GitCloneRepositoryBranch: templateBranch,
+			Task:           inputTask,
+			TemplateFields: templateFields,
+			Directory:      directory,
+			WorkspaceRoot:  current.WorkspaceRoot,
+			WorkspacePath:  current.WorkspacePath,
+			ShellPath:      data.Settings.ShellPath,
+			Environment:    append(app.taskCommandEnvironment(current.ID), templateEnvironment...),
+			Input:          append([]byte(nil), input...),
+			Commands:       copyLifecycleCommands(commands),
 		},
 	}
 	go app.executeLifecycleRun(run)
@@ -690,13 +691,19 @@ func isCurrentLifecycleExecution(current task.Task, execution task.LifecycleExec
 	return current.LifecycleExecution != nil && current.LifecycleExecution.RunID == execution.RunID && current.LifecycleExecution.Revision == execution.Revision
 }
 
-func lifecycleTemplateBranch(template *task.TaskTemplate, values map[string]any, commands []settings.LifecycleCommand) (string, error) {
-	for _, command := range commands {
-		if command.Kind == settings.LifecycleCommandKindGitCloneRepository || command.Kind == settings.LifecycleCommandKindManifestFile {
-			return task.TaskTemplateBranch(template, values)
-		}
+func lifecycleTemplateFields(template *task.TaskTemplate, values map[string]any) (map[string]any, error) {
+	if template == nil {
+		return map[string]any{}, nil
 	}
-	return "", nil
+	resolved, err := task.ResolveTaskTemplateFields(*template, values)
+	if err != nil {
+		return nil, err
+	}
+	frozen := make(map[string]any, len(resolved))
+	for key, value := range resolved {
+		frozen[key] = value
+	}
+	return frozen, nil
 }
 
 func copyLifecycleCommands(commands []settings.LifecycleCommand) []settings.LifecycleCommand {
