@@ -32,9 +32,9 @@ func writeManifestContents(workspacePath, directory, name string, contents []byt
 	if err != nil {
 		return fmt.Errorf("解析任务工作目录失败: %w", err)
 	}
-	workspaceFD, err := openManifestWindowsDirectory(0, "\\??\\"+filepath.Clean(absWorkspacePath))
+	workspaceFD, err := openManifestWindowsWorkspaceDirectory("\\??\\" + filepath.Clean(absWorkspacePath))
 	if err != nil {
-		return fmt.Errorf("任务工作目录不可用: %w", err)
+		return err
 	}
 	defer windows.CloseHandle(workspaceFD)
 
@@ -45,6 +45,31 @@ func writeManifestContents(workspacePath, directory, name string, contents []byt
 	defer windows.CloseHandle(directoryFD)
 
 	return writeManifestWindowsContentsAt(directoryFD, name, contents)
+}
+
+func openManifestWindowsWorkspaceDirectory(path string) (windows.Handle, error) {
+	workspaceFD, err := createManifestWindowsObject(0, path, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE|windows.DELETE, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, false)
+	if err != nil {
+		return 0, fmt.Errorf("任务工作目录不可用: %w", err)
+	}
+	hasReparsePoint, err := manifestWindowsHandleHasReparsePoint(workspaceFD)
+	if err != nil {
+		windows.CloseHandle(workspaceFD)
+		return 0, fmt.Errorf("检查任务工作目录失败: %w", err)
+	}
+	if hasReparsePoint {
+		windows.CloseHandle(workspaceFD)
+		return 0, fmt.Errorf("任务工作目录不安全: 不能使用重解析点")
+	}
+	return workspaceFD, nil
+}
+
+func manifestWindowsHandleHasReparsePoint(handle windows.Handle) (bool, error) {
+	var information windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &information); err != nil {
+		return false, err
+	}
+	return information.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0, nil
 }
 
 func openManifestWindowsDirectoryPath(workspaceFD windows.Handle, directory string) (windows.Handle, error) {
@@ -102,7 +127,20 @@ func openOrCreateManifestWindowsDirectory(parentFD windows.Handle, name string) 
 }
 
 func openManifestWindowsDirectory(parentFD windows.Handle, name string) (windows.Handle, error) {
-	return createManifestWindowsObject(parentFD, name, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE|windows.DELETE, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE|windows.FILE_SYNCHRONOUS_IO_NONALERT, true)
+	directoryFD, err := createManifestWindowsObject(parentFD, name, windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE|windows.DELETE, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, false)
+	if err != nil {
+		return 0, err
+	}
+	hasReparsePoint, err := manifestWindowsHandleHasReparsePoint(directoryFD)
+	if err != nil {
+		windows.CloseHandle(directoryFD)
+		return 0, err
+	}
+	if hasReparsePoint {
+		windows.CloseHandle(directoryFD)
+		return 0, fmt.Errorf("不能使用重解析点")
+	}
+	return directoryFD, nil
 }
 
 func createManifestWindowsDirectory(parentFD windows.Handle, name string) (windows.Handle, error) {
