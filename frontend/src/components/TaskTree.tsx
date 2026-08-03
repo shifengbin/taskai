@@ -15,6 +15,7 @@ import {
   Typography,
 } from '@mui/material'
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
+import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
@@ -27,6 +28,7 @@ import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined'
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
 import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
+import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined'
 
 import {defaultTaskColor, defaultTaskMenuItems, terminalDisplayName, terminalRealtimeStatus, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
 import {TerminalStatusDot} from './TerminalStatusDot'
@@ -575,7 +577,8 @@ export function TaskTree({
             onSetTaskShelved?.(taskMenuTask.id, !taskMenuTask.shelved)
             setTaskMenu(null)
           }}>
-            <Typography component="span">{taskMenuTask.shelved ? '取消搁置' : '搁置任务'}</Typography>
+            {taskMenuTask.shelved ? <UnarchiveOutlinedIcon fontSize="small"/> : <ArchiveOutlinedIcon fontSize="small"/>}
+            <Typography component="span" sx={{ml: 1}}>{taskMenuTask.shelved ? '取消搁置' : '搁置任务'}</Typography>
           </MenuItem>
         )}
       </Menu>

@@ -205,6 +205,22 @@ chmod +x scripts/build-linux.sh
 ./scripts/build-linux.sh arm64
 ```
 
+在 Debian/Ubuntu 或兼容环境中，可在二进制构建成功后额外生成 DEB 包：
+
+```bash
+./scripts/build-linux.sh --deb --version 1.2.3
+./scripts/build-linux.sh arm --deb --version 1.2.3
+TASKAI_DEB_VERSION=1.2.3 ./scripts/build-linux.sh --deb
+```
+
+DEB 位于 `build/bin/taskai_<版本>_<架构>.deb`；其中 `arm` 会规范化为 Debian 的 `armhf`。版本号优先级依次为 `--version`、`TASKAI_DEB_VERSION` 和基于当前 Git 短提交号的开发版本。可在安装前检查包信息和文件布局：
+
+```bash
+dpkg-deb --info build/bin/taskai_1.2.3_amd64.deb
+dpkg-deb --contents build/bin/taskai_1.2.3_amd64.deb
+sudo apt install ./build/bin/taskai_1.2.3_amd64.deb
+```
+
 Windows PowerShell（默认 `amd64`，可选 `arm64` 或 `386`；传入 `-NSIS` 时生成安装程序）：
 
 ```powershell
@@ -212,6 +228,8 @@ Windows PowerShell（默认 `amd64`，可选 `arm64` 或 `386`；传入 `-NSIS` 
 .\scripts\build-windows.ps1 -Architecture arm64
 .\scripts\build-windows.ps1 -NSIS
 ```
+
+脚本会在构建前删除已有的 `build/windows/icon.ico`，使 Wails 从当前 `build/appicon.png` 重新生成 ICO；普通 EXE 与 NSIS 安装程序会使用同一最新图标。
 
 macOS（默认构建 Universal 二进制；可选 `amd64` 或 `arm64`）：
 
@@ -226,5 +244,6 @@ chmod +x scripts/build-macos.sh
 - 类 Unix 平台使用 `creack/pty`。
 - Windows 使用 ConPTY，需要 Windows 10 1809 / Windows Server 2019 或更高版本。
 - Linux 打包或运行 Wails 需要 GTK 3 和 WebKitGTK 开发包。脚本优先使用 `libwebkit2gtk-4.1-dev`（传递 `webkit2_41` 标签），也兼容 `libwebkit2gtk-4.0-dev`。
+- Linux 的 `--deb` 模式还需要 `dpkg-deb` 和 `dpkg-shlibdeps`（通常由 `dpkg` 与 `dpkg-dev` 提供），并应在目标发行版或 ABI 兼容环境中构建。
 - Windows 构建需要 Wails CLI、Go 和 C/C++ 编译工具链；使用 `-NSIS` 还需要安装 NSIS。
 - macOS 构建需要 Wails CLI、Go 与 Xcode 命令行工具。

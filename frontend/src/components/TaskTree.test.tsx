@@ -71,6 +71,7 @@ describe('TaskTree', () => {
 
   it('为执行中任务的操作菜单提供搁置操作', async () => {
     const user = userEvent.setup()
+    const onSetTaskShelved = vi.fn()
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -83,13 +84,54 @@ describe('TaskTree', () => {
         onOpenTaskFolder={vi.fn()}
         onStartTask={vi.fn()}
         onFinishTask={vi.fn()}
+        onSetTaskShelved={onSetTaskShelved}
         activeStatus="running"
         onChangeStatus={vi.fn()}
       />,
     )
 
     await user.click(screen.getByRole('button', {name: '任务操作'}))
-    expect(screen.getByRole('menuitem', {name: '搁置任务'})).toBeInTheDocument()
+    const shelveMenuItem = screen.getByRole('menuitem', {name: '搁置任务'})
+    expect(shelveMenuItem).toBeInTheDocument()
+    expect(within(shelveMenuItem).getByTestId('ArchiveOutlinedIcon')).toBeInTheDocument()
+    await user.click(shelveMenuItem)
+    expect(onSetTaskShelved).toHaveBeenCalledWith('task-1', true)
+
+    fireEvent.contextMenu(screen.getByText('整理发布说明'))
+    expect(within(screen.getByRole('menuitem', {name: '搁置任务'})).getByTestId('ArchiveOutlinedIcon')).toBeInTheDocument()
+  })
+
+  it('为已搁置任务的操作菜单提供取消搁置图标', async () => {
+    const user = userEvent.setup()
+    const shelvedTask = {...runningTask, shelved: true}
+    const onSetTaskShelved = vi.fn()
+    render(
+      <TaskTree
+        tasks={[shelvedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        onSetTaskShelved={onSetTaskShelved}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', {name: '展开已搁置任务'}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    const unshelveMenuItem = screen.getByRole('menuitem', {name: '取消搁置'})
+    expect(within(unshelveMenuItem).getByTestId('UnarchiveOutlinedIcon')).toBeInTheDocument()
+    await user.click(unshelveMenuItem)
+    expect(onSetTaskShelved).toHaveBeenCalledWith('task-1', false)
+
+    fireEvent.contextMenu(screen.getByText('整理发布说明'))
+    expect(within(screen.getByRole('menuitem', {name: '取消搁置'})).getByTestId('UnarchiveOutlinedIcon')).toBeInTheDocument()
   })
 
   it('任务操作下拉菜单和右键菜单均可创建终端、打开任务文件夹或编辑任务，并可选择终端子节点', async () => {
