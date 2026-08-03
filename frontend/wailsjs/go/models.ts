@@ -470,6 +470,7 @@ export namespace task {
 	    workspaceRoot?: string;
 	    workspacePath?: string;
 	    extraInfo: TaskExtraInfo[];
+	    taskTemplateId?: string;
 	    templateFields: Record<string, any>;
 	    lifecycleChains: Record<string, string>;
 	    lifecycleExecution?: LifecycleExecution;
@@ -491,6 +492,7 @@ export namespace task {
 	        this.workspaceRoot = source["workspaceRoot"];
 	        this.workspacePath = source["workspacePath"];
 	        this.extraInfo = this.convertValues(source["extraInfo"], TaskExtraInfo);
+	        this.taskTemplateId = source["taskTemplateId"];
 	        this.templateFields = source["templateFields"];
 	        this.lifecycleChains = source["lifecycleChains"];
 	        this.lifecycleExecution = this.convertValues(source["lifecycleExecution"], LifecycleExecution);

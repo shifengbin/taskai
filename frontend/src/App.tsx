@@ -287,9 +287,17 @@ export default function App() {
   const colorScheme: ColorScheme = settings?.colorScheme === 'dark' ? 'dark' : 'light'
   const theme = useMemo(() => createAppTheme(colorScheme), [colorScheme])
   const selectedTask = tasks.find((task) => task.id === selectedTaskID)
-  const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
-  const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
+	const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
+	const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
 	const activeTaskTemplate = settings?.taskTemplates?.find((template) => template.id === settings.activeTaskTemplateId)
+	const activeTaskTemplateIDs = useMemo(() => new Set(tasks
+		.filter((task) => (task.status === 'pending' || task.status === 'running') && Boolean(task.taskTemplateId))
+		.map((task) => task.taskTemplateId!)), [tasks])
+	const hasLegacyActiveTaskTemplateFields = useMemo(() => tasks.some((task) =>
+		(task.status === 'pending' || task.status === 'running')
+		&& !task.taskTemplateId
+		&& Object.keys(task.templateFields ?? {}).length > 0,
+	), [tasks])
 	const areAllTasksExpanded = tasks.length > 0 && tasks.every((task) => expandedTasks[task.id] ?? true)
 	const deletableCompletedTaskIDs = useMemo(() => tasks
 		.filter((task) => task.status === 'completed' && !task.lifecycleExecution)
@@ -1518,6 +1526,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			{settingsTab === 'templates' && <TaskTemplateManagement
 				templates={settingsDraft?.taskTemplates ?? []}
 				activeTemplateID={settingsDraft?.activeTaskTemplateId ?? ''}
+				activeTaskTemplateIDs={activeTaskTemplateIDs}
+				hasLegacyActiveTaskTemplateFields={hasLegacyActiveTaskTemplateFields}
 				onChange={(taskTemplates, activeTaskTemplateId) => updateSettingsDraft({taskTemplates, activeTaskTemplateId})}
 			/>}
         </DialogContent>
@@ -2196,10 +2206,14 @@ function LifecycleManagement({
 function TaskTemplateManagement({
 	templates,
 	activeTemplateID,
+	activeTaskTemplateIDs,
+	hasLegacyActiveTaskTemplateFields,
 	onChange,
 }: {
 	templates: TaskTemplate[]
 	activeTemplateID: string
+	activeTaskTemplateIDs: ReadonlySet<string>
+	hasLegacyActiveTaskTemplateFields: boolean
 	onChange(templates: TaskTemplate[], activeTemplateID: string): void
 }) {
 	const [draft, setDraft] = useState<TaskTemplate>()
@@ -2266,6 +2280,16 @@ function TaskTemplateManagement({
 		setDraftError(undefined)
 	}
 
+	const deletionBlockReason = (templateID: string) => {
+		if (hasLegacyActiveTaskTemplateFields) {
+			return '未执行或执行中的旧任务包含无法归属的模板字段，完成这些任务后才能删除模板'
+		}
+		if (activeTaskTemplateIDs.has(templateID)) {
+			return '未执行或执行中的任务正在使用此模板，暂不能删除'
+		}
+		return undefined
+	}
+
 	return <Box component="section" sx={{display: 'grid', gap: 1.5}}>
 		<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2}}>
 			<Box>
@@ -2282,17 +2306,20 @@ function TaskTemplateManagement({
 			{templates.map((template) => <MenuItem key={template.id} value={template.id}>{template.name}</MenuItem>)}
 		</TextField>
 		{templates.length === 0 ? <Alert severity="info" variant="outlined">暂无任务模板。新建模板后可选择为当前模板。</Alert> : <Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
-			{templates.map((template, index) => <Box key={template.id} sx={{display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1.25, borderBottom: index === templates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
-				<Box sx={{minWidth: 0, flex: 1}}>
-					<Typography variant="body2" sx={{fontWeight: 650}} noWrap>{template.name}</Typography>
-					<Typography variant="caption" color="text.secondary">{template.fields.length} 个字段{template.id === activeTemplateID ? ' · 当前使用' : ''}</Typography>
+			{templates.map((template, index) => {
+				const blockedReason = deletionBlockReason(template.id)
+				return <Box key={template.id} sx={{display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1.25, borderBottom: index === templates.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+					<Box sx={{minWidth: 0, flex: 1}}>
+						<Typography variant="body2" sx={{fontWeight: 650}} noWrap>{template.name}</Typography>
+						<Typography variant="caption" color="text.secondary">{template.fields.length} 个字段{template.id === activeTemplateID ? ' · 当前使用' : ''}</Typography>
+					</Box>
+					<Button size="small" onClick={() => {
+						setDraft(cloneTaskTemplate(template))
+						setDraftError(undefined)
+					}}>编辑</Button>
+					<Tooltip title={blockedReason ?? '删除模板'}><span><IconButton aria-label={`删除任务模板 ${template.name}`} size="small" color="error" disabled={Boolean(blockedReason)} onClick={() => onChange(templates.filter((current) => current.id !== template.id), activeTemplateID === template.id ? '' : activeTemplateID)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></span></Tooltip>
 				</Box>
-				<Button size="small" onClick={() => {
-					setDraft(cloneTaskTemplate(template))
-					setDraftError(undefined)
-				}}>编辑</Button>
-				<Tooltip title="删除模板"><IconButton aria-label={`删除任务模板 ${template.name}`} size="small" color="error" onClick={() => onChange(templates.filter((current) => current.id !== template.id), activeTemplateID === template.id ? '' : activeTemplateID)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton></Tooltip>
-			</Box>)}
+			})}
 		</Box>}
 
 		<Dialog open={Boolean(draft)} onClose={() => setDraft(undefined)} fullWidth maxWidth="md" aria-labelledby="task-template-editor-title">

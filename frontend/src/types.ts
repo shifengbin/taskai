@@ -78,6 +78,7 @@ export interface TaskRecord {
   workspaceRoot?: string
 	workspacePath?: string
 	extraInfo?: TaskExtraInfo[]
+	taskTemplateId?: string
   templateFields?: TaskTemplateValues
   lifecycleChains?: Partial<Record<LifecycleHook, string>>
   lifecycleExecution?: LifecycleExecution

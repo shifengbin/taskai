@@ -71,6 +71,25 @@ func TestTaskPersistsShelvedFlagAndDefaultsLegacyData(t *testing.T) {
 	}
 }
 
+func TestTaskPersistsTaskTemplateReference(t *testing.T) {
+	encoded, err := json.Marshal(Task{
+		ID:             "task-1",
+		Status:         StatusPending,
+		TaskTemplateID: "release",
+		TemplateFields: map[string]any{"environment": "production"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal task error = %v", err)
+	}
+	var persisted Task
+	if err := json.Unmarshal(encoded, &persisted); err != nil {
+		t.Fatalf("Unmarshal task error = %v", err)
+	}
+	if persisted.TaskTemplateID != "release" {
+		t.Fatalf("任务模板 ID = %q，期望 release", persisted.TaskTemplateID)
+	}
+}
+
 func TestTaskLifecycleChainsAndExecutionNormalizeForPersistence(t *testing.T) {
 	chains, err := NormalizeLifecycleChains(map[LifecycleHook]string{
 		LifecycleHookBeforeStart: " prepare ",

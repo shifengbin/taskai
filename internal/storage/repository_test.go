@@ -344,6 +344,121 @@ func TestRepositoryRejectsChangingTypeOfUsedTaskTemplateField(t *testing.T) {
 	}
 }
 
+func TestRepositoryRejectsRemovingTaskTemplateUsedByActiveTask(t *testing.T) {
+	for _, status := range []task.Status{task.StatusPending, task.StatusRunning} {
+		t.Run(string(status), func(t *testing.T) {
+			repository, initialSettings := repositoryWithTaskTemplateReference(t, status, "release")
+			next := initialSettings
+			next.TaskTemplates = []task.TaskTemplate{}
+			next.ActiveTaskTemplateID = ""
+
+			if _, err := repository.SaveSettings(next); err == nil {
+				t.Fatal("SaveSettings() error = nil，期望拒绝删除被活动任务引用的模板")
+			}
+
+			persisted, err := repository.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if len(persisted.Settings.TaskTemplates) != 1 || persisted.Settings.TaskTemplates[0].ID != "release" {
+				t.Fatalf("删除失败后模板设置 = %#v，期望保留 release", persisted.Settings.TaskTemplates)
+			}
+		})
+	}
+}
+
+func TestRepositoryRejectsRemovingTaskTemplateWithLegacyActiveTemplateFields(t *testing.T) {
+	for _, status := range []task.Status{task.StatusPending, task.StatusRunning} {
+		t.Run(string(status), func(t *testing.T) {
+			repository, initialSettings := repositoryWithTaskTemplateReference(t, status, "")
+			next := initialSettings
+			next.TaskTemplates = []task.TaskTemplate{}
+			next.ActiveTaskTemplateID = ""
+
+			if _, err := repository.SaveSettings(next); err == nil {
+				t.Fatal("SaveSettings() error = nil，期望拒绝删除包含历史活动模板字段时的模板")
+			}
+
+			persisted, err := repository.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if len(persisted.Settings.TaskTemplates) != 1 || persisted.Settings.TaskTemplates[0].ID != "release" {
+				t.Fatalf("删除失败后模板设置 = %#v，期望保留 release", persisted.Settings.TaskTemplates)
+			}
+		})
+	}
+}
+
+func TestRepositoryAllowsRemovingTaskTemplateUsedOnlyByCompletedTask(t *testing.T) {
+	for _, scenario := range []struct {
+		name           string
+		taskTemplateID string
+	}{
+		{name: "已关联模板", taskTemplateID: "release"},
+		{name: "历史模板字段"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			repository, initialSettings := repositoryWithTaskTemplateReference(t, task.StatusCompleted, scenario.taskTemplateID)
+			next := initialSettings
+			next.TaskTemplates = []task.TaskTemplate{}
+			next.ActiveTaskTemplateID = ""
+
+			if _, err := repository.SaveSettings(next); err != nil {
+				t.Fatalf("SaveSettings() error = %v", err)
+			}
+
+			persisted, err := repository.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if len(persisted.Settings.TaskTemplates) != 0 || persisted.Settings.ActiveTaskTemplateID != "" {
+				t.Fatalf("已完成任务不应阻止模板删除: %#v", persisted.Settings)
+			}
+		})
+	}
+}
+
+func TestRepositorySaveSettingsWithoutTaskTemplatesKeepsActiveTaskTemplate(t *testing.T) {
+	repository, initialSettings := repositoryWithTaskTemplateReference(t, task.StatusRunning, "release")
+	next := initialSettings
+	next.TaskTemplates = nil
+	next.ActiveTaskTemplateID = ""
+	next.TaskTreeWidth = settings.DefaultTaskTreeWidth + 20
+
+	saved, err := repository.SaveSettings(next)
+	if err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	if len(saved.TaskTemplates) != 1 || saved.TaskTemplates[0].ID != "release" || saved.ActiveTaskTemplateID != "release" {
+		t.Fatalf("未提供模板快照的设置保存改写了模板: %#v", saved)
+	}
+}
+
+func repositoryWithTaskTemplateReference(t *testing.T, status task.Status, taskTemplateID string) (*Repository, settings.Settings) {
+	t.Helper()
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{{
+		ID: "release", Name: "发布", Fields: []task.TaskTemplateField{{
+			Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, DefaultValue: "production",
+		}},
+	}}
+	data.Settings.ActiveTaskTemplateID = "release"
+	data.Tasks = append(data.Tasks, task.Task{
+		ID: "task-1", Title: "发布任务", Color: task.DefaultColor, Status: status,
+		ExtraInfo: []task.TaskExtraInfo{}, TaskTemplateID: taskTemplateID,
+		TemplateFields: map[string]any{"environment": "production"}, LifecycleChains: map[task.LifecycleHook]string{},
+	})
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	return repository, data.Settings
+}
+
 func TestRepositoryListsBuiltInGitTemplateAsJSONArray(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 

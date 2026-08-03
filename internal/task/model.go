@@ -102,6 +102,7 @@ type Task struct {
 	WorkspaceRoot      string                   `json:"workspaceRoot,omitempty"`
 	WorkspacePath      string                   `json:"workspacePath,omitempty"`
 	ExtraInfo          []TaskExtraInfo          `json:"extraInfo"`
+	TaskTemplateID     string                   `json:"taskTemplateId,omitempty"`
 	TemplateFields     map[string]any           `json:"templateFields"`
 	LifecycleChains    map[LifecycleHook]string `json:"lifecycleChains"`
 	LifecycleExecution *LifecycleExecution      `json:"lifecycleExecution,omitempty"`
@@ -272,6 +273,7 @@ func (current Task) UpdateTemplateFields(template *TaskTemplate, submitted map[s
 		return Task{}, err
 	}
 	current.TemplateFields = merged
+	current.TaskTemplateID = template.ID
 	return current, nil
 }
 

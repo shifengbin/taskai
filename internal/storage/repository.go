@@ -451,12 +451,11 @@ func (repository *Repository) SaveSettings(next settings.Settings) (settings.Set
 	if err != nil {
 		return settings.Settings{}, err
 	}
-	if err := validateTaskTemplateUpdates(data.Settings, validated, data.Tasks); err != nil {
-		return settings.Settings{}, err
-	}
 	if !templatesProvided {
 		validated.TaskTemplates = append([]task.TaskTemplate(nil), data.Settings.TaskTemplates...)
 		validated.ActiveTaskTemplateID = data.Settings.ActiveTaskTemplateID
+	} else if err := validateTaskTemplateUpdates(data.Settings, validated, data.Tasks); err != nil {
+		return settings.Settings{}, err
 	}
 	if validated.PresetVersion < data.Settings.PresetVersion {
 		validated.PresetVersion = data.Settings.PresetVersion
@@ -473,6 +472,32 @@ func validateTaskTemplateUpdates(previous, next settings.Settings, tasks []task.
 	for _, template := range previous.TaskTemplates {
 		previousByID[template.ID] = template
 	}
+	nextByID := make(map[string]struct{}, len(next.TaskTemplates))
+	for _, template := range next.TaskTemplates {
+		nextByID[template.ID] = struct{}{}
+	}
+
+	for _, current := range tasks {
+		if !isActiveTask(current) || current.TaskTemplateID != "" || len(current.TemplateFields) == 0 {
+			continue
+		}
+		for _, template := range previous.TaskTemplates {
+			if _, found := nextByID[template.ID]; !found {
+				return fmt.Errorf("未执行或执行中的历史任务包含无法确定来源的模板字段，不能删除任务模板")
+			}
+		}
+	}
+	for _, template := range previous.TaskTemplates {
+		if _, found := nextByID[template.ID]; found {
+			continue
+		}
+		for _, current := range tasks {
+			if isActiveTask(current) && current.TaskTemplateID == template.ID {
+				return fmt.Errorf("任务模板 %q 仍被未执行或执行中的任务 %q 引用", template.Name, current.Title)
+			}
+		}
+	}
+
 	values := make([]map[string]any, 0, len(tasks))
 	for _, current := range tasks {
 		values = append(values, current.TemplateFields)
@@ -487,6 +512,10 @@ func validateTaskTemplateUpdates(previous, next settings.Settings, tasks []task.
 		}
 	}
 	return nil
+}
+
+func isActiveTask(current task.Task) bool {
+	return current.Status == task.StatusPending || current.Status == task.StatusRunning
 }
 
 func (repository *Repository) ListLifecycleCommands() ([]settings.LifecycleCommand, error) {
