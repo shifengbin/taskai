@@ -15,4 +15,4 @@
 - [x] 3.1 运行 `cd frontend && npm test -- --run src/components/TerminalView.test.tsx`，确认终端恢复与重绘测试通过。
 - [x] 3.2 运行 `cd frontend && npm test -- --run src/App.test.tsx` 和 `npm run build`，确认应用集成行为及 TypeScript/Vite 构建通过。
 - [x] 3.3 运行 `openspec validate fix-terminal-switch-rendering --strict`，确认变更工件符合 schema。
-- [ ] 3.4 运行 `./scripts/build-linux.sh`，并在 Linux Wails 应用中手工验证：多个已有终端反复切换后，静态区域不会空白且无需调整窗口大小。
+- [x] 3.4 运行 `./scripts/build-linux.sh`，并在 Linux Wails 应用中手工验证：多个已有终端反复切换后，静态区域不会空白且无需调整窗口大小。
