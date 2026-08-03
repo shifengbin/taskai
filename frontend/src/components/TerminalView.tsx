@@ -36,9 +36,11 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
     instance.loadAddon(fitAddon)
     terminalRef.current = instance
     outputRef.current = terminal.output ?? ''
-    if (containerRef.current) {
-      instance.open(containerRef.current)
-      instance.write(outputRef.current)
+    let active = true
+    const refreshVisibleRows = () => {
+      if (active && instance.rows > 0) {
+        instance.refresh(0, instance.rows - 1)
+      }
     }
     const fit = () => {
       try {
@@ -46,11 +48,23 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
         if (instance.cols > 0 && instance.rows > 0) {
           onResize(instance.cols, instance.rows)
         }
+        return true
       } catch {
         // The terminal container may be temporarily hidden during a pane switch.
+        return false
       }
     }
-    const observer = new ResizeObserver(fit)
+    const fitAndRefresh = () => {
+      if (fit()) {
+        refreshVisibleRows()
+      }
+    }
+    if (containerRef.current) {
+      instance.open(containerRef.current)
+      fit()
+      instance.write(outputRef.current, refreshVisibleRows)
+    }
+    const observer = new ResizeObserver(fitAndRefresh)
     if (containerRef.current) {
       observer.observe(containerRef.current)
     }
@@ -62,11 +76,12 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
       }
     })
     const animationFrame = requestAnimationFrame(() => {
-      fit()
+      fitAndRefresh()
       instance.focus()
     })
 
     return () => {
+      active = false
       cancelAnimationFrame(animationFrame)
       onData.dispose()
       onSelectionChange.dispose()
