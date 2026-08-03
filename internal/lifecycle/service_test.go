@@ -84,10 +84,16 @@ func TestServiceCreatesAndUpdatesCurrentTaskTemplateFields(t *testing.T) {
 	if want := map[string]any{"environment": "staging", "deploy": false}; !reflect.DeepEqual(created.TemplateFields, want) {
 		t.Fatalf("创建任务模板字段 = %#v，期望 %#v", created.TemplateFields, want)
 	}
+	if created.TaskTemplateID != "release" {
+		t.Fatalf("创建任务模板 ID = %q，期望 release", created.TaskTemplateID)
+	}
 
 	data, err = repository.Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
+	}
+	if len(data.Tasks) != 1 || data.Tasks[0].TaskTemplateID != "release" {
+		t.Fatalf("重载后的任务模板 ID = %#v，期望 release", data.Tasks)
 	}
 	data.Tasks[0].TemplateFields["retired_field"] = "keep"
 	if err := repository.Save(data); err != nil {
@@ -99,6 +105,9 @@ func TestServiceCreatesAndUpdatesCurrentTaskTemplateFields(t *testing.T) {
 	}
 	if want := map[string]any{"environment": "production", "deploy": true, "retired_field": "keep"}; !reflect.DeepEqual(updated.TemplateFields, want) {
 		t.Fatalf("更新任务模板字段 = %#v，期望 %#v", updated.TemplateFields, want)
+	}
+	if updated.TaskTemplateID != "release" {
+		t.Fatalf("更新任务模板 ID = %q，期望 release", updated.TaskTemplateID)
 	}
 }
 

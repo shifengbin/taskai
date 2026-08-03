@@ -728,6 +728,62 @@ describe('App confirmation flows', () => {
 		expect(saved.activeTaskTemplateId).toBe(saved.taskTemplates[0].id)
 	})
 
+	it('活动任务引用模板时禁用对应删除按钮，已完成任务不会阻止删除', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([
+			{id: 'running-release', title: '正在发布', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z', taskTemplateId: 'release', templateFields: {environment: 'production'}},
+			{id: 'completed-archive', title: '已归档', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z', taskTemplateId: 'archive', templateFields: {retention: '30d'}},
+		])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [
+				{id: 'release', name: '发布模板', fields: [{key: 'environment', displayName: '环境', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false}]},
+				{id: 'archive', name: '归档模板', fields: [{key: 'retention', displayName: '保留期', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false}]},
+			],
+			activeTaskTemplateId: 'release',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '任务模板'}))
+		const protectedDelete = screen.getByRole('button', {name: '删除任务模板 发布模板'})
+		const completedDelete = screen.getByRole('button', {name: '删除任务模板 归档模板'})
+		expect(protectedDelete).toBeDisabled()
+		expect(completedDelete).toBeEnabled()
+		await user.hover(protectedDelete.parentElement!)
+		expect(await screen.findByRole('tooltip')).toHaveTextContent('未执行或执行中的任务正在使用此模板，暂不能删除')
+
+		await user.click(completedDelete)
+		await user.click(screen.getByRole('button', {name: '保存'}))
+		await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+			taskTemplates: [expect.objectContaining({id: 'release'})],
+		})))
+	})
+
+	it('历史活动任务缺少模板 ID 时禁用所有模板删除按钮', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'legacy-pending', title: '旧任务', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z', templateFields: {environment: 'production'},
+		}])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [
+				{id: 'release', name: '发布模板', fields: [{key: 'environment', displayName: '环境', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false}]},
+				{id: 'archive', name: '归档模板', fields: [{key: 'retention', displayName: '保留期', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false}]},
+			],
+			activeTaskTemplateId: 'release',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '任务模板'}))
+		const protectedDelete = screen.getByRole('button', {name: '删除任务模板 发布模板'})
+		expect(protectedDelete).toBeDisabled()
+		expect(screen.getByRole('button', {name: '删除任务模板 归档模板'})).toBeDisabled()
+		await user.hover(protectedDelete.parentElement!)
+		await waitFor(() => expect(screen.getAllByRole('tooltip').some((tooltip) => tooltip.textContent === '未执行或执行中的旧任务包含无法归属的模板字段，完成这些任务后才能删除模板')).toBe(true))
+	})
+
   it('通过颜色选择器创建未执行任务', async () => {
     const user = userEvent.setup()
     bindings.CreateTask.mockResolvedValue({
