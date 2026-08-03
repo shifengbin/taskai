@@ -125,6 +125,52 @@ func (service *Service) GetTask(taskID string) (task.Task, error) {
 	return data.Tasks[index], nil
 }
 
+func (service *Service) DeleteCompletedTasks(taskIDs []string) ([]task.Task, error) {
+	if len(taskIDs) == 0 {
+		return nil, fmt.Errorf("至少选择一个已完成任务")
+	}
+
+	service.lifecycleExecutionMu.Lock()
+	defer service.lifecycleExecutionMu.Unlock()
+
+	data, err := service.repository.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	selected := make(map[string]bool, len(taskIDs))
+	for _, taskID := range taskIDs {
+		if selected[taskID] {
+			return nil, fmt.Errorf("删除任务包含重复任务: %q", taskID)
+		}
+		index, err := taskIndex(data.Tasks, taskID)
+		if err != nil {
+			return nil, err
+		}
+		current := data.Tasks[index]
+		if current.Status != task.StatusCompleted {
+			return nil, fmt.Errorf("仅已完成任务可以删除")
+		}
+		if current.LifecycleExecution != nil {
+			return nil, fmt.Errorf("任务正在执行或等待重试命令链，暂不能删除")
+		}
+		selected[taskID] = true
+	}
+
+	remaining := make([]task.Task, 0, len(data.Tasks)-len(selected))
+	for _, current := range data.Tasks {
+		if !selected[current.ID] {
+			remaining = append(remaining, current)
+		}
+	}
+	data.Tasks = remaining
+	if err := service.repository.Save(data); err != nil {
+		return nil, err
+	}
+
+	return data.Tasks, nil
+}
+
 func (service *Service) ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error) {
 	if !isTaskStatus(status) {
 		return nil, fmt.Errorf("不支持的任务状态: %q", status)

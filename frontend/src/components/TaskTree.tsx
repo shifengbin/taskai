@@ -1,7 +1,8 @@
 import {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react'
 import {
-  Box,
-  Chip,
+	Box,
+	Checkbox,
+	Chip,
   Collapse,
   IconButton,
   List,
@@ -72,12 +73,15 @@ interface TaskTreeProps {
   tasks: TaskRecord[]
   terminals: TerminalRecord[]
   menuItems?: TaskMenuItem[]
-  activeStatus: TaskStatus
-  expandedTasks?: Record<string, boolean>
+	activeStatus: TaskStatus
+	completedTaskSelectionMode?: boolean
+	selectedCompletedTaskIDs?: string[]
+	expandedTasks?: Record<string, boolean>
   selectedTaskID?: string
   selectedTerminalId?: string
   startedTaskFeedback?: TaskStartFeedback
-  onChangeStatus(status: TaskStatus): void
+	onChangeStatus(status: TaskStatus): void
+	onToggleCompletedTaskSelection?(taskID: string): void
   onToggleTaskExpanded?(taskID: string): void
   onSelectTask(task: TaskRecord): void
   onSelectTerminal(terminal: TerminalRecord): void
@@ -96,13 +100,16 @@ interface TaskTreeProps {
 export function TaskTree({
   tasks,
   terminals,
-  menuItems = defaultTaskMenuItems,
-  activeStatus,
+	menuItems = defaultTaskMenuItems,
+	activeStatus,
+	completedTaskSelectionMode = false,
+	selectedCompletedTaskIDs = [],
   expandedTasks,
   selectedTaskID,
   selectedTerminalId,
   startedTaskFeedback,
-  onChangeStatus,
+	onChangeStatus,
+	onToggleCompletedTaskSelection,
   onToggleTaskExpanded,
   onSelectTask,
   onSelectTerminal,
@@ -148,7 +155,8 @@ export function TaskTree({
   }, {pending: 0, running: 0, completed: 0}), [tasks])
   const taskMenuTask = taskMenu ? tasks.find((task) => task.id === taskMenu.taskID) : undefined
   const draggedTask = draggedTaskID ? tasks.find((task) => task.id === draggedTaskID) : undefined
-  const expanded = expandedTasks ?? localExpandedTasks
+	const expanded = expandedTasks ?? localExpandedTasks
+	const selectingCompletedTasks = activeStatus === 'completed' && completedTaskSelectionMode
 
   useLayoutEffect(() => {
     if (activeStatus !== 'running' || !startedTaskFeedback) {
@@ -216,7 +224,10 @@ export function TaskTree({
     setTaskDropTarget()
   }
 
-  const beginTaskPointerDrag = (event: React.PointerEvent<HTMLElement>, taskID: string) => {
+	const beginTaskPointerDrag = (event: React.PointerEvent<HTMLElement>, taskID: string) => {
+		if (selectingCompletedTasks) {
+			return
+		}
 		const current = tasks.find((task) => task.id === taskID)
 		if (current?.lifecycleExecution || (activeStatus === 'running' && current?.shelved)) {
 			return
@@ -281,8 +292,11 @@ export function TaskTree({
     clearTaskDrag()
   }
 
-  const requestContextMenu = (event: React.MouseEvent, task: TaskRecord) => {
-    event.preventDefault()
+	const requestContextMenu = (event: React.MouseEvent, task: TaskRecord) => {
+		event.preventDefault()
+		if (selectingCompletedTasks) {
+			return
+		}
 		if (task.lifecycleExecution) {
 			return
 		}
@@ -321,14 +335,17 @@ export function TaskTree({
         <Tab value="completed" label={`已完成 (${taskCounts.completed})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
       </Tabs>
       <List className="taskai-task-tree__list" ref={taskListRef} data-testid="task-tree-list" disablePadding dense sx={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': {display: 'none'}}}>
-        {visibleTasks.map((task) => {
+		{visibleTasks.map((task) => {
           const childTerminals = terminalsByTask[task.id] ?? []
           const isExpanded = expanded[task.id] ?? true
-          const isSelectedTask = task.id === selectedTaskID
+			const isSelectedTask = task.id === selectedTaskID
           const taskColor = task.color || defaultTaskColor
           const dropPosition = dropTarget?.taskID === task.id ? dropTarget.position : undefined
 			const execution = task.lifecycleExecution
-				const locked = Boolean(execution)
+					const locked = Boolean(execution)
+					const canSelectCompletedTask = selectingCompletedTasks && !locked && Boolean(onToggleCompletedTaskSelection)
+					const isCompletedTaskSelected = canSelectCompletedTask && selectedCompletedTaskIDs.includes(task.id)
+					const isTaskRowSelected = selectingCompletedTasks ? isCompletedTaskSelected : isSelectedTask
 				const executionLabel = execution ? `${lifecycleHookLabel(execution.hook)} · ${execution.currentCommandName || '命令'} ${execution.currentIndex}/${execution.commandCount}` : ''
 				const isShelvedTask = activeStatus === 'running' && Boolean(task.shelved)
 				const isFirstShelvedTask = task.id === firstShelvedTaskID
@@ -363,19 +380,28 @@ export function TaskTree({
                 <ListItemButton
                   className="taskai-task-row"
                   data-task-id={task.id}
-						data-task-selected={isSelectedTask || undefined}
+						data-task-selected={isTaskRowSelected || undefined}
 						data-task-start-feedback={startFeedbackMode}
-                  selected={isSelectedTask}
-                  onClick={(event) => {
+						selected={isTaskRowSelected}
+						onClick={(event) => {
                     if (suppressTaskClickRef.current) {
                       suppressTaskClickRef.current = false
                       event.preventDefault()
                       return
                     }
-                    onSelectTask(task)
+							if (selectingCompletedTasks) {
+								if (canSelectCompletedTask) {
+									onToggleCompletedTaskSelection?.(task.id)
+								}
+								return
+							}
+							onSelectTask(task)
                   }}
                   onContextMenu={(event) => requestContextMenu(event, task)}
-                  onDoubleClick={(event) => {
+						onDoubleClick={(event) => {
+							if (selectingCompletedTasks) {
+								return
+							}
                     if ((event.target as HTMLElement).closest('button')) {
                       return
                     }
@@ -393,7 +419,7 @@ export function TaskTree({
                     borderLeftStyle: 'solid',
                     position: 'relative',
                     borderRadius: 0,
-                    bgcolor: isSelectedTask ? 'action.selected' : 'transparent',
+							bgcolor: isTaskRowSelected ? 'action.selected' : 'transparent',
                     opacity: draggedTaskID === task.id ? 0.5 : 1,
                     outline: draggedTaskID === task.id ? '2px solid' : '2px solid transparent',
 						outlineColor: draggedTaskID === task.id ? 'primary.main' : 'transparent',
@@ -408,13 +434,23 @@ export function TaskTree({
 								'50%': {boxShadow: `inset 0 0 0 2px ${taskColor}`, backgroundColor: `${taskColor}2e`},
 							},
 						}),
-						cursor: locked ? 'not-allowed' : 'grab',
+							cursor: selectingCompletedTasks ? (canSelectCompletedTask ? 'pointer' : 'not-allowed') : locked ? 'not-allowed' : 'grab',
                     touchAction: 'none',
                     userSelect: 'none',
                     '&:active': {cursor: 'grabbing'},
                   }}
                 >
-                {task.status === 'running' && (
+					{selectingCompletedTasks && (
+						<Checkbox
+							checked={isCompletedTaskSelected}
+							disabled={!canSelectCompletedTask}
+								slotProps={{input: {'aria-label': `选择任务 ${task.title}`}}}
+							size="small"
+							onClick={(event) => event.stopPropagation()}
+							onChange={() => onToggleCompletedTaskSelection?.(task.id)}
+						/>
+					)}
+					{task.status === 'running' && (
                   <IconButton
                     aria-label={isExpanded ? '收起终端' : '展开终端'}
                     size="small"
@@ -482,7 +518,7 @@ export function TaskTree({
 								</IconButton>
 							</Tooltip>
 						)}
-                <Tooltip title="任务操作">
+					{!selectingCompletedTasks && <Tooltip title="任务操作">
 						<span>
 							<IconButton
                     aria-label="任务操作"
@@ -496,7 +532,7 @@ export function TaskTree({
 								<MoreVertIcon fontSize="small"/>
 							</IconButton>
 						</span>
-                </Tooltip>
+					</Tooltip>}
                 </ListItemButton>
               </Tooltip>
               <Collapse in={isExpanded} timeout="auto" unmountOnExit>

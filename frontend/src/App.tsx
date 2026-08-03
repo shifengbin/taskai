@@ -33,6 +33,7 @@ import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
 import ArrowDownwardOutlinedIcon from '@mui/icons-material/ArrowDownwardOutlined'
 import ArrowUpwardOutlinedIcon from '@mui/icons-material/ArrowUpwardOutlined'
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined'
+import DoneAllOutlinedIcon from '@mui/icons-material/DoneAllOutlined'
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import HelpOutlinedIcon from '@mui/icons-material/HelpOutlined'
@@ -125,6 +126,9 @@ export default function App() {
 	const [templateSectionExpanded, setTemplateSectionExpanded] = useState(false)
 	const [expandedExtraInfoTemplateIDs, setExpandedExtraInfoTemplateIDs] = useState<string[]>([])
   const [finishTask, setFinishTask] = useState<TaskRecord>()
+	const [completedTaskSelectionMode, setCompletedTaskSelectionMode] = useState(false)
+	const [selectedCompletedTaskIDs, setSelectedCompletedTaskIDs] = useState<string[]>([])
+	const [completedTaskDeletionOpen, setCompletedTaskDeletionOpen] = useState(false)
   const [quitDialogOpen, setQuitDialogOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftDescription, setDraftDescription] = useState('')
@@ -287,6 +291,19 @@ export default function App() {
   const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
 	const activeTaskTemplate = settings?.taskTemplates?.find((template) => template.id === settings.activeTaskTemplateId)
 	const areAllTasksExpanded = tasks.length > 0 && tasks.every((task) => expandedTasks[task.id] ?? true)
+	const deletableCompletedTaskIDs = useMemo(() => tasks
+		.filter((task) => task.status === 'completed' && !task.lifecycleExecution)
+		.map((task) => task.id), [tasks])
+	const deletableCompletedTaskIDSet = useMemo(() => new Set(deletableCompletedTaskIDs), [deletableCompletedTaskIDs])
+	const selectedDeletableCompletedTaskIDs = useMemo(() => selectedCompletedTaskIDs
+		.filter((taskID) => deletableCompletedTaskIDSet.has(taskID)), [deletableCompletedTaskIDSet, selectedCompletedTaskIDs])
+
+	useEffect(() => {
+		setSelectedCompletedTaskIDs((current) => {
+			const next = current.filter((taskID) => deletableCompletedTaskIDSet.has(taskID))
+			return next.length === current.length ? current : next
+		})
+	}, [deletableCompletedTaskIDSet])
 
 	const copyLifecycleCommandInput = async (taskID: string) => {
 		const input = await api.getLifecycleCommandInput(taskID)
@@ -690,6 +707,55 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   }
 }
 
+	const exitCompletedTaskSelectionMode = () => {
+		setCompletedTaskSelectionMode(false)
+		setSelectedCompletedTaskIDs([])
+		setCompletedTaskDeletionOpen(false)
+	}
+
+	const toggleCompletedTaskSelection = (taskID: string) => {
+		if (!deletableCompletedTaskIDSet.has(taskID)) {
+			return
+		}
+		setSelectedCompletedTaskIDs((current) => current.includes(taskID)
+			? current.filter((currentTaskID) => currentTaskID !== taskID)
+			: [...current, taskID])
+	}
+
+	const confirmDeleteCompletedTasks = async () => {
+		if (selectedDeletableCompletedTaskIDs.length === 0) {
+			setCompletedTaskDeletionOpen(false)
+			return
+		}
+		try {
+			const remainingTasks = await api.deleteCompletedTasks(selectedDeletableCompletedTaskIDs)
+			const deletedTaskIDSet = new Set(selectedDeletableCompletedTaskIDs)
+			setTasks(remainingTasks)
+			setTerminals((current) => current.filter((terminal) => !deletedTaskIDSet.has(terminal.taskId)))
+			setExpandedTasks((current) => Object.fromEntries(Object.entries(current).filter(([taskID]) => !deletedTaskIDSet.has(taskID))))
+			for (const taskID of deletedTaskIDSet) {
+				finishedTerminalTaskIDs.current.delete(taskID)
+				lifecycleStatusTargets.current.delete(taskID)
+				clearTaskTerminalTracking(taskID, terminalTitleParserStates.current, pendingTerminalEvents.current, registeredTerminalKeys.current)
+			}
+			for (const terminal of terminals) {
+				if (deletedTaskIDSet.has(terminal.taskId)) {
+					terminalTitleValues.current.delete(terminalEventKey(terminal.taskId, terminal.id))
+				}
+			}
+			if (selectedTaskID && deletedTaskIDSet.has(selectedTaskID)) {
+				setSelectedTaskID(undefined)
+				setSelectedTerminalID(undefined)
+			} else if (selectedTerminalID && terminals.some((terminal) => terminal.id === selectedTerminalID && deletedTaskIDSet.has(terminal.taskId))) {
+				setSelectedTerminalID(undefined)
+			}
+			exitCompletedTaskSelectionMode()
+		} catch (error) {
+			setCompletedTaskDeletionOpen(false)
+			showError(error, setMessage)
+		}
+	}
+
   const saveSettings = async () => {
     if (!settingsDraft) {
       return
@@ -706,6 +772,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
   const changeActiveTaskStatus = async (status: TaskStatus) => {
     const previousStatus = activeTaskStatus
+		if (status !== 'completed' && completedTaskSelectionMode) {
+			exitCompletedTaskSelectionMode()
+		}
     setActiveTaskStatus(status)
     if (!settings) {
       return
@@ -927,7 +996,30 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <Box className="taskai-sidebar-header" sx={{height: 42, display: 'flex', alignItems: 'center', px: 1.25, borderBottom: 1, borderColor: 'divider'}}>
               <Typography variant="overline" color="text.secondary">任务与终端</Typography>
               <Box sx={{flex: 1}}/>
-              <Tooltip title={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'}>
+              {activeTaskStatus === 'completed' && completedTaskSelectionMode ? <>
+						<Typography variant="caption" color="text.secondary" sx={{fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap'}}>已选 {selectedDeletableCompletedTaskIDs.length} 项</Typography>
+						<Tooltip title="全选可删除任务">
+							<span>
+								<IconButton aria-label="全选已完成任务" size="small" disabled={deletableCompletedTaskIDs.length === 0} onClick={() => setSelectedCompletedTaskIDs(deletableCompletedTaskIDs)}>
+									<DoneAllOutlinedIcon fontSize="small"/>
+								</IconButton>
+							</span>
+						</Tooltip>
+						<Tooltip title="删除已选任务记录">
+							<span>
+								<IconButton aria-label="删除已选任务记录" color="error" size="small" disabled={selectedDeletableCompletedTaskIDs.length === 0} onClick={() => setCompletedTaskDeletionOpen(true)}>
+									<DeleteOutlineOutlinedIcon fontSize="small"/>
+								</IconButton>
+							</span>
+						</Tooltip>
+						<Button size="small" color="inherit" onClick={exitCompletedTaskSelectionMode}>取消</Button>
+					</> : <>
+						{activeTaskStatus === 'completed' && <Tooltip title="选择已完成任务">
+							<IconButton aria-label="选择已完成任务" size="small" onClick={() => setCompletedTaskSelectionMode(true)}>
+								<DoneAllOutlinedIcon fontSize="small"/>
+							</IconButton>
+						</Tooltip>}
+						<Tooltip title={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'}>
                 <span>
                   <IconButton
                     aria-label={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'}
@@ -938,12 +1030,13 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                     {areAllTasksExpanded ? <UnfoldLessOutlinedIcon fontSize="small"/> : <UnfoldMoreOutlinedIcon fontSize="small"/>}
                   </IconButton>
                 </span>
-              </Tooltip>
-              <Tooltip title="新建任务">
+						</Tooltip>
+						<Tooltip title="新建任务">
                 <IconButton aria-label="新建任务" onClick={() => openTaskDialog()} color="primary" size="small">
                   <AddOutlinedIcon fontSize="small"/>
                 </IconButton>
-              </Tooltip>
+						</Tooltip>
+					</>}
             </Box>
             <Box sx={{minHeight: 0}}>
               <TaskTree
@@ -951,11 +1044,14 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 terminals={terminals}
                 menuItems={taskMenuItems}
                 activeStatus={activeTaskStatus}
+				completedTaskSelectionMode={completedTaskSelectionMode}
+				selectedCompletedTaskIDs={selectedDeletableCompletedTaskIDs}
                 expandedTasks={expandedTasks}
                 selectedTaskID={selectedTaskID}
                 selectedTerminalId={selectedTerminalID}
                 startedTaskFeedback={startedTaskFeedback}
                 onChangeStatus={(status) => void changeActiveTaskStatus(status)}
+				onToggleCompletedTaskSelection={toggleCompletedTaskSelection}
                 onToggleTaskExpanded={toggleTaskExpanded}
                 onSelectTask={(task) => {
                   setSelectedTaskID(task.id)
@@ -1601,6 +1697,19 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           <Typography variant="body2">不支持占位符替换；JSON 不会追加到命令行，也不会与参数拼接。</Typography>
         </Box>
       </Popover>
+
+			<Dialog open={completedTaskDeletionOpen} onClose={() => setCompletedTaskDeletionOpen(false)} maxWidth="xs" fullWidth>
+				<DialogTitle>删除 {selectedDeletableCompletedTaskIDs.length} 个任务记录？</DialogTitle>
+				<DialogContent>
+					<Typography variant="body2" color="text.secondary">
+						此操作只会移除任务记录，不会删除工作目录或运行生命周期命令。此操作无法撤销。
+					</Typography>
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={() => setCompletedTaskDeletionOpen(false)}>取消</Button>
+					<Button color="error" variant="contained" onClick={() => void confirmDeleteCompletedTasks()}>删除记录</Button>
+				</DialogActions>
+			</Dialog>
 
       <Dialog open={Boolean(finishTask)} onClose={() => setFinishTask(undefined)} maxWidth="xs" fullWidth>
         <DialogTitle>结束任务？</DialogTitle>

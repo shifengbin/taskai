@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -156,6 +157,20 @@ func (app *App) CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(title, d
 
 func (app *App) ListTasks() ([]task.Task, error) {
 	return app.tasks.ListTasks()
+}
+
+func (app *App) DeleteCompletedTasks(taskIDs []string) ([]task.Task, error) {
+	unlock := app.lockLifecycleTasks(taskIDs)
+	defer unlock()
+
+	remaining, err := app.tasks.DeleteCompletedTasks(taskIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, taskID := range taskIDs {
+		app.realtime.RemoveTask(taskID)
+	}
+	return remaining, nil
 }
 
 func (app *App) GetLifecycleCommandInput(taskID string) (string, error) {
@@ -685,6 +700,25 @@ func (app *App) lockLifecycleTask(taskID string) func() {
 	app.lifecycleLockMu.Unlock()
 	lock.Lock()
 	return lock.Unlock
+}
+
+func (app *App) lockLifecycleTasks(taskIDs []string) func() {
+	ordered := append([]string(nil), taskIDs...)
+	sort.Strings(ordered)
+	unlockers := make([]func(), 0, len(ordered))
+	seen := make(map[string]bool, len(ordered))
+	for _, taskID := range ordered {
+		if seen[taskID] {
+			continue
+		}
+		seen[taskID] = true
+		unlockers = append(unlockers, app.lockLifecycleTask(taskID))
+	}
+	return func() {
+		for index := len(unlockers) - 1; index >= 0; index-- {
+			unlockers[index]()
+		}
+	}
 }
 
 func isCurrentLifecycleExecution(current task.Task, execution task.LifecycleExecution) bool {

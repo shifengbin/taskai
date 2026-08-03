@@ -113,6 +113,44 @@ func TestAppRegistersRunningTaskAndClearsRealtimeStatusWhenFinished(t *testing.T
 	}
 }
 
+func TestAppDeletesCompletedTasksAndClearsRealtimeStatus(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	created, err := app.CreateTask("待删除记录", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	workspacePath := filepath.Join(t.TempDir(), "retained-workspace")
+	if err := os.MkdirAll(workspacePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	data, err := app.repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	completedAt := time.Now()
+	data.Tasks[0].Status = task.StatusCompleted
+	data.Tasks[0].CompletedAt = &completedAt
+	data.Tasks[0].WorkspacePath = workspacePath
+	if err := app.repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	app.realtime.RegisterTask(created.ID)
+
+	remaining, err := app.DeleteCompletedTasks([]string{created.ID})
+	if err != nil {
+		t.Fatalf("DeleteCompletedTasks() error = %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("DeleteCompletedTasks() tasks = %#v, want empty", remaining)
+	}
+	if got := app.realtime.Snapshot(); len(got.Tasks) != 0 {
+		t.Fatalf("DeleteCompletedTasks() realtime status = %#v", got)
+	}
+	if _, err := os.Stat(workspacePath); err != nil {
+		t.Fatalf("DeleteCompletedTasks() removed workspace: %v", err)
+	}
+}
+
 func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()

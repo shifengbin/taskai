@@ -9,6 +9,7 @@ import {
 	CopyLifecycleCommandChain,
 	CreateCommandTerminal,
 	CreateTerminal,
+	DeleteCompletedTasks,
 	DetectShells,
 	ExecuteTaskMenuCommand,
   FinishTask,
@@ -68,6 +69,7 @@ export const api = {
 	updateTaskWithExtraInfoAndTemplateFields: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[], templateFields: TaskTemplateValues) => UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), templateFields) as Promise<TaskRecord>,
 	updateTaskWithExtraInfoTemplateFieldsAndLifecycleChains: (taskID: string, title: string, description: string, color: string, extraInfo: TaskExtraInfo[], templateFields: TaskTemplateValues, chains: Partial<Record<LifecycleHook, string>>) => UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(taskID, title, description, color, extraInfo.map((item) => taskModel.TaskExtraInfo.createFrom(item)), templateFields, chains) as Promise<TaskRecord>,
   listTasks: () => ListTasks() as Promise<TaskRecord[]>,
+	deleteCompletedTasks: (taskIDs: string[]) => DeleteCompletedTasks(taskIDs) as Promise<TaskRecord[]>,
 	listExtraInfoTemplates: async () => {
 		const templates = await ListExtraInfoTemplates()
 		return Array.isArray(templates) ? templates as unknown as ExtraInfoTemplate[] : []

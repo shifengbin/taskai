@@ -1013,4 +1013,45 @@ describe('TaskTree', () => {
       Object.defineProperty(window, 'matchMedia', {configurable: true, value: originalMatchMedia})
     }
   })
+
+  it('在已完成选择模式中仅允许勾选无生命周期执行记录的任务', async () => {
+    const user = userEvent.setup()
+    const selectableTask: TaskRecord = {...runningTask, id: 'completed-1', title: '可删除任务', status: 'completed'}
+    const lockedTask: TaskRecord = {
+      ...runningTask,
+      id: 'completed-2',
+      title: '待重试清理任务',
+      status: 'completed',
+      lifecycleExecution: {hook: 'postEnd', chainId: 'cleanup', currentIndex: 1, commandCount: 1, state: 'failed'},
+    }
+    const onToggleCompletedTaskSelection = vi.fn()
+    render(
+      <TaskTree
+        tasks={[selectableTask, lockedTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="completed"
+        onChangeStatus={vi.fn()}
+        completedTaskSelectionMode
+        selectedCompletedTaskIDs={['completed-1']}
+        onToggleCompletedTaskSelection={onToggleCompletedTaskSelection}
+      />,
+    )
+
+    const selectableCheckbox = screen.getByRole('checkbox', {name: '选择任务 可删除任务'})
+    expect(selectableCheckbox).toBeChecked()
+    await user.click(selectableCheckbox)
+    expect(onToggleCompletedTaskSelection).toHaveBeenCalledWith('completed-1')
+
+    const lockedCheckbox = screen.getByRole('checkbox', {name: '选择任务 待重试清理任务'})
+    expect(lockedCheckbox).toBeDisabled()
+    expect(onToggleCompletedTaskSelection).toHaveBeenCalledTimes(1)
+  })
 })
