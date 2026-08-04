@@ -114,11 +114,14 @@ export const api = {
 		delete (payload as {lifecycleCommands?: unknown}).lifecycleCommands
 		delete (payload as {lifecycleChains?: unknown}).lifecycleChains
 		delete (payload as {lifecycleDefaultChains?: unknown}).lifecycleDefaultChains
-		if (settings.taskTemplates || settings.activeTaskTemplateId !== undefined) {
+		if (settings.taskTemplates !== undefined) {
 			Object.assign(payload, {
-				taskTemplates: settings.taskTemplates ?? [],
+				taskTemplates: settings.taskTemplates,
 				activeTaskTemplateId: settings.activeTaskTemplateId ?? '',
 			})
+		} else {
+			delete (payload as {taskTemplates?: unknown}).taskTemplates
+			delete (payload as {activeTaskTemplateId?: unknown}).activeTaskTemplateId
 		}
 		return SaveSettings(payload) as Promise<SettingsRecord>
 	},

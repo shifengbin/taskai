@@ -754,6 +754,34 @@ describe('App confirmation flows', () => {
 		expect(saved.activeTaskTemplateId).toBe(saved.taskTemplates[0].id)
 	})
 
+	it('保存非模板设置后重新打开设置仍显示已保存模板', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{
+				id: 'release', name: '发布模板', fields: [{key: 'environment', displayName: '环境', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false}],
+			}],
+			activeTaskTemplateId: 'release',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '终端 Shell'}))
+		const shellPath = screen.getByRole('textbox', {name: 'Shell 路径'})
+		await user.clear(shellPath)
+		await user.type(shellPath, '/bin/zsh')
+		await user.click(screen.getByRole('button', {name: '保存'}))
+		await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+			taskTemplates: [expect.objectContaining({id: 'release'})],
+			activeTaskTemplateId: 'release',
+		})))
+
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
+		await user.click(screen.getByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '任务模板'}))
+		expect(within(screen.getByRole('dialog', {name: '设置'})).getByText('1 个字段 · 当前使用')).toBeInTheDocument()
+	})
+
 	it('活动任务引用模板时禁用对应删除按钮，已完成任务不会阻止删除', async () => {
 		const user = userEvent.setup()
 		bindings.ListTasks.mockResolvedValue([

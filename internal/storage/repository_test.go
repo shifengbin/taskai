@@ -435,6 +435,48 @@ func TestRepositorySaveSettingsWithoutTaskTemplatesKeepsActiveTaskTemplate(t *te
 	}
 }
 
+func TestRepositorySaveSettingsDistinguishesMissingAndExplicitEmptyTaskTemplates(t *testing.T) {
+	t.Run("缺失模板集合保留已有定义", func(t *testing.T) {
+		repository, initialSettings := repositoryWithTaskTemplateReference(t, task.StatusRunning, "release")
+		next := initialSettings
+		next.TaskTemplates = nil
+		next.ActiveTaskTemplateID = ""
+
+		if _, err := repository.SaveSettings(next); err != nil {
+			t.Fatalf("SaveSettings() error = %v", err)
+		}
+		loaded, err := repository.Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if len(loaded.Settings.TaskTemplates) != 1 || loaded.Settings.TaskTemplates[0].ID != "release" || loaded.Settings.ActiveTaskTemplateID != "release" {
+			t.Fatalf("缺失模板快照后的设置 = %#v", loaded.Settings)
+		}
+	})
+
+	t.Run("显式空模板集合继续删除", func(t *testing.T) {
+		repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+		current, err := repository.Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		next := current.Settings
+		next.TaskTemplates = []task.TaskTemplate{}
+		next.ActiveTaskTemplateID = ""
+
+		if _, err := repository.SaveSettings(next); err != nil {
+			t.Fatalf("SaveSettings() error = %v", err)
+		}
+		loaded, err := repository.Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if len(loaded.Settings.TaskTemplates) != 0 || loaded.Settings.ActiveTaskTemplateID != "" {
+			t.Fatalf("显式清空模板后的设置 = %#v", loaded.Settings)
+		}
+	})
+}
+
 func repositoryWithTaskTemplateReference(t *testing.T, status task.Status, taskTemplateID string) (*Repository, settings.Settings) {
 	t.Helper()
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))

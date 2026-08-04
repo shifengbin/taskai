@@ -96,6 +96,29 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	}
 }
 
+func TestAppSaveSettingsWithoutTemplateSnapshotKeepsSavedTaskTemplates(t *testing.T) {
+	app := newApp(t.TempDir())
+	before, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() before save error = %v", err)
+	}
+
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot: filepath.Join(t.TempDir(), "workspaces"),
+		TaskTreeWidth: settings.DefaultTaskTreeWidth + 20,
+	}); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	after, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() after save error = %v", err)
+	}
+	if !reflect.DeepEqual(after.TaskTemplates, before.TaskTemplates) || after.ActiveTaskTemplateID != before.ActiveTaskTemplateID {
+		t.Fatalf("普通设置保存后的任务模板 = %#v, 当前模板 = %q; want %#v, %q", after.TaskTemplates, after.ActiveTaskTemplateID, before.TaskTemplates, before.ActiveTaskTemplateID)
+	}
+}
+
 func TestAppRegistersRunningTaskAndClearsRealtimeStatusWhenFinished(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("实时状态任务", "", task.DefaultColor)

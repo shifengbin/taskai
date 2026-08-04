@@ -39,6 +39,29 @@ describe('api.saveSettings', () => {
 		expect(payload).not.toHaveProperty('lifecycleCommands')
 		expect(payload).not.toHaveProperty('lifecycleChains')
 		expect(payload).not.toHaveProperty('lifecycleDefaultChains')
+		expect(payload).not.toHaveProperty('taskTemplates')
+		expect(payload).not.toHaveProperty('activeTaskTemplateId')
+	})
+
+	it('当前模板标识缺少模板集合时不伪造空模板快照', async () => {
+		const settings: SettingsRecord = {
+			workspaceRoot: '/tmp/workspaces',
+			taskTreeWidth: 360,
+			colorScheme: 'light',
+			shellPath: '/bin/sh',
+			taskMenuItems: [],
+			activeTaskStatus: 'pending',
+			statusManagementMode: 'title-change',
+			statusManagementHTTPPort: 0,
+			httpServiceEnabled: false,
+			activeTaskTemplateId: '',
+		}
+
+		await api.saveSettings(settings)
+
+		const payload = saveSettings.mock.calls[0][0] as Record<string, unknown>
+		expect(payload.taskTemplates).toBeUndefined()
+		expect(payload.activeTaskTemplateId).toBeUndefined()
 	})
 })
 

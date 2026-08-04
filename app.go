@@ -795,11 +795,15 @@ func (app *App) GetSettings() (settings.Settings, error) {
 }
 
 func (app *App) SaveSettings(next settings.Settings) (settings.Settings, error) {
-	validated, err := settings.Validate(next)
+	previous, err := app.GetSettings()
 	if err != nil {
 		return settings.Settings{}, err
 	}
-	previous, err := app.GetSettings()
+	if next.TaskTemplates == nil {
+		next.TaskTemplates = append([]task.TaskTemplate(nil), previous.TaskTemplates...)
+		next.ActiveTaskTemplateID = previous.ActiveTaskTemplateID
+	}
+	validated, err := settings.Validate(next)
 	if err != nil {
 		return settings.Settings{}, err
 	}

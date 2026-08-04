@@ -914,6 +914,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		statusManagementMode: current?.statusManagementMode ?? settings?.statusManagementMode ?? 'title-change',
 		statusManagementHTTPPort: current?.statusManagementHTTPPort ?? settings?.statusManagementHTTPPort ?? 0,
 		httpServiceEnabled: current?.httpServiceEnabled ?? settings?.httpServiceEnabled ?? false,
+		taskTemplates: current?.taskTemplates ?? settings?.taskTemplates,
+		activeTaskTemplateId: current?.activeTaskTemplateId ?? settings?.activeTaskTemplateId,
       ...update,
     }))
   }
