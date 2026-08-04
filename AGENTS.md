@@ -7,6 +7,11 @@
 - `internal/terminal/` 管理 PTY 会话与平台进程集成；`internal/workspace/` 管理任务工作目录路径与文件系统操作。
 - `frontend/src/` 包含 React 18、Vite 和 MUI 用户界面；生成的 Wails 前端绑定位于 `frontend/wailsjs/`。
 - `openspec/specs/` 存放可执行的行为规格；`docs/plans/` 存放已确认的设计和实施记录。
+- `scripts/` 存放编译脚本
+
+## 文档规范
+
+项目中的文档需要使用中文,避免行业黑话(门禁,抓手等等),专有名词可以不使用中文
 
 ## 开发与验证
 
