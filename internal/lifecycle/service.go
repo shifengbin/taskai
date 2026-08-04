@@ -62,7 +62,7 @@ func (service *Service) createTask(title, description, color string, extraInfo [
 		return task.Task{}, err
 	}
 	if useDefaults {
-		created.LifecycleChains = copyLifecycleChains(data.Settings.LifecycleDefaultChains)
+		created.LifecycleChains = data.Settings.DefaultLifecyclePresetChains()
 	} else {
 		selected, err := validateLifecycleChainSelections(data.Settings, chains)
 		if err != nil {
@@ -92,16 +92,6 @@ func (service *Service) createTask(title, description, color string, extraInfo [
 	}
 
 	return created, nil
-}
-
-func copyLifecycleChains(chains map[task.LifecycleHook]string) map[task.LifecycleHook]string {
-	copy := make(map[task.LifecycleHook]string, len(chains))
-	for hook, chainID := range chains {
-		if chainID != "" {
-			copy[hook] = chainID
-		}
-	}
-	return copy
 }
 
 func (service *Service) ListTasks() ([]task.Task, error) {

@@ -14,6 +14,10 @@ export function CopyLifecycleCommandChain(arg1) {
   return window['go']['main']['App']['CopyLifecycleCommandChain'](arg1);
 }
 
+export function CopyLifecyclePreset(arg1) {
+  return window['go']['main']['App']['CopyLifecyclePreset'](arg1);
+}
+
 export function CreateCommandTerminal(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['CreateCommandTerminal'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -66,6 +70,10 @@ export function DeleteLifecycleCommandChain(arg1) {
   return window['go']['main']['App']['DeleteLifecycleCommandChain'](arg1);
 }
 
+export function DeleteLifecyclePreset(arg1) {
+  return window['go']['main']['App']['DeleteLifecyclePreset'](arg1);
+}
+
 export function DetectShells() {
   return window['go']['main']['App']['DetectShells']();
 }
@@ -110,6 +118,10 @@ export function ListLifecycleCommands() {
   return window['go']['main']['App']['ListLifecycleCommands']();
 }
 
+export function ListLifecyclePresets() {
+  return window['go']['main']['App']['ListLifecyclePresets']();
+}
+
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
@@ -142,6 +154,10 @@ export function RunTaskCommand(arg1, arg2, arg3) {
   return window['go']['main']['App']['RunTaskCommand'](arg1, arg2, arg3);
 }
 
+export function SaveDefaultLifecyclePreset(arg1) {
+  return window['go']['main']['App']['SaveDefaultLifecyclePreset'](arg1);
+}
+
 export function SaveExtraInfo(arg1) {
   return window['go']['main']['App']['SaveExtraInfo'](arg1);
 }
@@ -162,8 +178,8 @@ export function SaveLifecycleCommandChain(arg1) {
   return window['go']['main']['App']['SaveLifecycleCommandChain'](arg1);
 }
 
-export function SaveLifecycleDefaultChain(arg1, arg2) {
-  return window['go']['main']['App']['SaveLifecycleDefaultChain'](arg1, arg2);
+export function SaveLifecyclePreset(arg1) {
+  return window['go']['main']['App']['SaveLifecyclePreset'](arg1);
 }
 
 export function SaveSettings(arg1) {

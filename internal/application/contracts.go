@@ -55,6 +55,21 @@ type SettingsBinding interface {
 	DetectShells() []string
 }
 
+type LifecycleConfigurationBinding interface {
+	ListLifecycleCommands() ([]settings.LifecycleCommand, error)
+	SaveLifecycleCommand(command settings.LifecycleCommand) (settings.LifecycleCommand, error)
+	DeleteLifecycleCommand(commandID string) error
+	ListLifecycleCommandChains() ([]settings.LifecycleCommandChain, error)
+	SaveLifecycleCommandChain(chain settings.LifecycleCommandChain) (settings.LifecycleCommandChain, error)
+	CopyLifecycleCommandChain(chainID string) (settings.LifecycleCommandChain, error)
+	DeleteLifecycleCommandChain(chainID string) error
+	ListLifecyclePresets() ([]settings.LifecyclePreset, error)
+	SaveLifecyclePreset(preset settings.LifecyclePreset) (settings.LifecyclePreset, error)
+	CopyLifecyclePreset(presetID string) (settings.LifecyclePreset, error)
+	DeleteLifecyclePreset(presetID string) error
+	SaveDefaultLifecyclePreset(presetID string) (settings.Settings, error)
+}
+
 type EventPublisher interface {
 	PublishTerminalEvent(event terminal.Event)
 }

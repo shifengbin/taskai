@@ -60,6 +60,46 @@ func TestServiceCreatesPendingTask(t *testing.T) {
 	}
 }
 
+func TestServiceCreatesTaskFromDefaultLifecyclePreset(t *testing.T) {
+	service, repository, _ := newService(t)
+	chain, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
+		Name: "开始后准备", Commands: []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandCreateWorkspaceID}},
+		ApplicableHooks: []settings.LifecycleHook{task.LifecycleHookPostStart},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
+	}
+	preset, err := repository.SaveLifecyclePreset(settings.LifecyclePreset{
+		Name: "开始后预设", Chains: map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecyclePreset() error = %v", err)
+	}
+	if _, err := repository.SaveDefaultLifecyclePreset(preset.ID); err != nil {
+		t.Fatalf("SaveDefaultLifecyclePreset() error = %v", err)
+	}
+
+	created, err := service.CreateTask("使用预设", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if want := map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID}; !reflect.DeepEqual(created.LifecycleChains, want) {
+		t.Fatalf("CreateTask() 生命周期链 = %#v，期望 %#v", created.LifecycleChains, want)
+	}
+}
+
+func TestServicePersistsExplicitEmptyLifecycleChains(t *testing.T) {
+	service, _, _ := newService(t)
+
+	created, err := service.CreateTaskWithExtraInfoAndLifecycleChains("不使用预设", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndLifecycleChains() error = %v", err)
+	}
+	if len(created.LifecycleChains) != 0 {
+		t.Fatalf("显式空生命周期链 = %#v，期望为空", created.LifecycleChains)
+	}
+}
+
 func TestServiceCreatesAndUpdatesCurrentTaskTemplateFields(t *testing.T) {
 	service, repository, _ := newService(t)
 	data, err := repository.Load()

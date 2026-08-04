@@ -379,8 +379,24 @@ func (app *App) DeleteLifecycleCommandChain(chainID string) error {
 	return app.repository.DeleteLifecycleCommandChain(chainID)
 }
 
-func (app *App) SaveLifecycleDefaultChain(hook task.LifecycleHook, chainID string) (settings.Settings, error) {
-	return app.repository.SaveLifecycleDefaultChain(hook, chainID)
+func (app *App) ListLifecyclePresets() ([]settings.LifecyclePreset, error) {
+	return app.repository.ListLifecyclePresets()
+}
+
+func (app *App) SaveLifecyclePreset(preset settings.LifecyclePreset) (settings.LifecyclePreset, error) {
+	return app.repository.SaveLifecyclePreset(preset)
+}
+
+func (app *App) CopyLifecyclePreset(presetID string) (settings.LifecyclePreset, error) {
+	return app.repository.CopyLifecyclePreset(presetID)
+}
+
+func (app *App) DeleteLifecyclePreset(presetID string) error {
+	return app.repository.DeleteLifecyclePreset(presetID)
+}
+
+func (app *App) SaveDefaultLifecyclePreset(presetID string) (settings.Settings, error) {
+	return app.repository.SaveDefaultLifecyclePreset(presetID)
 }
 
 type lifecycleRun struct {

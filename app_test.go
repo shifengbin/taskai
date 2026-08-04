@@ -96,6 +96,28 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	}
 }
 
+func TestAppExposesLifecyclePresetBindings(t *testing.T) {
+	app := newApp(t.TempDir())
+	preset, err := app.SaveLifecyclePreset(settings.LifecyclePreset{Name: "空预设", Chains: map[task.LifecycleHook]string{}})
+	if err != nil {
+		t.Fatalf("SaveLifecyclePreset() error = %v", err)
+	}
+	listed, err := app.ListLifecyclePresets()
+	if err != nil || len(listed) != 2 {
+		t.Fatalf("ListLifecyclePresets() = (%#v, %v)", listed, err)
+	}
+	copy, err := app.CopyLifecyclePreset(preset.ID)
+	if err != nil || copy.ID == preset.ID {
+		t.Fatalf("CopyLifecyclePreset() = (%#v, %v)", copy, err)
+	}
+	if _, err := app.SaveDefaultLifecyclePreset(preset.ID); err != nil {
+		t.Fatalf("SaveDefaultLifecyclePreset() error = %v", err)
+	}
+	if err := app.DeleteLifecyclePreset(preset.ID); err != nil {
+		t.Fatalf("DeleteLifecyclePreset() error = %v", err)
+	}
+}
+
 func TestAppSaveSettingsWithoutTemplateSnapshotKeepsSavedTaskTemplates(t *testing.T) {
 	app := newApp(t.TempDir())
 	before, err := app.GetSettings()
@@ -186,7 +208,7 @@ func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: "fail-before-start", Name: "失败前置链", CommandIDs: []string{"fail"},
 	})
-	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "fail-before-start"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "fail-before-start"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
 		return lifecycle.CommandResult{StandardError: []byte("拒绝开始")}, errors.New("exit status 1")
@@ -226,10 +248,6 @@ func TestAppPreservesSavedLifecycleChainWhenTaskStartsAfterStaleSettingsSave(t *
 	if err != nil {
 		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
 	}
-	if _, err := app.SaveLifecycleDefaultChain(task.LifecycleHookBeforeStart, chain.ID); err != nil {
-		t.Fatalf("SaveLifecycleDefaultChain() error = %v", err)
-	}
-
 	created, err := app.CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains("初始化任务", "", task.DefaultColor, nil, map[string]any{"branch": "main"}, map[task.LifecycleHook]string{
 		task.LifecycleHookBeforeStart: chain.ID,
 	})
@@ -359,8 +377,8 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 		settings.LifecycleCommandChain{ID: "before-chain", Name: "开始前链", CommandIDs: []string{settings.LifecycleCommandCreateWorkspaceID, "before-command"}},
 		settings.LifecycleCommandChain{ID: "post-chain", Name: "结束后链", CommandIDs: []string{"post-command"}},
 	)
-	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "before-chain"
-	current.LifecycleDefaultChains[task.LifecycleHookPostEnd] = "post-chain"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "before-chain"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookPostEnd] = "post-chain"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	directories := make(map[string]string)
@@ -417,7 +435,7 @@ func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: "template-input", Name: "模板输入", Commands: []settings.LifecycleCommandReference{{CommandID: "template-input", Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
 	})
-	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "template-input"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "template-input"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	payloads := make(chan map[string]any, 1)
@@ -479,7 +497,7 @@ func TestAppFreezesTaskTemplateBranchForSpecifiedRepositoryClone(t *testing.T) {
 			{CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + remoteRepository}},
 		},
 	})
-	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "clone-template"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "clone-template"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"branch": "release/1.2"})
@@ -625,7 +643,7 @@ func newManifestLifecycleApp(t *testing.T, hook task.LifecycleHook, includeCreat
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: chainID, Name: "生成清单文件", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHook(hook)}, Commands: commands,
 	})
-	current.LifecycleDefaultChains[settings.LifecycleHook(hook)] = chainID
+	current.LifecyclePresets[0].Chains[settings.LifecycleHook(hook)] = chainID
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 	return app
 }
@@ -711,7 +729,7 @@ func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testin
 				CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + filepath.Join(t.TempDir(), "missing.git")},
 			}},
 		})
-		current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "clone-before-start"
+		current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "clone-before-start"
 		saveSettingsWithLifecycleConfiguration(t, app, current)
 
 		created, err := app.CreateTask("初始化失败", "", task.DefaultColor)
@@ -742,7 +760,7 @@ func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testin
 				CommandID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + remoteRepository},
 			}},
 		})
-		current.LifecycleDefaultChains[task.LifecycleHookPostStart] = "clone-post-start"
+		current.LifecyclePresets[0].Chains[task.LifecycleHookPostStart] = "clone-post-start"
 		saveSettingsWithLifecycleConfiguration(t, app, current)
 
 		created, err := app.CreateTask("可重试初始化", "", task.DefaultColor)
@@ -799,7 +817,7 @@ func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
 			{CommandID: "capture-template-environment", Arguments: []string{}},
 		}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
 	})
-	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "capture-template-environment"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "capture-template-environment"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 	if app.statusHTTP.APIURL() == "" {
 		t.Fatal("独立 HTTP 服务未启动")
@@ -927,7 +945,7 @@ func configureLifecycleFailure(t *testing.T, app *App, hook task.LifecycleHook) 
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: chainID, Name: "失败链", CommandIDs: []string{commandID},
 	})
-	current.LifecycleDefaultChains[hook] = chainID
+	current.LifecyclePresets[0].Chains[hook] = chainID
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
 		return lifecycle.CommandResult{StandardError: []byte("失败")}, errors.New("exit status 1")
@@ -946,7 +964,7 @@ func TestAppRunsUpdateTaskHookOnlyForRunningTask(t *testing.T) {
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: "update-chain", Name: "更新链", CommandIDs: []string{"record-update"},
 	})
-	current.LifecycleDefaultChains[task.LifecycleHookUpdateTask] = "update-chain"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookUpdateTask] = "update-chain"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	calls := 0
@@ -995,7 +1013,7 @@ func TestAppRetriesFailedLifecycleChainFromFirstCommand(t *testing.T) {
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: "retry-before-start", Name: "可重试开始链", CommandIDs: []string{"retryable"},
 	})
-	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "retry-before-start"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "retry-before-start"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 
 	fail := true
@@ -1134,7 +1152,7 @@ func TestAppRecordsDeletedLifecycleChainAsFailed(t *testing.T) {
 		}
 	}
 	data.Settings.LifecycleChains = chains
-	delete(data.Settings.LifecycleDefaultChains, settings.LifecycleHookBeforeStart)
+	delete(data.Settings.LifecyclePresets[0].Chains, settings.LifecycleHookBeforeStart)
 	if err := app.repository.Save(data); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -1196,7 +1214,8 @@ func saveSettingsWithLifecycleConfiguration(t *testing.T, app *App, next setting
 	}
 	next.LifecycleCommands = nil
 	next.LifecycleChains = nil
-	next.LifecycleDefaultChains = nil
+	next.LifecyclePresets = nil
+	next.DefaultLifecyclePresetID = ""
 	if _, err := app.SaveSettings(next); err != nil {
 		t.Fatalf("SaveSettings() error = %v", err)
 	}
@@ -1235,16 +1254,13 @@ func saveSettingsWithLifecycleConfiguration(t *testing.T, app *App, next setting
 		}
 	}
 
-	for _, hook := range []task.LifecycleHook{
-		task.LifecycleHookBeforeStart,
-		task.LifecycleHookPostStart,
-		task.LifecycleHookBeforeEnd,
-		task.LifecycleHookPostEnd,
-		task.LifecycleHookUpdateTask,
-	} {
-		if _, err := app.SaveLifecycleDefaultChain(hook, desired.LifecycleDefaultChains[hook]); err != nil {
-			t.Fatalf("SaveLifecycleDefaultChain() error = %v", err)
+	for _, preset := range desired.LifecyclePresets {
+		if _, err := app.SaveLifecyclePreset(preset); err != nil {
+			t.Fatalf("SaveLifecyclePreset() error = %v", err)
 		}
+	}
+	if _, err := app.SaveDefaultLifecyclePreset(desired.DefaultLifecyclePresetID); err != nil {
+		t.Fatalf("SaveDefaultLifecyclePreset() error = %v", err)
 	}
 	current, err := app.GetSettings()
 	if err != nil {
@@ -1365,7 +1381,7 @@ func TestAppRecordsFailingLifecycleCommandDetails(t *testing.T) {
 	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
 		ID: "two-steps", Name: "两步准备", CommandIDs: []string{"first", "second"},
 	})
-	current.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = "two-steps"
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "two-steps"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(invocation lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
 		if invocation.Command == "second" {
@@ -1643,7 +1659,7 @@ func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 	}
 }
 
-func TestAppExposesLifecycleCommandAndChainManagementBindings(t *testing.T) {
+func TestAppExposesLifecycleCommandChainAndPresetManagementBindings(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	commands, err := app.ListLifecycleCommands()
 	if err != nil || len(commands) < 2 {
@@ -1657,11 +1673,15 @@ func TestAppExposesLifecycleCommandAndChainManagementBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
 	}
-	if _, err := app.SaveLifecycleDefaultChain(task.LifecycleHookBeforeStart, chain.ID); err == nil {
-		t.Fatal("SaveLifecycleDefaultChain() error = nil，期望拒绝不适用默认链")
+	if _, err := app.SaveLifecyclePreset(settings.LifecyclePreset{Name: "不适用预设", Chains: map[task.LifecycleHook]string{task.LifecycleHookBeforeStart: chain.ID}}); err == nil {
+		t.Fatal("SaveLifecyclePreset() error = nil，期望拒绝不适用链")
 	}
-	if current, err := app.SaveLifecycleDefaultChain(task.LifecycleHookPostStart, chain.ID); err != nil || current.LifecycleDefaultChains[task.LifecycleHookPostStart] != chain.ID {
-		t.Fatalf("SaveLifecycleDefaultChain() = (%#v, %v)", current, err)
+	preset, err := app.SaveLifecyclePreset(settings.LifecyclePreset{Name: "转换预设", Chains: map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID}})
+	if err != nil {
+		t.Fatalf("SaveLifecyclePreset() error = %v", err)
+	}
+	if current, err := app.SaveDefaultLifecyclePreset(preset.ID); err != nil || current.DefaultLifecyclePresetID != preset.ID {
+		t.Fatalf("SaveDefaultLifecyclePreset() = (%#v, %v)", current, err)
 	}
 	copy, err := app.CopyLifecycleCommandChain(chain.ID)
 	if err != nil {
@@ -1669,6 +1689,12 @@ func TestAppExposesLifecycleCommandAndChainManagementBindings(t *testing.T) {
 	}
 	if err := app.DeleteLifecycleCommand(command.ID); err == nil {
 		t.Fatal("删除被命令链引用的命令 error = nil")
+	}
+	if err := app.DeleteLifecycleCommandChain(chain.ID); err == nil {
+		t.Fatal("删除被预设引用的命令链 error = nil")
+	}
+	if err := app.DeleteLifecyclePreset(preset.ID); err != nil {
+		t.Fatalf("DeleteLifecyclePreset() error = %v", err)
 	}
 	if err := app.DeleteLifecycleCommandChain(chain.ID); err != nil {
 		t.Fatalf("DeleteLifecycleCommandChain() error = %v", err)

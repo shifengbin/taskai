@@ -113,7 +113,23 @@ export namespace settings {
 		    return a;
 		}
 	}
-	
+
+	export class LifecyclePreset {
+	    id: string;
+	    name: string;
+	    chains: Record<string, string>;
+
+	    static createFrom(source: any = {}) {
+	        return new LifecyclePreset(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.chains = source["chains"];
+	    }
+	}
 	export class TaskScript {
 	    script?: string;
 	    arguments?: string[];
@@ -184,7 +200,9 @@ export namespace settings {
 	    httpServiceEnabled: boolean;
 	    lifecycleCommands: LifecycleCommand[];
 	    lifecycleChains: LifecycleCommandChain[];
-	    lifecycleDefaultChains: Record<string, string>;
+	    lifecyclePresets: LifecyclePreset[];
+	    defaultLifecyclePresetId: string;
+	    lifecycleDefaultChains?: Record<string, string>;
 	    taskTemplates: task.TaskTemplate[];
 	    activeTaskTemplateId: string;
 	    presetVersion: number;
@@ -206,6 +224,8 @@ export namespace settings {
 	        this.httpServiceEnabled = source["httpServiceEnabled"];
 	        this.lifecycleCommands = this.convertValues(source["lifecycleCommands"], LifecycleCommand);
 	        this.lifecycleChains = this.convertValues(source["lifecycleChains"], LifecycleCommandChain);
+	        this.lifecyclePresets = this.convertValues(source["lifecyclePresets"], LifecyclePreset);
+	        this.defaultLifecyclePresetId = source["defaultLifecyclePresetId"];
 	        this.lifecycleDefaultChains = source["lifecycleDefaultChains"];
 	        this.taskTemplates = this.convertValues(source["taskTemplates"], task.TaskTemplate);
 	        this.activeTaskTemplateId = source["activeTaskTemplateId"];
@@ -596,4 +616,3 @@ export namespace terminal {
 	}
 
 }
-

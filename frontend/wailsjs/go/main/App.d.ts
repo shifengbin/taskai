@@ -11,6 +11,8 @@ export function CloseTerminal(arg1:string,arg2:string):Promise<void>;
 
 export function CopyLifecycleCommandChain(arg1:string):Promise<settings.LifecycleCommandChain>;
 
+export function CopyLifecyclePreset(arg1:string):Promise<settings.LifecyclePreset>;
+
 export function CreateCommandTerminal(arg1:string,arg2:string,arg3:Array<string>,arg4:number,arg5:number):Promise<terminal.Info>;
 
 export function CreateTask(arg1:string,arg2:string,arg3:string):Promise<task.Task>;
@@ -37,6 +39,8 @@ export function DeleteLifecycleCommand(arg1:string):Promise<void>;
 
 export function DeleteLifecycleCommandChain(arg1:string):Promise<void>;
 
+export function DeleteLifecyclePreset(arg1:string):Promise<void>;
+
 export function DetectShells():Promise<Array<string>>;
 
 export function ExecuteTaskMenuCommand(arg1:string,arg2:string,arg3:number,arg4:number):Promise<application.TaskMenuCommandResult>;
@@ -59,6 +63,8 @@ export function ListLifecycleCommandChains():Promise<Array<settings.LifecycleCom
 
 export function ListLifecycleCommands():Promise<Array<settings.LifecycleCommand>>;
 
+export function ListLifecyclePresets():Promise<Array<settings.LifecyclePreset>>;
+
 export function ListTasks():Promise<Array<task.Task>>;
 
 export function OpenTaskFolder(arg1:string):Promise<void>;
@@ -75,6 +81,8 @@ export function RetryTaskLifecycleCommandChain(arg1:string):Promise<task.Task>;
 
 export function RunTaskCommand(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;
 
+export function SaveDefaultLifecyclePreset(arg1:string):Promise<settings.Settings>;
+
 export function SaveExtraInfo(arg1:task.ExtraInfo):Promise<task.ExtraInfo>;
 
 export function SaveExtraInfoCatalogue(arg1:string):Promise<string>;
@@ -85,7 +93,7 @@ export function SaveLifecycleCommand(arg1:settings.LifecycleCommand):Promise<set
 
 export function SaveLifecycleCommandChain(arg1:settings.LifecycleCommandChain):Promise<settings.LifecycleCommandChain>;
 
-export function SaveLifecycleDefaultChain(arg1:task.LifecycleHook,arg2:string):Promise<settings.Settings>;
+export function SaveLifecyclePreset(arg1:settings.LifecyclePreset):Promise<settings.LifecyclePreset>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<settings.Settings>;
 
