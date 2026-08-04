@@ -255,7 +255,9 @@ describe('TaskTree', () => {
       />,
     )
 
-    expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-selected', 'true')
+    const row = screen.getByText('整理发布说明').closest('[data-task-id]')
+    expect(row).toHaveAttribute('data-task-selected', 'true')
+    expect(row).toHaveStyle({backgroundColor: 'rgba(0, 0, 0, 0.08)'})
   })
 
   it('庭院任务行保持平面边界', () => {
@@ -416,7 +418,7 @@ describe('TaskTree', () => {
     expect(screen.getByText('整理发布说明').closest('[data-task-id]')).not.toHaveTextContent('执行中')
   })
 
-  it('通过状态标签筛选任务并使用任务颜色标记节点', async () => {
+  it('通过状态标签筛选任务并使用同色标记与极浅底色', async () => {
     const user = userEvent.setup()
     const onChangeStatus = vi.fn()
     const pendingTask: TaskRecord = {...runningTask, id: 'task-pending', title: '待处理任务', status: 'pending', color: '#f97316'}
@@ -438,7 +440,10 @@ describe('TaskTree', () => {
       />,
     )
 
-    expect(screen.getByText('待处理任务').closest('[data-task-id]')).toHaveStyle({borderLeftColor: 'rgb(249, 115, 22)'})
+    expect(screen.getByText('待处理任务').closest('[data-task-id]')).toHaveStyle({
+      borderLeftColor: 'rgb(249, 115, 22)',
+      backgroundColor: '#f973160a',
+    })
     expect(screen.queryByText('整理发布说明')).not.toBeInTheDocument()
     expect(screen.queryByText('已完成任务')).not.toBeInTheDocument()
 

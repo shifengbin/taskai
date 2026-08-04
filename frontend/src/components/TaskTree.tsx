@@ -419,7 +419,7 @@ export function TaskTree({
                     borderLeftStyle: 'solid',
                     position: 'relative',
                     borderRadius: 0,
-							bgcolor: isTaskRowSelected ? 'action.selected' : 'transparent',
+							bgcolor: isTaskRowSelected ? 'action.selected' : `${taskColor}0A`,
                     opacity: draggedTaskID === task.id ? 0.5 : 1,
                     outline: draggedTaskID === task.id ? '2px solid' : '2px solid transparent',
 						outlineColor: draggedTaskID === task.id ? 'primary.main' : 'transparent',
