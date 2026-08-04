@@ -87,7 +87,7 @@ func (service *Service) createTask(title, description, color string, extraInfo [
 		return task.Task{}, err
 	}
 	data.Tasks = append(data.Tasks, created)
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 
@@ -154,7 +154,7 @@ func (service *Service) DeleteCompletedTasks(taskIDs []string) ([]task.Task, err
 		}
 	}
 	data.Tasks = remaining
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return nil, err
 	}
 
@@ -196,7 +196,7 @@ func (service *Service) ReorderTasks(status task.Status, taskIDs []string) ([]ta
 	for index, position := range positions {
 		data.Tasks[position] = tasksByID[taskIDs[index]]
 	}
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return nil, err
 	}
 
@@ -250,7 +250,7 @@ func (service *Service) SetTaskShelved(taskID string, shelved bool) ([]task.Task
 	for positionIndex, taskIndex := range positions {
 		data.Tasks[taskIndex] = ordered[positionIndex]
 	}
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return nil, err
 	}
 	return data.Tasks, nil
@@ -270,7 +270,7 @@ func (service *Service) UpdateTask(taskID, title, description, color string) (ta
 		return task.Task{}, err
 	}
 	data.Tasks[index] = updated
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 	return updated, nil
@@ -298,7 +298,7 @@ func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, colo
 		return task.Task{}, err
 	}
 	data.Tasks[index] = updated
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 	return updated, nil
@@ -330,7 +330,7 @@ func (service *Service) UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, 
 		return task.Task{}, err
 	}
 	data.Tasks[index] = updated
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 	return updated, nil
@@ -354,7 +354,7 @@ func (service *Service) UpdateTaskWithTemplateFields(taskID, title, description,
 		return task.Task{}, err
 	}
 	data.Tasks[index] = updated
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 	return updated, nil
@@ -394,7 +394,7 @@ func (service *Service) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title,
 		return task.Task{}, err
 	}
 	data.Tasks[index] = updated
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 	return updated, nil
@@ -438,7 +438,7 @@ func (service *Service) UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
 		return task.Task{}, err
 	}
 	data.Tasks[index] = updated
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 	return updated, nil
@@ -476,7 +476,7 @@ func (service *Service) UpdateLifecycleExecutionIfNewer(taskID string, execution
 		return data.Tasks[index], false, nil
 	}
 	data.Tasks[index].LifecycleExecution = normalized
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, false, err
 	}
 	return data.Tasks[index], true, nil
@@ -504,7 +504,7 @@ func (service *Service) ClearLifecycleExecutionIfCurrent(taskID, runID string, r
 		return data.Tasks[index], false, nil
 	}
 	data.Tasks[index].LifecycleExecution = nil
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, false, err
 	}
 	return data.Tasks[index], true, nil
@@ -524,7 +524,7 @@ func (service *Service) updateLifecycleExecution(taskID string, execution *task.
 		return task.Task{}, err
 	}
 	data.Tasks[index].LifecycleExecution = normalized
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 	return data.Tasks[index], nil
@@ -787,7 +787,7 @@ func (service *Service) CommitStartTask(prepared task.Task) (task.Task, error) {
 	data.Tasks[index].Shelved = false
 	data.Tasks[index].WorkspaceRoot = prepared.WorkspaceRoot
 	data.Tasks[index].WorkspacePath = prepared.WorkspacePath
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 
@@ -815,7 +815,7 @@ func (service *Service) FinishTask(taskID string) (task.Task, error) {
 	data.Tasks[index].Status = task.StatusCompleted
 	data.Tasks[index].Shelved = false
 	data.Tasks[index].CompletedAt = &completedAt
-	if err := service.repository.Save(data); err != nil {
+	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
 		return task.Task{}, err
 	}
 

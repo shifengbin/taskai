@@ -28,6 +28,7 @@ type Repository struct {
 	path             string
 	defaultSettings  settings.Settings
 	loadMu           sync.Mutex
+	mutationMu       sync.Mutex
 	startupRecovered bool
 }
 
@@ -435,6 +436,19 @@ func (repository *Repository) Save(data Data) error {
 	return nil
 }
 
+// SaveTaskSnapshot updates tasks without restoring settings from a stale task snapshot.
+func (repository *Repository) SaveTaskSnapshot(tasks []task.Task) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
+	data, err := repository.Load()
+	if err != nil {
+		return err
+	}
+	data.Tasks = tasks
+	return repository.Save(data)
+}
+
 func normalizeDataForSave(data Data) (Data, bool, error) {
 	if data.ExtraInfos == nil {
 		data.ExtraInfos = []task.ExtraInfo{}
@@ -446,6 +460,9 @@ func normalizeDataForSave(data Data) (Data, bool, error) {
 }
 
 func (repository *Repository) SaveSettings(next settings.Settings) (settings.Settings, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return settings.Settings{}, err
@@ -537,6 +554,9 @@ func (repository *Repository) ListLifecycleCommands() ([]settings.LifecycleComma
 }
 
 func (repository *Repository) SaveLifecycleCommand(next settings.LifecycleCommand) (settings.LifecycleCommand, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return settings.LifecycleCommand{}, err
@@ -574,6 +594,9 @@ func (repository *Repository) SaveLifecycleCommand(next settings.LifecycleComman
 }
 
 func (repository *Repository) DeleteLifecycleCommand(id string) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return err
@@ -617,6 +640,9 @@ func (repository *Repository) ListLifecyclePresets() ([]settings.LifecyclePreset
 }
 
 func (repository *Repository) SaveLifecyclePreset(next settings.LifecyclePreset) (settings.LifecyclePreset, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return settings.LifecyclePreset{}, err
@@ -663,6 +689,9 @@ func (repository *Repository) CopyLifecyclePreset(id string) (settings.Lifecycle
 }
 
 func (repository *Repository) DeleteLifecyclePreset(id string) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return err
@@ -684,6 +713,9 @@ func (repository *Repository) DeleteLifecyclePreset(id string) error {
 }
 
 func (repository *Repository) SaveDefaultLifecyclePreset(id string) (settings.Settings, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return settings.Settings{}, err
@@ -704,6 +736,9 @@ func (repository *Repository) SaveDefaultLifecyclePreset(id string) (settings.Se
 }
 
 func (repository *Repository) SaveLifecycleCommandChain(next settings.LifecycleCommandChain) (settings.LifecycleCommandChain, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return settings.LifecycleCommandChain{}, err
@@ -773,6 +808,9 @@ func (repository *Repository) CopyLifecycleCommandChain(id string) (settings.Lif
 }
 
 func (repository *Repository) DeleteLifecycleCommandChain(id string) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return err
@@ -893,6 +931,9 @@ func (repository *Repository) ListExtraInfos() ([]task.ExtraInfo, error) {
 }
 
 func (repository *Repository) SaveExtraInfoTemplate(next task.ExtraInfoTemplate) (task.ExtraInfoTemplate, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return task.ExtraInfoTemplate{}, err
@@ -961,6 +1002,9 @@ func ensureInformationFieldsRemain(info task.ExtraInfo, template task.ExtraInfoT
 }
 
 func (repository *Repository) DeleteExtraInfoTemplate(id string) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return err
@@ -989,6 +1033,9 @@ func (repository *Repository) DeleteExtraInfoTemplate(id string) error {
 }
 
 func (repository *Repository) SaveExtraInfo(next task.ExtraInfo) (task.ExtraInfo, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return task.ExtraInfo{}, err
@@ -1031,6 +1078,9 @@ func (repository *Repository) SaveExtraInfo(next task.ExtraInfo) (task.ExtraInfo
 }
 
 func (repository *Repository) DeleteExtraInfo(id string) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
 	data, err := repository.Load()
 	if err != nil {
 		return err

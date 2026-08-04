@@ -1317,6 +1317,40 @@ func TestRepositoryManagesLifecyclePresets(t *testing.T) {
 	}
 }
 
+func TestRepositorySaveTaskSnapshotPreservesLifecyclePresetAddedAfterTaskLoad(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	stale, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	preset, err := repository.SaveLifecyclePreset(settings.LifecyclePreset{
+		Name: "发布预设",
+		Chains: map[task.LifecycleHook]string{
+			task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveLifecyclePreset() error = %v", err)
+	}
+
+	stale.Tasks = append(stale.Tasks, task.Task{
+		ID: "task-1", Title: "并行任务", Color: task.DefaultColor, Status: task.StatusPending, ExtraInfo: []task.TaskExtraInfo{},
+	})
+	if err := repository.SaveTaskSnapshot(stale.Tasks); err != nil {
+		t.Fatalf("SaveTaskSnapshot() error = %v", err)
+	}
+
+	restarted, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("restart Load() error = %v", err)
+	}
+	if lifecyclePresetIndex(restarted.Settings.LifecyclePresets, preset.ID) < 0 {
+		t.Fatalf("重启后丢失已保存的预设: %#v", restarted.Settings.LifecyclePresets)
+	}
+}
+
 func TestRepositoryPreservesChainArgumentsWhenCommandDisablesChainArguments(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 	command, err := repository.SaveLifecycleCommand(settings.LifecycleCommand{
