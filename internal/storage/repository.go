@@ -106,6 +106,14 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 		data.Settings = presetSettings
 		changed = true
 	}
+	validatedLifecycleSettings, err := settings.NormalizeLifecycle(data.Settings)
+	if err != nil {
+		return Data{}, false, fmt.Errorf("validate lifecycle presets: %w", err)
+	}
+	if !sameJSON(data.Settings, validatedLifecycleSettings) {
+		changed = true
+	}
+	data.Settings = validatedLifecycleSettings
 	if data.Tasks == nil {
 		data.Tasks = []task.Task{}
 		changed = true
@@ -195,7 +203,7 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 		if err != nil {
 			return Data{}, false, fmt.Errorf("validate task extra info: %w", err)
 		}
-		lifecycleNormalized, lifecycleChanged, err := normalizeTaskLifecycle(normalized, data.Settings.LifecycleDefaultChains, recoverInterruptedLifecycle)
+		lifecycleNormalized, lifecycleChanged, err := normalizeTaskLifecycle(normalized, data.Settings.DefaultLifecyclePresetChains(), recoverInterruptedLifecycle)
 		if err != nil {
 			return Data{}, false, fmt.Errorf("normalize task lifecycle: %w", err)
 		}
@@ -446,7 +454,9 @@ func (repository *Repository) SaveSettings(next settings.Settings) (settings.Set
 	// 生命周期配置只能通过专用接口更新，普通设置快照不能覆盖最新链定义。
 	next.LifecycleCommands = data.Settings.LifecycleCommands
 	next.LifecycleChains = data.Settings.LifecycleChains
-	next.LifecycleDefaultChains = data.Settings.LifecycleDefaultChains
+	next.LifecyclePresets = data.Settings.LifecyclePresets
+	next.DefaultLifecyclePresetID = data.Settings.DefaultLifecyclePresetID
+	next.LegacyLifecycleDefaultChains = data.Settings.LegacyLifecycleDefaultChains
 	validated, err := settings.NormalizeTaskTemplates(next)
 	if err != nil {
 		return settings.Settings{}, err
@@ -606,8 +616,19 @@ func (repository *Repository) SaveLifecycleDefaultChain(hook task.LifecycleHook,
 	if err != nil {
 		return settings.Settings{}, err
 	}
-	defaults := make(map[task.LifecycleHook]string, len(data.Settings.LifecycleDefaultChains))
-	for currentHook, currentChainID := range data.Settings.LifecycleDefaultChains {
+	presetIndex := -1
+	for index, preset := range data.Settings.LifecyclePresets {
+		if preset.ID == data.Settings.DefaultLifecyclePresetID {
+			presetIndex = index
+			break
+		}
+	}
+	if presetIndex < 0 {
+		return settings.Settings{}, fmt.Errorf("当前没有默认生命周期预设")
+	}
+	chains := data.Settings.LifecyclePresets[presetIndex].Chains
+	defaults := make(map[task.LifecycleHook]string, len(chains))
+	for currentHook, currentChainID := range chains {
 		defaults[currentHook] = currentChainID
 	}
 	chainID = strings.TrimSpace(chainID)
@@ -623,7 +644,7 @@ func (repository *Repository) SaveLifecycleDefaultChain(hook task.LifecycleHook,
 		}
 		defaults[hook] = chainID
 	}
-	data.Settings.LifecycleDefaultChains = defaults
+	data.Settings.LifecyclePresets[presetIndex].Chains = defaults
 	data.Settings, err = settings.NormalizeLifecycle(data.Settings)
 	if err != nil {
 		return settings.Settings{}, err
@@ -716,9 +737,11 @@ func (repository *Repository) DeleteLifecycleCommandChain(id string) error {
 		}
 	}
 	data.Settings.LifecycleChains = append(data.Settings.LifecycleChains[:index], data.Settings.LifecycleChains[index+1:]...)
-	for hook, defaultID := range data.Settings.LifecycleDefaultChains {
-		if defaultID == id {
-			delete(data.Settings.LifecycleDefaultChains, hook)
+	for presetIndex := range data.Settings.LifecyclePresets {
+		for hook, selectedID := range data.Settings.LifecyclePresets[presetIndex].Chains {
+			if selectedID == id {
+				delete(data.Settings.LifecyclePresets[presetIndex].Chains, hook)
+			}
 		}
 	}
 	data.Settings, err = settings.NormalizeLifecycle(data.Settings)

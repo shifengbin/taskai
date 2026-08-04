@@ -59,10 +59,11 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	if !reflect.DeepEqual(current.LifecycleChains[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart}) || !reflect.DeepEqual(current.LifecycleChains[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
 		t.Fatalf("内置命令链适用范围 = %#v", current.LifecycleChains)
 	}
-	if got := current.LifecycleDefaultChains[LifecycleHookBeforeStart]; got != LifecycleChainCreateWorkspaceID {
+	defaultChains := current.DefaultLifecyclePresetChains()
+	if got := defaultChains[LifecycleHookBeforeStart]; got != LifecycleChainCreateWorkspaceID {
 		t.Fatalf("beforeStart 默认链 = %q，期望 %q", got, LifecycleChainCreateWorkspaceID)
 	}
-	if got := current.LifecycleDefaultChains[LifecycleHookPostEnd]; got != LifecycleChainDeleteWorkspaceID {
+	if got := defaultChains[LifecycleHookPostEnd]; got != LifecycleChainDeleteWorkspaceID {
 		t.Fatalf("postEnd 默认链 = %q，期望 %q", got, LifecycleChainDeleteWorkspaceID)
 	}
 	if got := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandCreateWorkspaceID).ChainArgumentMode; got != LifecycleCommandChainArgumentModeDisabled {
@@ -73,6 +74,127 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	}
 	if got := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandGitCloneID).ChainArgumentMode; got != LifecycleCommandChainArgumentModeEnabled {
 		t.Fatalf("Git 仓库克隆命令的链级参数模式 = %q，期望允许", got)
+	}
+}
+
+func TestDefaultIncludesLifecyclePreset(t *testing.T) {
+	current := Default(t.TempDir())
+	want := LifecyclePreset{
+		ID:   DefaultLifecyclePresetID,
+		Name: "默认预设",
+		Chains: map[task.LifecycleHook]string{
+			LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
+			LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
+		},
+	}
+
+	if current.DefaultLifecyclePresetID != DefaultLifecyclePresetID {
+		t.Fatalf("默认生命周期预设 ID = %q，期望 %q", current.DefaultLifecyclePresetID, DefaultLifecyclePresetID)
+	}
+	if !reflect.DeepEqual(current.LifecyclePresets, []LifecyclePreset{want}) {
+		t.Fatalf("默认生命周期预设 = %#v，期望 %#v", current.LifecyclePresets, []LifecyclePreset{want})
+	}
+	if got := current.DefaultLifecyclePresetChains(); !reflect.DeepEqual(got, want.Chains) {
+		t.Fatalf("默认生命周期预设映射 = %#v，期望 %#v", got, want.Chains)
+	}
+	got := current.DefaultLifecyclePresetChains()
+	got[LifecycleHookBeforeStart] = "changed"
+	if current.LifecyclePresets[0].Chains[LifecycleHookBeforeStart] != LifecycleChainCreateWorkspaceID {
+		t.Fatalf("默认生命周期预设映射必须返回副本: %#v", current.LifecyclePresets[0].Chains)
+	}
+}
+
+func TestNormalizeLifecyclePresets(t *testing.T) {
+	base := Default(t.TempDir())
+	base.LifecycleChains = []LifecycleCommandChain{{
+		ID:              "chain-prepare",
+		Name:            "准备",
+		Commands:        []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}},
+		ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+	}}
+
+	t.Run("规范化名称并复制映射", func(t *testing.T) {
+		chains := map[LifecycleHook]string{LifecycleHookBeforeStart: " chain-prepare "}
+		current := base
+		current.LifecyclePresets = []LifecyclePreset{{ID: " preset-prepare ", Name: " 准备预设 ", Chains: chains}, {ID: "empty", Name: "空预设", Chains: map[LifecycleHook]string{}}}
+		current.DefaultLifecyclePresetID = " preset-prepare "
+
+		normalized, err := NormalizeLifecycle(current)
+		if err != nil {
+			t.Fatalf("NormalizeLifecycle() error = %v", err)
+		}
+		if normalized.LifecyclePresets[0].ID != "preset-prepare" || normalized.LifecyclePresets[0].Name != "准备预设" {
+			t.Fatalf("规范化预设 = %#v", normalized.LifecyclePresets[0])
+		}
+		if normalized.DefaultLifecyclePresetID != "preset-prepare" {
+			t.Fatalf("规范化默认预设 ID = %q", normalized.DefaultLifecyclePresetID)
+		}
+		chains[LifecycleHookBeforeStart] = "changed"
+		if got := normalized.LifecyclePresets[0].Chains[LifecycleHookBeforeStart]; got != "chain-prepare" {
+			t.Fatalf("预设链映射没有深拷贝: %q", got)
+		}
+	})
+
+	for _, scenario := range []struct {
+		name    string
+		mutate  func(*Settings)
+		wantErr bool
+	}{
+		{
+			name: "空名称",
+			mutate: func(current *Settings) {
+				current.LifecyclePresets = []LifecyclePreset{{ID: "preset", Name: " ", Chains: map[LifecycleHook]string{}}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "名称大小写重复",
+			mutate: func(current *Settings) {
+				current.LifecyclePresets = []LifecyclePreset{{ID: "first", Name: "Preset", Chains: map[LifecycleHook]string{}}, {ID: "second", Name: "preset", Chains: map[LifecycleHook]string{}}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "引用不存在链",
+			mutate: func(current *Settings) {
+				current.LifecyclePresets = []LifecyclePreset{{ID: "preset", Name: "预设", Chains: map[LifecycleHook]string{LifecycleHookBeforeStart: "missing"}}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "引用不适用链",
+			mutate: func(current *Settings) {
+				current.LifecyclePresets = []LifecyclePreset{{ID: "preset", Name: "预设", Chains: map[LifecycleHook]string{LifecycleHookPostStart: "chain-prepare"}}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "默认预设不存在",
+			mutate: func(current *Settings) {
+				current.LifecyclePresets = []LifecyclePreset{{ID: "preset", Name: "预设", Chains: map[LifecycleHook]string{}}}
+				current.DefaultLifecyclePresetID = "missing"
+			},
+			wantErr: true,
+		},
+		{
+			name: "空默认预设有效",
+			mutate: func(current *Settings) {
+				current.LifecyclePresets = []LifecyclePreset{{ID: "preset", Name: "预设", Chains: map[LifecycleHook]string{}}}
+				current.DefaultLifecyclePresetID = ""
+			},
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			current := base
+			scenario.mutate(&current)
+			_, err := NormalizeLifecycle(current)
+			if scenario.wantErr && err == nil {
+				t.Fatal("NormalizeLifecycle() error = nil，期望拒绝")
+			}
+			if !scenario.wantErr && err != nil {
+				t.Fatalf("NormalizeLifecycle() error = %v", err)
+			}
+		})
 	}
 }
 
@@ -132,8 +254,9 @@ func TestDefaultSeedsDefaultBranchTemplateAndRepositoryPresetChains(t *testing.T
 	}; !reflect.DeepEqual(updateRepositories.Commands, want) {
 		t.Fatalf("更新仓库命令 = %#v，期望 %#v", updateRepositories.Commands, want)
 	}
-	if current.LifecycleDefaultChains[LifecycleHookPostStart] != "" || current.LifecycleDefaultChains[LifecycleHookUpdateTask] != "" {
-		t.Fatalf("预置链不应默认选中: %#v", current.LifecycleDefaultChains)
+	defaultChains := current.DefaultLifecyclePresetChains()
+	if defaultChains[LifecycleHookPostStart] != "" || defaultChains[LifecycleHookUpdateTask] != "" {
+		t.Fatalf("预置链不应默认选中: %#v", defaultChains)
 	}
 	createWorkspace := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandCreateWorkspaceID)
 	if createWorkspace == nil || !reflect.DeepEqual(createWorkspace.ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}) {
@@ -622,7 +745,7 @@ func TestGitCloneDirectoryAcceptsOnlyOneSafeExplicitDirectory(t *testing.T) {
 	}
 }
 
-func TestValidateNormalizesLifecycleCommandsChainsAndDefaults(t *testing.T) {
+func TestValidateNormalizesLifecycleCommandsChainsAndPresets(t *testing.T) {
 	validated, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),
 		TaskTreeWidth: DefaultTaskTreeWidth,
@@ -636,7 +759,10 @@ func TestValidateNormalizesLifecycleCommandsChainsAndDefaults(t *testing.T) {
 			CommandIDs:      []string{" custom-prepare ", LifecycleCommandCreateWorkspaceID},
 			ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
 		}},
-		LifecycleDefaultChains: map[LifecycleHook]string{LifecycleHookBeforeStart: " chain-prepare "},
+		LifecyclePresets: []LifecyclePreset{{
+			ID: " preset-prepare ", Name: " 开始预设 ", Chains: map[LifecycleHook]string{LifecycleHookBeforeStart: " chain-prepare "},
+		}},
+		DefaultLifecyclePresetID: " preset-prepare ",
 	})
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -652,7 +778,7 @@ func TestValidateNormalizesLifecycleCommandsChainsAndDefaults(t *testing.T) {
 	if len(validated.LifecycleChains) != 1 || validated.LifecycleChains[0].ID != "chain-prepare" || !reflect.DeepEqual(validated.LifecycleChains[0].Commands, []LifecycleCommandReference{{CommandID: "custom-prepare", Arguments: []string{}}, {CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}) {
 		t.Fatalf("生命周期链 = %#v", validated.LifecycleChains)
 	}
-	if got := validated.LifecycleDefaultChains[LifecycleHookBeforeStart]; got != "chain-prepare" {
+	if got := validated.DefaultLifecyclePresetChains()[LifecycleHookBeforeStart]; got != "chain-prepare" {
 		t.Fatalf("beforeStart 默认链 = %q", got)
 	}
 }
@@ -710,7 +836,8 @@ func TestValidateRejectsInvalidLifecycleCommandChainAndDefault(t *testing.T) {
 
 	invalidDefault := base
 	invalidDefault.LifecycleChains = []LifecycleCommandChain{{ID: "chain", Name: "链", CommandIDs: []string{"custom"}}}
-	invalidDefault.LifecycleDefaultChains = map[LifecycleHook]string{LifecycleHookPostStart: "missing"}
+	invalidDefault.LifecyclePresets = []LifecyclePreset{{ID: "preset", Name: "预设", Chains: map[LifecycleHook]string{LifecycleHookPostStart: "missing"}}}
+	invalidDefault.DefaultLifecyclePresetID = "preset"
 	if _, err := Validate(invalidDefault); err == nil {
 		t.Fatal("Validate() error = nil，期望拒绝引用不存在链的默认值")
 	}
@@ -729,8 +856,8 @@ func TestValidateDefaultsOnlyAvailableLifecycleChains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if !reflect.DeepEqual(validated.LifecycleDefaultChains, map[LifecycleHook]string{LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID}) {
-		t.Fatalf("可用默认链 = %#v", validated.LifecycleDefaultChains)
+	if len(validated.LifecyclePresets) != 0 || len(validated.DefaultLifecyclePresetChains()) != 0 {
+		t.Fatalf("未提供预设的设置不应隐式添加默认值: %#v", validated)
 	}
 }
 

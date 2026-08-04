@@ -13,8 +13,9 @@ const DefaultTaskTreeWidth = 360
 const MinimumTaskTreeWidth = 280
 
 const (
-	CurrentPresetVersion               = 4
+	CurrentPresetVersion               = 5
 	DefaultBranchTaskTemplateID        = "preset.task-template.default-branch"
+	DefaultLifecyclePresetID           = "preset.lifecycle-preset.default"
 	LifecycleChainIterationsAIID       = "preset.lifecycle-chain.iterations-ai"
 	LifecycleChainUpdateRepositoriesID = "preset.lifecycle-chain.update-repositories"
 	IterationsAIRepository             = "git@gitlab.jiandan100.cn:webdev/iterations-ai.git"
@@ -128,6 +129,14 @@ type LifecycleCommandChain struct {
 	ApplicableHooks []LifecycleHook             `json:"applicableHooks"`
 }
 
+// LifecyclePreset is a named collection of lifecycle command-chain selections.
+// Tasks store a copy of Chains instead of referencing a preset.
+type LifecyclePreset struct {
+	ID     string                   `json:"id"`
+	Name   string                   `json:"name"`
+	Chains map[LifecycleHook]string `json:"chains"`
+}
+
 type TaskMenuItem struct {
 	ID           string           `json:"id"`
 	Kind         TaskMenuItemKind `json:"kind"`
@@ -140,38 +149,41 @@ type TaskMenuItem struct {
 }
 
 type Settings struct {
-	WorkspaceRoot            string                   `json:"workspaceRoot"`
-	TaskTreeWidth            int                      `json:"taskTreeWidth"`
-	ColorScheme              ColorScheme              `json:"colorScheme"`
-	ShellPath                string                   `json:"shellPath"`
-	TaskMenuItems            []TaskMenuItem           `json:"taskMenuItems"`
-	ActiveTaskStatus         TaskStatus               `json:"activeTaskStatus"`
-	StatusManagementMode     StatusManagementMode     `json:"statusManagementMode"`
-	StatusManagementHTTPPort int                      `json:"statusManagementHTTPPort"`
-	HTTPServiceEnabled       bool                     `json:"httpServiceEnabled"`
-	LifecycleCommands        []LifecycleCommand       `json:"lifecycleCommands"`
-	LifecycleChains          []LifecycleCommandChain  `json:"lifecycleChains"`
-	LifecycleDefaultChains   map[LifecycleHook]string `json:"lifecycleDefaultChains"`
-	TaskTemplates            []task.TaskTemplate      `json:"taskTemplates"`
-	ActiveTaskTemplateID     string                   `json:"activeTaskTemplateId"`
-	PresetVersion            int                      `json:"presetVersion"`
+	WorkspaceRoot                string                   `json:"workspaceRoot"`
+	TaskTreeWidth                int                      `json:"taskTreeWidth"`
+	ColorScheme                  ColorScheme              `json:"colorScheme"`
+	ShellPath                    string                   `json:"shellPath"`
+	TaskMenuItems                []TaskMenuItem           `json:"taskMenuItems"`
+	ActiveTaskStatus             TaskStatus               `json:"activeTaskStatus"`
+	StatusManagementMode         StatusManagementMode     `json:"statusManagementMode"`
+	StatusManagementHTTPPort     int                      `json:"statusManagementHTTPPort"`
+	HTTPServiceEnabled           bool                     `json:"httpServiceEnabled"`
+	LifecycleCommands            []LifecycleCommand       `json:"lifecycleCommands"`
+	LifecycleChains              []LifecycleCommandChain  `json:"lifecycleChains"`
+	LifecyclePresets             []LifecyclePreset        `json:"lifecyclePresets"`
+	DefaultLifecyclePresetID     string                   `json:"defaultLifecyclePresetId"`
+	LegacyLifecycleDefaultChains map[LifecycleHook]string `json:"lifecycleDefaultChains,omitempty"`
+	TaskTemplates                []task.TaskTemplate      `json:"taskTemplates"`
+	ActiveTaskTemplateID         string                   `json:"activeTaskTemplateId"`
+	PresetVersion                int                      `json:"presetVersion"`
 }
 
 func Default(applicationDataDirectory string) Settings {
 	return Settings{
-		WorkspaceRoot:          filepath.Join(applicationDataDirectory, "workspaces"),
-		TaskTreeWidth:          DefaultTaskTreeWidth,
-		ColorScheme:            DefaultColorScheme,
-		ShellPath:              DefaultShellPath(),
-		TaskMenuItems:          DefaultTaskMenuItems(),
-		ActiveTaskStatus:       DefaultActiveTaskStatus,
-		StatusManagementMode:   DefaultStatusManagementMode,
-		LifecycleCommands:      DefaultLifecycleCommands(),
-		LifecycleChains:        DefaultLifecycleChains(),
-		LifecycleDefaultChains: DefaultLifecycleDefaultChains(),
-		TaskTemplates:          DefaultTaskTemplates(),
-		ActiveTaskTemplateID:   DefaultBranchTaskTemplateID,
-		PresetVersion:          CurrentPresetVersion,
+		WorkspaceRoot:            filepath.Join(applicationDataDirectory, "workspaces"),
+		TaskTreeWidth:            DefaultTaskTreeWidth,
+		ColorScheme:              DefaultColorScheme,
+		ShellPath:                DefaultShellPath(),
+		TaskMenuItems:            DefaultTaskMenuItems(),
+		ActiveTaskStatus:         DefaultActiveTaskStatus,
+		StatusManagementMode:     DefaultStatusManagementMode,
+		LifecycleCommands:        DefaultLifecycleCommands(),
+		LifecycleChains:          DefaultLifecycleChains(),
+		LifecyclePresets:         DefaultLifecyclePresets(),
+		DefaultLifecyclePresetID: DefaultLifecyclePresetID,
+		TaskTemplates:            DefaultTaskTemplates(),
+		ActiveTaskTemplateID:     DefaultBranchTaskTemplateID,
+		PresetVersion:            CurrentPresetVersion,
 	}
 }
 
@@ -300,7 +312,11 @@ func DefaultTaskTemplates() []task.TaskTemplate {
 
 func ApplyPresetMigration(next Settings) (Settings, bool) {
 	if next.PresetVersion >= CurrentPresetVersion {
-		return next, false
+		if next.LegacyLifecycleDefaultChains == nil {
+			return next, false
+		}
+		next.LegacyLifecycleDefaultChains = nil
+		return next, true
 	}
 
 	if next.PresetVersion < 1 {
@@ -325,6 +341,19 @@ func ApplyPresetMigration(next Settings) (Settings, bool) {
 	}
 	if next.PresetVersion < 4 {
 		migrateDefaultBranchLifecycleCommands(&next)
+	}
+	if next.PresetVersion < 5 {
+		chains := next.LegacyLifecycleDefaultChains
+		if chains == nil {
+			chains = DefaultLifecyclePresetChains()
+		}
+		next.LifecyclePresets = []LifecyclePreset{{
+			ID:     DefaultLifecyclePresetID,
+			Name:   "默认预设",
+			Chains: copyLifecyclePresetChains(chains),
+		}}
+		next.DefaultLifecyclePresetID = DefaultLifecyclePresetID
+		next.LegacyLifecycleDefaultChains = nil
 	}
 	next.PresetVersion = CurrentPresetVersion
 	return next, true
@@ -432,11 +461,42 @@ func sameLifecycleCommandReferences(left, right []LifecycleCommandReference) boo
 	return true
 }
 
-func DefaultLifecycleDefaultChains() map[LifecycleHook]string {
+func DefaultLifecyclePresetChains() map[LifecycleHook]string {
 	return map[LifecycleHook]string{
 		LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
 		LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
 	}
+}
+
+func DefaultLifecyclePresets() []LifecyclePreset {
+	return []LifecyclePreset{{
+		ID:     DefaultLifecyclePresetID,
+		Name:   "默认预设",
+		Chains: DefaultLifecyclePresetChains(),
+	}}
+}
+
+func (current Settings) DefaultLifecyclePresetChains() map[LifecycleHook]string {
+	defaultID := strings.TrimSpace(current.DefaultLifecyclePresetID)
+	if defaultID == "" {
+		return map[LifecycleHook]string{}
+	}
+	for _, preset := range current.LifecyclePresets {
+		if preset.ID == defaultID {
+			return copyLifecyclePresetChains(preset.Chains)
+		}
+	}
+	return map[LifecycleHook]string{}
+}
+
+func copyLifecyclePresetChains(chains map[LifecycleHook]string) map[LifecycleHook]string {
+	copy := make(map[LifecycleHook]string, len(chains))
+	for hook, chainID := range chains {
+		if chainID != "" {
+			copy[hook] = chainID
+		}
+	}
+	return copy
 }
 
 func Validate(next Settings) (Settings, error) {
@@ -637,11 +697,17 @@ func NormalizeLifecycle(next Settings) (Settings, error) {
 		return Settings{}, err
 	}
 	next.LifecycleChains = lifecycleChains
-	lifecycleDefaults, err := normalizeLifecycleDefaultChains(next.LifecycleDefaultChains, lifecycleChains)
+	legacyDefaults, err := normalizeLegacyLifecycleDefaultChains(next.LegacyLifecycleDefaultChains, lifecycleChains)
 	if err != nil {
 		return Settings{}, err
 	}
-	next.LifecycleDefaultChains = lifecycleDefaults
+	next.LegacyLifecycleDefaultChains = legacyDefaults
+	lifecyclePresets, defaultPresetID, err := normalizeLifecyclePresets(next.LifecyclePresets, next.DefaultLifecyclePresetID, lifecycleChains)
+	if err != nil {
+		return Settings{}, err
+	}
+	next.LifecyclePresets = lifecyclePresets
+	next.DefaultLifecyclePresetID = defaultPresetID
 	return next, nil
 }
 
@@ -761,20 +827,9 @@ func normalizeLifecycleChains(chains []LifecycleCommandChain, commands []Lifecyc
 	return normalized, nil
 }
 
-func normalizeLifecycleDefaultChains(defaults map[LifecycleHook]string, chains []LifecycleCommandChain) (map[LifecycleHook]string, error) {
+func normalizeLegacyLifecycleDefaultChains(defaults map[LifecycleHook]string, chains []LifecycleCommandChain) (map[LifecycleHook]string, error) {
 	if defaults == nil {
-		knownChains := make(map[string]LifecycleCommandChain, len(chains))
-		for _, chain := range chains {
-			knownChains[chain.ID] = chain
-		}
-		defaultChains := DefaultLifecycleDefaultChains()
-		for hook, chainID := range defaultChains {
-			chain, found := knownChains[chainID]
-			if !found || !lifecycleHookIncluded(chain.ApplicableHooks, hook) {
-				delete(defaultChains, hook)
-			}
-		}
-		return defaultChains, nil
+		return nil, nil
 	}
 	knownChains := make(map[string]LifecycleCommandChain, len(chains))
 	for _, chain := range chains {
@@ -791,14 +846,70 @@ func normalizeLifecycleDefaultChains(defaults map[LifecycleHook]string, chains [
 		}
 		chain, found := knownChains[chainID]
 		if !found {
-			return nil, fmt.Errorf("生命周期默认链不存在: %q", chainID)
+			return nil, fmt.Errorf("旧生命周期默认链不存在: %q", chainID)
 		}
 		if !lifecycleHookIncluded(chain.ApplicableHooks, hook) {
-			continue
+			return nil, fmt.Errorf("旧生命周期默认链 %q 不适用于 %s", chain.Name, hook)
 		}
 		normalized[hook] = chainID
 	}
 	return normalized, nil
+}
+
+func normalizeLifecyclePresets(presets []LifecyclePreset, defaultPresetID string, chains []LifecycleCommandChain) ([]LifecyclePreset, string, error) {
+	knownChains := make(map[string]LifecycleCommandChain, len(chains))
+	for _, chain := range chains {
+		knownChains[chain.ID] = chain
+	}
+	normalized := make([]LifecyclePreset, 0, len(presets))
+	seenIDs := make(map[string]bool, len(presets))
+	seenNames := make(map[string]bool, len(presets))
+	for _, preset := range presets {
+		preset.ID = strings.TrimSpace(preset.ID)
+		preset.Name = strings.TrimSpace(preset.Name)
+		if preset.ID == "" || preset.Name == "" {
+			return nil, "", fmt.Errorf("生命周期预设 ID 和名称不能为空")
+		}
+		if seenIDs[preset.ID] {
+			return nil, "", fmt.Errorf("生命周期预设 ID 重复: %q", preset.ID)
+		}
+		nameKey := strings.ToLower(preset.Name)
+		if seenNames[nameKey] {
+			return nil, "", fmt.Errorf("生命周期预设名称重复: %q", preset.Name)
+		}
+		seenIDs[preset.ID] = true
+		seenNames[nameKey] = true
+
+		normalizedChains := make(map[LifecycleHook]string, len(preset.Chains))
+		for hook, chainID := range preset.Chains {
+			if !task.IsLifecycleHook(hook) {
+				return nil, "", fmt.Errorf("生命周期预设 %q 包含不支持的钩子: %q", preset.Name, hook)
+			}
+			chainID = strings.TrimSpace(chainID)
+			if chainID == "" {
+				continue
+			}
+			chain, found := knownChains[chainID]
+			if !found {
+				return nil, "", fmt.Errorf("生命周期预设 %q 引用的命令链不存在: %q", preset.Name, chainID)
+			}
+			if !lifecycleHookIncluded(chain.ApplicableHooks, hook) {
+				return nil, "", fmt.Errorf("生命周期预设 %q 引用的命令链 %q 不适用于 %s", preset.Name, chain.Name, hook)
+			}
+			normalizedChains[hook] = chainID
+		}
+		preset.Chains = normalizedChains
+		normalized = append(normalized, preset)
+	}
+
+	defaultPresetID = strings.TrimSpace(defaultPresetID)
+	if defaultPresetID == "" {
+		return normalized, "", nil
+	}
+	if !seenIDs[defaultPresetID] {
+		return nil, "", fmt.Errorf("默认生命周期预设不存在: %q", defaultPresetID)
+	}
+	return normalized, defaultPresetID, nil
 }
 
 func allLifecycleHooks() []LifecycleHook {

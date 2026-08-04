@@ -810,6 +810,101 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	}
 }
 
+func TestRepositoryMigratesLifecycleDefaultChainsToPreset(t *testing.T) {
+	for _, scenario := range []struct {
+		name        string
+		legacy      map[string]string
+		wantChains  map[task.LifecycleHook]string
+		wantPending map[task.LifecycleHook]string
+		wantRunning map[task.LifecycleHook]string
+	}{
+		{
+			name: "保留旧默认映射",
+			legacy: map[string]string{
+				string(task.LifecycleHookBeforeStart): settings.LifecycleChainCreateWorkspaceID,
+				string(task.LifecycleHookPostEnd):     settings.LifecycleChainDeleteWorkspaceID,
+			},
+			wantChains: map[task.LifecycleHook]string{
+				task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
+				task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+			},
+			wantPending: map[task.LifecycleHook]string{
+				task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
+				task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+			},
+			wantRunning: map[task.LifecycleHook]string{task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID},
+		},
+		{
+			name:        "保留显式空映射",
+			legacy:      map[string]string{},
+			wantChains:  map[task.LifecycleHook]string{},
+			wantPending: map[task.LifecycleHook]string{},
+			wantRunning: map[task.LifecycleHook]string{},
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			dataPath := filepath.Join(t.TempDir(), "state.json")
+			contents, err := json.Marshal(map[string]any{
+				"tasks": []map[string]any{
+					{"id": "pending", "title": "待开始", "color": task.DefaultColor, "status": task.StatusPending, "extraInfo": []any{}},
+					{"id": "running", "title": "执行中", "color": task.DefaultColor, "status": task.StatusRunning, "extraInfo": []any{}},
+					{"id": "completed", "title": "已完成", "color": task.DefaultColor, "status": task.StatusCompleted, "extraInfo": []any{}},
+				},
+				"settings": map[string]any{
+					"workspaceRoot":          filepath.Join(t.TempDir(), "workspaces"),
+					"taskTreeWidth":          settings.DefaultTaskTreeWidth,
+					"presetVersion":          4,
+					"lifecycleDefaultChains": scenario.legacy,
+				},
+			})
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+			if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			repository := New(dataPath, settings.Default(t.TempDir()))
+			data, err := repository.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			want := settings.LifecyclePreset{ID: settings.DefaultLifecyclePresetID, Name: "默认预设", Chains: scenario.wantChains}
+			if data.Settings.DefaultLifecyclePresetID != settings.DefaultLifecyclePresetID || !reflect.DeepEqual(data.Settings.LifecyclePresets, []settings.LifecyclePreset{want}) {
+				t.Fatalf("迁移后的生命周期预设 = %#v，默认 = %q", data.Settings.LifecyclePresets, data.Settings.DefaultLifecyclePresetID)
+			}
+			if !reflect.DeepEqual(data.Tasks[0].LifecycleChains, scenario.wantPending) || !reflect.DeepEqual(data.Tasks[1].LifecycleChains, scenario.wantRunning) || len(data.Tasks[2].LifecycleChains) != 0 {
+				t.Fatalf("迁移后的任务链 = %#v", data.Tasks)
+			}
+
+			persisted, err := os.ReadFile(dataPath)
+			if err != nil {
+				t.Fatalf("ReadFile() error = %v", err)
+			}
+			var persistedData map[string]json.RawMessage
+			if err := json.Unmarshal(persisted, &persistedData); err != nil {
+				t.Fatalf("Unmarshal persisted data error = %v", err)
+			}
+			if jsonContainsKey(persistedData["settings"], "lifecycleDefaultChains") {
+				t.Fatalf("旧默认映射仍被持久化: %s", persisted)
+			}
+
+			data.Settings.LifecyclePresets = []settings.LifecyclePreset{}
+			data.Settings.DefaultLifecyclePresetID = ""
+			if err := repository.Save(data); err != nil {
+				t.Fatalf("Save() error = %v", err)
+			}
+			reloaded, err := repository.Load()
+			if err != nil {
+				t.Fatalf("第二次 Load() error = %v", err)
+			}
+			if len(reloaded.Settings.LifecyclePresets) != 0 || reloaded.Settings.DefaultLifecyclePresetID != "" {
+				t.Fatalf("迁移完成后被删除的预设不应重建: %#v", reloaded.Settings)
+			}
+		})
+	}
+}
+
 func TestRepositoryMigratesLifecycleApplicableHooks(t *testing.T) {
 	dataPath := filepath.Join(t.TempDir(), "state.json")
 	contents := []byte(`{
@@ -1062,7 +1157,8 @@ func TestRepositorySaveSettingsPreservesLifecycleConfiguration(t *testing.T) {
 			staleSettings: func(next settings.Settings) settings.Settings {
 				next.LifecycleCommands = nil
 				next.LifecycleChains = nil
-				next.LifecycleDefaultChains = nil
+				next.LifecyclePresets = nil
+				next.DefaultLifecyclePresetID = ""
 				return next
 			},
 		},
@@ -1096,7 +1192,7 @@ func TestRepositorySaveSettingsPreservesLifecycleConfiguration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			current.Settings.LifecycleDefaultChains[task.LifecycleHookBeforeStart] = chain.ID
+			current.Settings.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = chain.ID
 			if err := repository.Save(current); err != nil {
 				t.Fatalf("Save() error = %v", err)
 			}
@@ -1116,7 +1212,7 @@ func TestRepositorySaveSettingsPreservesLifecycleConfiguration(t *testing.T) {
 			if lifecycleCommandChainIndex(saved.LifecycleChains, chain.ID) < 0 {
 				t.Fatalf("普通设置保存后丢失生命周期命令链: %#v", saved.LifecycleChains)
 			}
-			if got := saved.LifecycleDefaultChains[task.LifecycleHookBeforeStart]; got != chain.ID {
+			if got := saved.DefaultLifecyclePresetChains()[task.LifecycleHookBeforeStart]; got != chain.ID {
 				t.Fatalf("普通设置保存后默认链 = %q，期望 %q", got, chain.ID)
 			}
 		})
@@ -1153,10 +1249,10 @@ func TestRepositorySaveLifecycleDefaultChainPreservesOtherSettings(t *testing.T)
 	if saved.TaskTreeWidth != settings.DefaultTaskTreeWidth+40 {
 		t.Fatalf("保存默认链改写了普通设置: taskTreeWidth = %d", saved.TaskTreeWidth)
 	}
-	if got := saved.LifecycleDefaultChains[task.LifecycleHookPostStart]; got != chain.ID {
+	if got := saved.DefaultLifecyclePresetChains()[task.LifecycleHookPostStart]; got != chain.ID {
 		t.Fatalf("postStart 默认链 = %q，期望 %q", got, chain.ID)
 	}
-	if got := saved.LifecycleDefaultChains[task.LifecycleHookBeforeStart]; got != settings.LifecycleChainCreateWorkspaceID {
+	if got := saved.DefaultLifecyclePresetChains()[task.LifecycleHookBeforeStart]; got != settings.LifecycleChainCreateWorkspaceID {
 		t.Fatalf("beforeStart 默认链 = %q，期望保留 %q", got, settings.LifecycleChainCreateWorkspaceID)
 	}
 	if lifecycleCommandIndex(saved.LifecycleCommands, command.ID) < 0 || lifecycleCommandChainIndex(saved.LifecycleChains, chain.ID) < 0 {
@@ -1207,7 +1303,7 @@ func TestRepositoryClearsLifecycleDefaultWhenDeletingCompletedOnlyChain(t *testi
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	data.Settings.LifecycleDefaultChains[task.LifecycleHookPostEnd] = chain.ID
+	data.Settings.LifecyclePresets[0].Chains[task.LifecycleHookPostEnd] = chain.ID
 	data.Tasks = []task.Task{{
 		ID: "completed", Title: "已完成", Color: task.DefaultColor, Status: task.StatusCompleted, ExtraInfo: []task.TaskExtraInfo{},
 		LifecycleChains: map[task.LifecycleHook]string{task.LifecycleHookPostEnd: chain.ID},
@@ -1223,8 +1319,8 @@ func TestRepositoryClearsLifecycleDefaultWhenDeletingCompletedOnlyChain(t *testi
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if _, found := loaded.Settings.LifecycleDefaultChains[task.LifecycleHookPostEnd]; found {
-		t.Fatalf("删除链后仍保留默认值: %#v", loaded.Settings.LifecycleDefaultChains)
+	if _, found := loaded.Settings.DefaultLifecyclePresetChains()[task.LifecycleHookPostEnd]; found {
+		t.Fatalf("删除链后仍保留默认值: %#v", loaded.Settings.LifecyclePresets)
 	}
 }
 
@@ -1391,7 +1487,8 @@ func TestRepositorySaveSettingsKeepsTaskWorkspaceSnapshot(t *testing.T) {
 	}
 	expectedSettings.LifecycleCommands = initialSettings.LifecycleCommands
 	expectedSettings.LifecycleChains = initialSettings.LifecycleChains
-	expectedSettings.LifecycleDefaultChains = initialSettings.LifecycleDefaultChains
+	expectedSettings.LifecyclePresets = initialSettings.LifecyclePresets
+	expectedSettings.DefaultLifecyclePresetID = initialSettings.DefaultLifecyclePresetID
 	expectedSettings.TaskTemplates = initialSettings.TaskTemplates
 	expectedSettings.ActiveTaskTemplateID = initialSettings.ActiveTaskTemplateID
 	expectedSettings.PresetVersion = initialSettings.PresetVersion
