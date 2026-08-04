@@ -32,9 +32,13 @@ const bindings = vi.hoisted(() => ({
 	ListLifecycleCommandChains: vi.fn(),
 	SaveLifecycleCommandChain: vi.fn(),
 	CopyLifecycleCommandChain: vi.fn(),
+	CopyLifecyclePreset: vi.fn(),
 	GetLifecycleCommandInput: vi.fn(),
 	DeleteLifecycleCommandChain: vi.fn(),
-	SaveLifecycleDefaultChain: vi.fn(),
+	DeleteLifecyclePreset: vi.fn(),
+	ListLifecyclePresets: vi.fn(),
+	SaveLifecyclePreset: vi.fn(),
+	SaveDefaultLifecyclePreset: vi.fn(),
   ReorderTasks: vi.fn(),
 	SetTaskShelved: vi.fn(),
 	ReportTerminalTitleActivity: vi.fn(),
@@ -122,6 +126,11 @@ describe('App confirmation flows', () => {
 		bindings.ListExtraInfos.mockResolvedValue([])
 		bindings.ListLifecycleCommands.mockResolvedValue([])
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
+		bindings.ListLifecyclePresets.mockResolvedValue([])
+		bindings.SaveLifecyclePreset.mockImplementation(async (preset) => preset)
+		bindings.CopyLifecyclePreset.mockResolvedValue(undefined)
+		bindings.DeleteLifecyclePreset.mockResolvedValue(undefined)
+		bindings.SaveDefaultLifecyclePreset.mockResolvedValue({defaultLifecyclePresetId: ''})
 		bindings.DeleteCompletedTasks.mockResolvedValue([])
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
@@ -1012,7 +1021,7 @@ describe('App confirmation flows', () => {
 		))
 	})
 
-	it('新建任务预选默认命令链，并通过链选择绑定保存', async () => {
+	it('新建任务套用默认命令链预设，并通过链选择绑定保存', async () => {
 		const user = userEvent.setup()
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
@@ -1020,7 +1029,8 @@ describe('App confirmation flows', () => {
 				{id: 'start-chain', name: '启动准备', commands: [{commandId: 'system.lifecycle.create-workspace', arguments: []}], applicableHooks: ['postStart']},
 				{id: 'end-chain', name: '结束清理', commands: [{commandId: 'system.lifecycle.delete-workspace', arguments: []}], applicableHooks: ['beforeEnd']},
 			],
-			lifecycleDefaultChains: {postStart: 'start-chain', beforeEnd: 'end-chain'},
+			lifecyclePresets: [{id: 'default', name: '默认流程', chains: {postStart: 'start-chain', beforeEnd: 'end-chain'}}],
+			defaultLifecyclePresetId: 'default',
 		})
 		bindings.CreateTaskWithExtraInfoAndLifecycleChains.mockResolvedValue({
 			id: 'task-new', title: '带链任务', description: '', color: '#4f46e5', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
@@ -1028,6 +1038,7 @@ describe('App confirmation flows', () => {
 		render(<App/>)
 
 		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		expect(screen.getByLabelText('命令链预设')).toHaveTextContent('默认流程')
 		expect(screen.getByLabelText('开始后')).toHaveTextContent('启动准备')
 		const titleInput = document.querySelector<HTMLInputElement>('input[required]')
 		const taskForm = titleInput?.closest('form')
@@ -1042,6 +1053,29 @@ describe('App confirmation flows', () => {
 		))
 	})
 
+	it('新建任务选择不使用预设时显式保存空命令链映射', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleChains: [{id: 'prepare', name: '开始前准备', commands: [], applicableHooks: ['beforeStart']}],
+			lifecyclePresets: [{id: 'default', name: '默认流程', chains: {beforeStart: 'prepare'}}], defaultLifecyclePresetId: 'default',
+		})
+		bindings.CreateTaskWithExtraInfoAndLifecycleChains.mockResolvedValue({
+			id: 'task-empty-preset', title: '空预设任务', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		await user.click(screen.getByLabelText('命令链预设'))
+		await user.click(await screen.findByRole('option', {name: '不使用预设'}))
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '空预设任务')
+		await user.click(screen.getByRole('button', {name: '创建'}))
+
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndLifecycleChains).toHaveBeenCalledWith(
+			'空预设任务', '', expect.any(String), [], {},
+		))
+	})
+
 	it('按钩子范围筛选新建任务链，并在编辑任务时锁定链选择', async () => {
 		const user = userEvent.setup()
 		const beforeStartChain = {id: 'before-start-chain', name: '开始前准备', commands: [{commandId: 'prepare', arguments: []}], applicableHooks: ['beforeStart']}
@@ -1052,7 +1086,7 @@ describe('App confirmation flows', () => {
 		}])
 		const scopedSettings = {
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleChains: [beforeStartChain, postStartChain], lifecycleDefaultChains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
+		lifecycleChains: [beforeStartChain, postStartChain], lifecyclePresets: [{id: 'scoped-default', name: '范围默认预设', chains: {beforeStart: beforeStartChain.id, postStart: postStartChain.id}}], defaultLifecyclePresetId: 'scoped-default',
 		}
 		bindings.GetSettings.mockResolvedValue(scopedSettings)
 		bindings.SaveSettings.mockImplementation(async (next) => ({...scopedSettings, ...next}))
@@ -1096,7 +1130,7 @@ describe('App confirmation flows', () => {
 		}])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleChains: [beforeStartChain, postStartChain], lifecycleDefaultChains: {},
+			lifecycleChains: [beforeStartChain, postStartChain], lifecyclePresets: [{id: 'prepare', name: '准备预设', chains: {beforeStart: beforeStartChain.id}}],
 		})
 		bindings.UpdateTaskWithExtraInfoAndLifecycleChains.mockResolvedValue({
 			id: 'task-pending-chain', title: '待调整链任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
@@ -1107,14 +1141,49 @@ describe('App confirmation flows', () => {
 		await screen.findByText('待调整链任务')
 		await user.click(screen.getByRole('button', {name: '任务操作'}))
 		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByLabelText('命令链预设')).toHaveTextContent('准备预设')
 		expect(screen.getByLabelText('开始后')).not.toHaveAttribute('aria-disabled', 'true')
 		await user.click(screen.getByLabelText('开始后'))
 		await user.click(await screen.findByRole('option', {name: '开始后通知'}))
+		expect(screen.getByLabelText('命令链预设')).toHaveTextContent('自定义')
 		await user.click(screen.getByRole('button', {name: '保存'}))
 
 		await waitFor(() => expect(bindings.UpdateTaskWithExtraInfoAndLifecycleChains).toHaveBeenCalledWith(
 			'task-pending-chain', '待调整链任务', '', '#4f46e5', [], {beforeStart: beforeStartChain.id, postStart: postStartChain.id},
 		))
+	})
+
+	it('生命周期设置管理预设并可切换默认预设', async () => {
+		const user = userEvent.setup()
+		const beforeStartChain = {id: 'prepare-chain', name: '开始前准备', commands: [{commandId: 'prepare', arguments: []}], applicableHooks: ['beforeStart']}
+		const lifecycleSettings = {
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleChains: [beforeStartChain], lifecyclePresets: [{id: 'default', name: '默认预设', chains: {beforeStart: beforeStartChain.id}}], defaultLifecyclePresetId: 'default',
+		}
+		bindings.GetSettings.mockResolvedValue(lifecycleSettings)
+		bindings.SaveDefaultLifecyclePreset.mockResolvedValue({...lifecycleSettings, defaultLifecyclePresetId: ''})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		expect(screen.getByLabelText('默认预设')).toHaveTextContent('默认预设')
+		await user.click(screen.getByRole('button', {name: '新增预设'}))
+		const presetDialog = screen.getByRole('dialog', {name: '新增命令链预设'})
+		await user.type(within(presetDialog).getByRole('textbox', {name: '预设名称'}), '发布预设')
+		await user.click(within(presetDialog).getByLabelText('开始前'))
+		await user.click(await screen.findByRole('option', {name: '开始前准备'}))
+		await user.click(within(presetDialog).getByRole('button', {name: '保存预设'}))
+		await waitFor(() => expect(bindings.SaveLifecyclePreset).toHaveBeenCalledWith(expect.objectContaining({name: '发布预设', chains: {beforeStart: 'prepare-chain'}})))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增命令链预设'})).not.toBeInTheDocument())
+
+		await user.click(screen.getByLabelText('默认预设'))
+		await user.click(await screen.findByRole('option', {name: '不设置默认预设'}))
+		expect(bindings.SaveDefaultLifecyclePreset).toHaveBeenCalledWith('')
+		const defaultPresetRow = screen.getByLabelText('删除预设 默认预设').parentElement?.parentElement as HTMLElement
+		await user.click(within(defaultPresetRow).getByRole('button', {name: '复制'}))
+		expect(bindings.CopyLifecyclePreset).toHaveBeenCalledWith('default')
+		await user.click(screen.getByLabelText('删除预设 默认预设'))
+		expect(bindings.DeleteLifecyclePreset).toHaveBeenCalledWith('default')
 	})
 
 	it('编辑已完成任务时锁定命令链', async () => {
@@ -1126,7 +1195,7 @@ describe('App confirmation flows', () => {
 		}])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleChains: [postEndChain], lifecycleDefaultChains: {}, activeTaskStatus: 'completed',
+			lifecycleChains: [postEndChain], lifecyclePresets: [], activeTaskStatus: 'completed',
 		})
 		bindings.UpdateTask.mockResolvedValue({
 			id: 'task-completed-chain', title: '已完成链任务', description: '', status: 'completed', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
@@ -1152,7 +1221,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleCommands: [beforeStartCommand, postStartCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+			lifecycleCommands: [beforeStartCommand, postStartCommand], lifecycleChains: [], lifecyclePresets: [],
 		})
 		bindings.SaveLifecycleCommand.mockResolvedValue({...beforeStartCommand, id: 'new-command', name: '新命令'})
 		render(<App/>)
@@ -1215,7 +1284,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleCommands: [gitCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+			lifecycleCommands: [gitCommand], lifecycleChains: [], lifecyclePresets: [],
 		})
 		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'git-chain'}))
 		render(<App/>)
@@ -1248,7 +1317,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleCommands: [gitCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+			lifecycleCommands: [gitCommand], lifecycleChains: [], lifecyclePresets: [],
 		})
 		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'git-chain'}))
 		render(<App/>)
@@ -1279,7 +1348,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleCommands: [cloneRepositoryCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+			lifecycleCommands: [cloneRepositoryCommand], lifecycleChains: [], lifecyclePresets: [],
 		})
 		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'clone-template'}))
 		render(<App/>)
@@ -1314,7 +1383,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleCommands: [updateDefaultBranchCommand], lifecycleChains: [], lifecycleDefaultChains: {},
+			lifecycleCommands: [updateDefaultBranchCommand], lifecycleChains: [], lifecyclePresets: [],
 		})
 		bindings.SaveLifecycleCommandChain.mockImplementation(async (chain) => ({...chain, id: 'default-branch-chain'}))
 		render(<App/>)
@@ -1347,7 +1416,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommandChains.mockResolvedValue([chain])
 		bindings.GetSettings.mockImplementation(async () => ({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleCommands: [command], lifecycleChains: [chain], lifecycleDefaultChains: {},
+			lifecycleCommands: [command], lifecycleChains: [chain], lifecyclePresets: [],
 		}))
 		bindings.SaveLifecycleCommandChain.mockResolvedValue(chain)
 		render(<App/>)
@@ -1376,7 +1445,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommandChains.mockResolvedValue([chain])
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
-			lifecycleCommands: [command], lifecycleChains: [chain], lifecycleDefaultChains: {},
+			lifecycleCommands: [command], lifecycleChains: [chain], lifecyclePresets: [],
 		})
 		render(<App/>)
 

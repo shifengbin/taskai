@@ -75,6 +75,7 @@ import {
 	type LifecycleCommand,
 	type LifecycleCommandChain,
 	type LifecycleHook,
+	type LifecyclePreset,
 	lifecycleHooks,
 	taskStatusLabel,
   type ColorScheme,
@@ -94,9 +95,11 @@ import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import './App.css'
 
 type Notification = {
-  text: string
-  severity: 'success' | 'error'
+	text: string
+	severity: 'success' | 'error'
 }
+
+const customLifecyclePresetID = '__custom__'
 
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
@@ -115,6 +118,8 @@ export default function App() {
 	const [taskExtraInfoDraft, setTaskExtraInfoDraft] = useState<TaskExtraInfo[]>([])
 	const [taskTemplateFieldsDraft, setTaskTemplateFieldsDraft] = useState<TaskTemplateValues>({})
 	const [taskLifecycleChainsDraft, setTaskLifecycleChainsDraft] = useState<Partial<Record<LifecycleHook, string>>>({})
+	const [taskLifecyclePresetID, setTaskLifecyclePresetID] = useState('')
+	const [taskLifecycleSelectionExplicit, setTaskLifecycleSelectionExplicit] = useState(false)
   const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
 	const [extraInfoManagerOpen, setExtraInfoManagerOpen] = useState(false)
@@ -301,6 +306,7 @@ export default function App() {
 	const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
 	const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
 	const activeTaskTemplate = settings?.taskTemplates?.find((template) => template.id === settings.activeTaskTemplateId)
+	const lifecyclePresets = settings?.lifecyclePresets ?? []
 	const activeTaskTemplateIDs = useMemo(() => new Set(tasks
 		.filter((task) => (task.status === 'pending' || task.status === 'running') && Boolean(task.taskTemplateId))
 		.map((task) => task.taskTemplateId!)), [tasks])
@@ -357,7 +363,12 @@ export default function App() {
     setDraftColor(task ? task.color || defaultTaskColor : randomTaskColor())
 		setTaskExtraInfoDraft(task?.extraInfo ? cloneTaskExtraInfo(task.extraInfo) : [])
 		setTaskTemplateFieldsDraft(resolveTaskTemplateValues(activeTaskTemplate, task?.templateFields))
-		setTaskLifecycleChainsDraft({...task?.lifecycleChains ?? settings?.lifecycleDefaultChains ?? {}})
+		const defaultPresetID = settings?.defaultLifecyclePresetId ?? ''
+		const defaultPreset = lifecyclePresets.find((preset) => preset.id === defaultPresetID)
+		const lifecycleChains = {...task?.lifecycleChains ?? defaultPreset?.chains ?? {}}
+		setTaskLifecycleChainsDraft(lifecycleChains)
+		setTaskLifecyclePresetID(task ? lifecyclePresetIDForChains(lifecyclePresets, lifecycleChains) ?? customLifecyclePresetID : defaultPreset?.id ?? '')
+		setTaskLifecycleSelectionExplicit(Boolean(task) || Boolean(defaultPreset))
     setTaskDialogOpen(true)
   }
 
@@ -367,6 +378,8 @@ export default function App() {
 		setTaskExtraInfoDraft([])
 		setTaskTemplateFieldsDraft({})
 		setTaskLifecycleChainsDraft({})
+		setTaskLifecyclePresetID('')
+		setTaskLifecycleSelectionExplicit(false)
   }
 
   const saveTask = async (event: FormEvent) => {
@@ -417,8 +430,7 @@ export default function App() {
 						: await api.updateTask(editingTask.id, draftTitle, draftDescription, draftColor)
         setTasks((current) => mergeLifecycleTask(current, updated))
       } else {
-			const hasLifecycleChainSelection = Object.keys(taskLifecycleChainsDraft).length > 0
-			const created = hasLifecycleChainSelection
+			const created = taskLifecycleSelectionExplicit
 				? activeTaskTemplate
 					? await api.createTaskWithExtraInfoTemplateFieldsAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft, taskLifecycleChainsDraft)
 					: await api.createTaskWithExtraInfoAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
@@ -828,7 +840,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				...current,
 				lifecycleCommands: refreshed.lifecycleCommands ?? [],
 				lifecycleChains: refreshed.lifecycleChains ?? [],
-				lifecycleDefaultChains: refreshed.lifecycleDefaultChains ?? {},
+				lifecyclePresets: refreshed.lifecyclePresets ?? [],
+				defaultLifecyclePresetId: refreshed.defaultLifecyclePresetId ?? '',
 			} : current)
 		} catch (error) {
 			showError(error, setMessage)
@@ -1179,8 +1192,19 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			/>
 			<TaskLifecycleChainSelector
 				chains={settings?.lifecycleChains ?? []}
+				presets={lifecyclePresets}
 				selected={taskLifecycleChainsDraft}
-				onChange={setTaskLifecycleChainsDraft}
+				presetID={taskLifecyclePresetID}
+				onPresetChange={(presetID, chains) => {
+					setTaskLifecyclePresetID(presetID)
+					setTaskLifecycleChainsDraft(chains)
+					setTaskLifecycleSelectionExplicit(true)
+				}}
+				onChange={(chains) => {
+					setTaskLifecycleChainsDraft(chains)
+					setTaskLifecyclePresetID(lifecyclePresetIDForChains(lifecyclePresets, chains) ?? customLifecyclePresetID)
+					setTaskLifecycleSelectionExplicit(true)
+				}}
 				disabled={editingTask?.status !== undefined && editingTask.status !== 'pending'}
 			/>
           </DialogContent>
@@ -1510,7 +1534,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			{settingsTab === 'lifecycle' && <LifecycleManagement
 				commands={settings?.lifecycleCommands ?? []}
 				chains={settings?.lifecycleChains ?? []}
-				defaults={settings?.lifecycleDefaultChains ?? {}}
+				presets={lifecyclePresets}
+				defaultPresetID={settings?.defaultLifecyclePresetId ?? ''}
 				onSaveCommand={async (command) => {
 					await api.saveLifecycleCommand(command)
 					await refreshLifecycleConfiguration()
@@ -1531,10 +1556,26 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					await api.deleteLifecycleCommandChain(chainID)
 					await refreshLifecycleConfiguration()
 				}}
-				onSaveDefault={async (hook, chainID) => {
-					const saved = await api.saveLifecycleDefaultChain(hook, chainID)
+				onSavePreset={async (preset) => {
+					await api.saveLifecyclePreset(preset)
+					await refreshLifecycleConfiguration()
+				}}
+				onCopyPreset={async (presetID) => {
+					await api.copyLifecyclePreset(presetID)
+					await refreshLifecycleConfiguration()
+				}}
+				onDeletePreset={async (presetID) => {
+					await api.deleteLifecyclePreset(presetID)
+					await refreshLifecycleConfiguration()
+				}}
+				onSaveDefaultPreset={async (presetID) => {
+					const saved = await api.saveDefaultLifecyclePreset(presetID)
 					setSettings(saved)
-					setSettingsDraft((current) => current ? {...current, lifecycleDefaultChains: saved.lifecycleDefaultChains ?? {}} : current)
+					setSettingsDraft((current) => current ? {
+						...current,
+						lifecyclePresets: saved.lifecyclePresets ?? [],
+						defaultLifecyclePresetId: saved.defaultLifecyclePresetId ?? '',
+					} : current)
 				}}
 				onError={(error) => showError(error, setMessage)}
 			/>}
@@ -1905,21 +1946,43 @@ function StartupScreen() {
 
 function TaskLifecycleChainSelector({
 	chains,
+	presets,
 	selected,
+	presetID,
+	onPresetChange,
 	onChange,
 	disabled = false,
 }: {
 	chains: LifecycleCommandChain[]
+	presets: LifecyclePreset[]
 	selected: Partial<Record<LifecycleHook, string>>
-	onChange: Dispatch<SetStateAction<Partial<Record<LifecycleHook, string>>>>
+	presetID: string
+	onPresetChange(presetID: string, chains: Partial<Record<LifecycleHook, string>>): void
+	onChange(chains: Partial<Record<LifecycleHook, string>>): void
 	disabled?: boolean
 }) {
 	return (
 		<Box component="section" sx={{display: 'grid', gap: 1.25, borderTop: 1, borderColor: 'divider', pt: 1.75}}>
 			<Box>
 				<Typography variant="subtitle2">生命周期命令链</Typography>
-			<Typography variant="caption" color="text.secondary">每个阶段最多选择一条链；留空表示跳过该阶段。{disabled ? ' 执行中和已完成任务不可修改。' : ''}</Typography>
+				<Typography variant="caption" color="text.secondary">预设会替换全部阶段；逐项调整后显示为自定义。{disabled ? ' 执行中和已完成任务不可修改。' : ''}</Typography>
 			</Box>
+			<TextField
+				select
+				size="small"
+				label="命令链预设"
+				value={presetID}
+				disabled={disabled}
+				onChange={(event) => {
+					const nextPresetID = event.target.value
+					const preset = presets.find((current) => current.id === nextPresetID)
+					onPresetChange(nextPresetID, {...preset?.chains ?? {}})
+				}}
+			>
+				<MenuItem value="">不使用预设</MenuItem>
+				{presets.map((preset) => <MenuItem key={preset.id} value={preset.id}>{preset.name}</MenuItem>)}
+				{presetID === customLifecyclePresetID && <MenuItem value={customLifecyclePresetID} disabled>自定义</MenuItem>}
+			</TextField>
 			<Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1.25}}>
 				{lifecycleHooks.map((hook) => {
 					const selectedChainID = selected[hook.id] ?? ''
@@ -1935,15 +1998,15 @@ function TaskLifecycleChainSelector({
 						label={hook.label}
 						value={selectedChainID}
 						disabled={disabled}
-						onChange={(event) => onChange((current) => {
-							const next = {...current}
+						onChange={(event) => {
+							const next = {...selected}
 							if (event.target.value) {
 								next[hook.id] = event.target.value
 							} else {
 								delete next[hook.id]
 							}
-							return next
-						})}
+							onChange(next)
+						}}
 					>
 						<MenuItem value="">不执行命令链</MenuItem>
 						{displayChains.map((chain) => <MenuItem key={chain.id} value={chain.id}>{chain.name}{!lifecycleChainAppliesTo(chain, hook.id) ? '（当前范围不适用）' : ''}</MenuItem>)}
@@ -1952,6 +2015,14 @@ function TaskLifecycleChainSelector({
 			</Box>
 		</Box>
 	)
+}
+
+function lifecyclePresetIDForChains(presets: LifecyclePreset[], chains: Partial<Record<LifecycleHook, string>>): string | undefined {
+	return presets.find((preset) => lifecycleChainsEqual(preset.chains, chains))?.id
+}
+
+function lifecycleChainsEqual(left: Partial<Record<LifecycleHook, string>>, right: Partial<Record<LifecycleHook, string>>): boolean {
+	return lifecycleHooks.every((hook) => (left[hook.id] ?? '') === (right[hook.id] ?? ''))
 }
 
 function lifecycleChainAppliesTo(chain: LifecycleCommandChain, hook: LifecycleHook) {
@@ -1974,28 +2045,37 @@ function lifecycleHooksLabel(hooks: LifecycleHook[]) {
 function LifecycleManagement({
 	commands,
 	chains,
-	defaults,
+	presets,
+	defaultPresetID,
 	onSaveCommand,
 	onDeleteCommand,
 	onSaveChain,
 	onCopyChain,
 	onDeleteChain,
-	onSaveDefault,
+	onSavePreset,
+	onCopyPreset,
+	onDeletePreset,
+	onSaveDefaultPreset,
 	onError,
 }: {
 	commands: LifecycleCommand[]
 	chains: LifecycleCommandChain[]
-	defaults: Partial<Record<LifecycleHook, string>>
+	presets: LifecyclePreset[]
+	defaultPresetID: string
 	onSaveCommand(command: LifecycleCommand): Promise<void>
 	onDeleteCommand(commandID: string): Promise<void>
 	onSaveChain(chain: LifecycleCommandChain): Promise<void>
 	onCopyChain(chainID: string): Promise<void>
 	onDeleteChain(chainID: string): Promise<void>
-	onSaveDefault(hook: LifecycleHook, chainID: string): Promise<void>
+	onSavePreset(preset: LifecyclePreset): Promise<void>
+	onCopyPreset(presetID: string): Promise<void>
+	onDeletePreset(presetID: string): Promise<void>
+	onSaveDefaultPreset(presetID: string): Promise<void>
 	onError(error: unknown): void
 }) {
 	const [commandDraft, setCommandDraft] = useState<LifecycleCommand>()
 	const [chainDraft, setChainDraft] = useState<LifecycleCommandChain>()
+	const [presetDraft, setPresetDraft] = useState<LifecyclePreset>()
 	const [chainHelpOpen, setChainHelpOpen] = useState(false)
 	const commandNames = new Map(commands.map((command) => [command.id, command.name]))
 	const commandsByID = new Map(commands.map((command) => [command.id, command]))
@@ -2027,6 +2107,22 @@ function LifecycleManagement({
 				applicableHooks: [...chainDraft.applicableHooks],
 			})
 			setChainDraft(undefined)
+		} catch (error) {
+			onError(error)
+		}
+	}
+
+	const savePreset = async () => {
+		if (!presetDraft) {
+			return
+		}
+		try {
+			await onSavePreset({
+				...presetDraft,
+				name: presetDraft.name.trim(),
+				chains: Object.fromEntries(Object.entries(presetDraft.chains).filter(([, chainID]) => Boolean(chainID))) as Partial<Record<LifecycleHook, string>>,
+			})
+			setPresetDraft(undefined)
 		} catch (error) {
 			onError(error)
 		}
@@ -2094,15 +2190,35 @@ function LifecycleManagement({
 	}
 
 	return <Box component="section" sx={{display: 'grid', gap: 2.5}}>
-		<Box sx={{display: 'grid', gap: 0.5}}>
-			<Typography variant="subtitle2">五个钩子的默认链</Typography>
-			<Typography variant="caption" color="text.secondary">新建任务会预选这里的链；任务保存后保留自己的选择。</Typography>
-		</Box>
-		<Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1.25}}>
-			{lifecycleHooks.map((hook) => <TextField key={hook.id} select size="small" label={hook.label} value={defaults[hook.id] ?? ''} onChange={(event) => void onSaveDefault(hook.id, event.target.value).catch(onError)}>
-				<MenuItem value="">不设置默认链</MenuItem>
-				{chains.filter((chain) => lifecycleChainAppliesTo(chain, hook.id)).map((chain) => <MenuItem key={chain.id} value={chain.id}>{chain.name}</MenuItem>)}
-			</TextField>)}
+		<Box sx={{display: 'grid', gap: 1.25}}>
+			<Box sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap'}}>
+				<Box>
+					<Typography variant="subtitle2">命令链预设</Typography>
+					<Typography variant="caption" color="text.secondary">新建任务可一键套用预设；任务创建后保留独立的链选择。</Typography>
+				</Box>
+				<Button size="small" variant="contained" onClick={() => setPresetDraft({id: '', name: '', chains: {}})}>新增预设</Button>
+			</Box>
+			<TextField select size="small" label="默认预设" value={defaultPresetID} onChange={(event) => void onSaveDefaultPreset(event.target.value).catch(onError)}>
+				<MenuItem value="">不设置默认预设</MenuItem>
+				{presets.map((preset) => <MenuItem key={preset.id} value={preset.id}>{preset.name}</MenuItem>)}
+			</TextField>
+			<Box sx={{border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden'}}>
+				{presets.length === 0 && <Typography variant="body2" color="text.secondary" sx={{px: 1.5, py: 1.25}}>尚无命令链预设。</Typography>}
+				{presets.map((preset, index) => <Box key={preset.id} sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: 'minmax(0, 1fr) auto'}, gap: 1, alignItems: 'center', px: 1.25, py: 1, borderBottom: index === presets.length - 1 ? 0 : 1, borderColor: 'divider'}}>
+					<Box sx={{minWidth: 0}}>
+						<Box sx={{display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0}}>
+							<Typography variant="body2" sx={{fontWeight: 700}} noWrap>{preset.name}</Typography>
+							{preset.id === defaultPresetID && <Chip size="small" label="默认" color="primary" variant="outlined"/>}
+						</Box>
+						<Typography variant="caption" color="text.secondary" noWrap>{lifecycleHooks.filter((hook) => preset.chains[hook.id]).map((hook) => `${hook.label}: ${chains.find((chain) => chain.id === preset.chains[hook.id])?.name ?? '已删除命令链'}`).join('；') || '不执行命令链'}</Typography>
+					</Box>
+					<Box sx={{display: 'flex', justifyContent: 'flex-end', gap: 0.5, flexWrap: 'wrap'}}>
+						<Button size="small" aria-label={`编辑预设 ${preset.name}`} onClick={() => setPresetDraft({...preset, chains: {...preset.chains}})}>编辑</Button>
+						<Button size="small" onClick={() => void onCopyPreset(preset.id).catch(onError)}>复制</Button>
+						<IconButton aria-label={`删除预设 ${preset.name}`} color="error" size="small" onClick={() => void onDeletePreset(preset.id).catch(onError)}><DeleteOutlineOutlinedIcon fontSize="inherit"/></IconButton>
+					</Box>
+				</Box>)}
+			</Box>
 		</Box>
 
 		<Box sx={{display: 'grid', gap: 1.25, pt: 0.5, borderTop: 1, borderColor: 'divider'}}>
@@ -2184,6 +2300,37 @@ function LifecycleManagement({
 				</Box>
 			</DialogContent>
 			<DialogActions><Button onClick={() => setChainDraft(undefined)}>取消</Button><Button variant="contained" disabled={!chainDraft?.applicableHooks.length || !chainDraft.commands.length || incompatibleChainCommands.length > 0} onClick={() => void saveChain()}>保存命令链</Button></DialogActions>
+		</Dialog>
+
+		<Dialog open={Boolean(presetDraft)} onClose={() => setPresetDraft(undefined)} fullWidth maxWidth="sm">
+			<DialogTitle>{presetDraft?.id ? '编辑命令链预设' : '新增命令链预设'}</DialogTitle>
+			<DialogContent sx={{display: 'grid', gap: 1.5, pt: '12px !important'}}>
+				<TextField autoFocus required label="预设名称" value={presetDraft?.name ?? ''} onChange={(event) => setPresetDraft((current) => current ? {...current, name: event.target.value} : current)}/>
+				<Box sx={{display: 'grid', gridTemplateColumns: {xs: '1fr', sm: '1fr 1fr'}, gap: 1.25}}>
+					{lifecycleHooks.map((hook) => {
+						const chainID = presetDraft?.chains[hook.id] ?? ''
+						const applicableChains = chains.filter((chain) => lifecycleChainAppliesTo(chain, hook.id))
+						const selectedChain = chains.find((chain) => chain.id === chainID)
+						const displayChains = selectedChain && !applicableChains.some((chain) => chain.id === selectedChain.id) ? [...applicableChains, selectedChain] : applicableChains
+						return <TextField key={hook.id} select size="small" label={hook.label} value={chainID} onChange={(event) => setPresetDraft((current) => {
+							if (!current) {
+								return current
+							}
+							const nextChains = {...current.chains}
+							if (event.target.value) {
+								nextChains[hook.id] = event.target.value
+							} else {
+								delete nextChains[hook.id]
+							}
+							return {...current, chains: nextChains}
+						})}>
+							<MenuItem value="">不执行命令链</MenuItem>
+							{displayChains.map((chain) => <MenuItem key={chain.id} value={chain.id}>{chain.name}{!lifecycleChainAppliesTo(chain, hook.id) ? '（当前范围不适用）' : ''}</MenuItem>)}
+						</TextField>
+					})}
+				</Box>
+			</DialogContent>
+			<DialogActions><Button onClick={() => setPresetDraft(undefined)}>取消</Button><Button variant="contained" disabled={!presetDraft?.name.trim()} onClick={() => void savePreset()}>保存预设</Button></DialogActions>
 		</Dialog>
 
 		<Dialog open={chainHelpOpen} onClose={() => setChainHelpOpen(false)} aria-labelledby="lifecycle-chain-help-title" fullWidth maxWidth="md">
