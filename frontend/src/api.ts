@@ -7,6 +7,7 @@ import {
 	CreateTaskWithExtraInfoAndTemplateFields,
 	CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains,
 	CopyLifecycleCommandChain,
+	CopyLifecyclePreset,
 	CreateCommandTerminal,
 	CreateTerminal,
 	DeleteCompletedTasks,
@@ -20,6 +21,7 @@ import {
 	DeleteExtraInfoTemplate,
 	DeleteLifecycleCommand,
 	DeleteLifecycleCommandChain,
+	DeleteLifecyclePreset,
   HasRunningTasks,
 	ListTasks,
 	ListExtraInfoCatalogues,
@@ -27,6 +29,7 @@ import {
 	ListExtraInfoTemplates,
 	ListLifecycleCommandChains,
 	ListLifecycleCommands,
+	ListLifecyclePresets,
 	OpenTaskFolder,
   PrepareQuit,
   ReorderTasks,
@@ -39,7 +42,8 @@ import {
 	SaveExtraInfoTemplate,
 	SaveLifecycleCommand,
 	SaveLifecycleCommandChain,
-	SaveLifecycleDefaultChain,
+	SaveLifecyclePreset,
+	SaveDefaultLifecyclePreset,
 	SelectTerminal,
 	SetTaskShelved,
 	StartTask,
@@ -55,7 +59,7 @@ import {settings as settingsModel} from '../wailsjs/go/models'
 import {task as taskModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
@@ -101,7 +105,14 @@ export const api = {
 	saveLifecycleCommandChain: (chain: LifecycleCommandChain) => SaveLifecycleCommandChain(settingsModel.LifecycleCommandChain.createFrom(chain)) as Promise<LifecycleCommandChain>,
 	copyLifecycleCommandChain: (chainID: string) => CopyLifecycleCommandChain(chainID) as Promise<LifecycleCommandChain>,
 	deleteLifecycleCommandChain: (chainID: string) => DeleteLifecycleCommandChain(chainID),
-	saveLifecycleDefaultChain: (hook: LifecycleHook, chainID: string) => SaveLifecycleDefaultChain(hook, chainID) as Promise<SettingsRecord>,
+	listLifecyclePresets: async () => {
+		const presets = await ListLifecyclePresets()
+		return Array.isArray(presets) ? presets as LifecyclePreset[] : []
+	},
+	saveLifecyclePreset: (preset: LifecyclePreset) => SaveLifecyclePreset(settingsModel.LifecyclePreset.createFrom(preset)) as Promise<LifecyclePreset>,
+	copyLifecyclePreset: (presetID: string) => CopyLifecyclePreset(presetID) as Promise<LifecyclePreset>,
+	deleteLifecyclePreset: (presetID: string) => DeleteLifecyclePreset(presetID),
+	saveDefaultLifecyclePreset: (presetID: string) => SaveDefaultLifecyclePreset(presetID) as Promise<SettingsRecord>,
 	reorderTasks: (status: TaskRecord['status'], taskIDs: string[]) => ReorderTasks(status, taskIDs) as Promise<TaskRecord[]>,
 	setTaskShelved: (taskID: string, shelved: boolean) => SetTaskShelved(taskID, shelved) as Promise<TaskRecord[]>,
 	startTask: (taskID: string) => StartTask(taskID) as Promise<TaskRecord>,
@@ -113,7 +124,8 @@ export const api = {
 		const payload = settingsModel.Settings.createFrom(settings)
 		delete (payload as {lifecycleCommands?: unknown}).lifecycleCommands
 		delete (payload as {lifecycleChains?: unknown}).lifecycleChains
-		delete (payload as {lifecycleDefaultChains?: unknown}).lifecycleDefaultChains
+		delete (payload as {lifecyclePresets?: unknown}).lifecyclePresets
+		delete (payload as {defaultLifecyclePresetId?: unknown}).defaultLifecyclePresetId
 		if (settings.taskTemplates !== undefined) {
 			Object.assign(payload, {
 				taskTemplates: settings.taskTemplates,

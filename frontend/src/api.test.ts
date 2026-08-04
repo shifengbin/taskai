@@ -1,7 +1,7 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 import {api} from './api'
-import type {SettingsRecord} from './types'
+import type {LifecyclePreset, SettingsRecord} from './types'
 
 describe('api.saveSettings', () => {
 	const saveSettings = vi.fn()
@@ -29,7 +29,8 @@ describe('api.saveSettings', () => {
 			httpServiceEnabled: false,
 			lifecycleCommands: [{id: 'prepare', kind: 'custom', name: '准备', arguments: [], chainArgumentMode: 'disabled', applicableHooks: ['beforeStart']}],
 			lifecycleChains: [{id: 'prepare-chain', name: '准备链', commands: [{commandId: 'prepare', arguments: []}], applicableHooks: ['beforeStart']}],
-			lifecycleDefaultChains: {beforeStart: 'prepare-chain'},
+			lifecyclePresets: [{id: 'prepare', name: '准备预设', chains: {beforeStart: 'prepare-chain'}}],
+			defaultLifecyclePresetId: 'prepare',
 		}
 
 		await api.saveSettings(settings)
@@ -38,7 +39,8 @@ describe('api.saveSettings', () => {
 		expect(payload.workspaceRoot).toBe(settings.workspaceRoot)
 		expect(payload).not.toHaveProperty('lifecycleCommands')
 		expect(payload).not.toHaveProperty('lifecycleChains')
-		expect(payload).not.toHaveProperty('lifecycleDefaultChains')
+		expect(payload).not.toHaveProperty('lifecyclePresets')
+		expect(payload).not.toHaveProperty('defaultLifecyclePresetId')
 		expect(payload).not.toHaveProperty('taskTemplates')
 		expect(payload).not.toHaveProperty('activeTaskTemplateId')
 	})
@@ -62,6 +64,50 @@ describe('api.saveSettings', () => {
 		const payload = saveSettings.mock.calls[0][0] as Record<string, unknown>
 		expect(payload.taskTemplates).toBeUndefined()
 		expect(payload.activeTaskTemplateId).toBeUndefined()
+	})
+})
+
+describe('api.lifecyclePresets', () => {
+	const listLifecyclePresets = vi.fn()
+	const saveLifecyclePreset = vi.fn()
+	const copyLifecyclePreset = vi.fn()
+	const deleteLifecyclePreset = vi.fn()
+	const saveDefaultLifecyclePreset = vi.fn()
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		listLifecyclePresets.mockResolvedValue([])
+		saveLifecyclePreset.mockImplementation(async (preset) => preset)
+		copyLifecyclePreset.mockResolvedValue({id: 'preset-copy', name: '部署预设 副本', chains: {}})
+		deleteLifecyclePreset.mockResolvedValue(undefined)
+		saveDefaultLifecyclePreset.mockResolvedValue({defaultLifecyclePresetId: 'preset-1'})
+		Object.assign(window, {go: {main: {App: {
+			ListLifecyclePresets: listLifecyclePresets,
+			SaveLifecyclePreset: saveLifecyclePreset,
+			CopyLifecyclePreset: copyLifecyclePreset,
+			DeleteLifecyclePreset: deleteLifecyclePreset,
+			SaveDefaultLifecyclePreset: saveDefaultLifecyclePreset,
+		}}}})
+	})
+
+	afterEach(() => {
+		delete (window as {go?: unknown}).go
+	})
+
+	it('通过专用绑定管理生命周期预设', async () => {
+		const preset: LifecyclePreset = {id: 'preset-1', name: '部署预设', chains: {beforeStart: 'prepare-chain'}}
+
+		await api.listLifecyclePresets()
+		await api.saveLifecyclePreset(preset)
+		await api.copyLifecyclePreset(preset.id)
+		await api.deleteLifecyclePreset(preset.id)
+		await api.saveDefaultLifecyclePreset(preset.id)
+
+		expect(listLifecyclePresets).toHaveBeenCalledOnce()
+		expect(saveLifecyclePreset).toHaveBeenCalledWith(preset)
+		expect(copyLifecyclePreset).toHaveBeenCalledWith(preset.id)
+		expect(deleteLifecyclePreset).toHaveBeenCalledWith(preset.id)
+		expect(saveDefaultLifecyclePreset).toHaveBeenCalledWith(preset.id)
 	})
 })
 

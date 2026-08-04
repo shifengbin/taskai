@@ -66,6 +66,12 @@ export interface LifecycleCommandChain {
   applicableHooks: LifecycleHook[]
 }
 
+export interface LifecyclePreset {
+  id: string
+  name: string
+  chains: Partial<Record<LifecycleHook, string>>
+}
+
 export interface TaskRecord {
   id: string
   title: string
@@ -190,7 +196,8 @@ export interface SettingsRecord {
 	httpServiceEnabled: boolean
   lifecycleCommands?: LifecycleCommand[]
   lifecycleChains?: LifecycleCommandChain[]
-  lifecycleDefaultChains?: Partial<Record<LifecycleHook, string>>
+  lifecyclePresets?: LifecyclePreset[]
+  defaultLifecyclePresetId?: string
 	taskTemplates?: TaskTemplate[]
 	activeTaskTemplateId?: string
 }

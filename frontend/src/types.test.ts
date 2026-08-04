@@ -47,4 +47,15 @@ describe('clampTaskTreeWidth', () => {
 		expect(settings.taskTemplates[0].fields[1].defaultValue).toBe(false)
 		expect(task.templateFields).toEqual({environment: 'production', deploy: true})
 	})
+
+	it('Wails 模型转换生命周期预设和默认预设标识', () => {
+		const settings = wailsSettings.Settings.createFrom({
+			lifecyclePresets: [{id: 'deploy', name: '部署', chains: {beforeStart: 'prepare'}}],
+			defaultLifecyclePresetId: 'deploy',
+		})
+
+		expect(settings.lifecyclePresets).toHaveLength(1)
+		expect(settings.lifecyclePresets[0].chains).toEqual({beforeStart: 'prepare'})
+		expect(settings.defaultLifecyclePresetId).toBe('deploy')
+	})
 })
