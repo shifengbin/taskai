@@ -47,6 +47,7 @@ import {api} from './api'
 import taskAiMark from './assets/task-ai-mark.svg'
 import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalView} from './components/TerminalView'
+import {TerminalSessionRegistry} from './terminal-session'
 import {
 	applyRealtimeStatusToTasks,
 	applyRealtimeStatusToTerminals,
@@ -150,6 +151,12 @@ export default function App() {
   const registeredTerminalKeys = useRef(new Set<string>())
   const finishedTerminalTaskIDs = useRef(new Set<string>())
   const terminalTitleValues = useRef(new Map<string, string>())
+	const terminalSessions = useRef<TerminalSessionRegistry>()
+	if (!terminalSessions.current) {
+		terminalSessions.current = new TerminalSessionRegistry((taskID, terminalID, data) => {
+			void api.writeTerminal(taskID, terminalID, data).catch((error) => showError(error, setMessage))
+		})
+	}
 	const latestRealtimeStatusVersion = useRef(0)
 	const lifecycleStatusTargets = useRef(new Map<string, TaskStatus>())
 	const startFeedbackSequence = useRef(0)
@@ -199,6 +206,7 @@ export default function App() {
       if (finishedTerminalTaskIDs.current.has(event.taskId)) {
         return
       }
+      terminalSessions.current?.handleTerminalEvent(event)
       const title = parseTerminalEventTitle(terminalTitleParserStates.current, event)
       const key = terminalEventKey(event.taskId, event.terminalId)
       if (title !== undefined && shouldReportTerminalTitleActivity({title: terminalTitleValues.current.get(key)}, title)) {
@@ -208,13 +216,16 @@ export default function App() {
       if (!registeredTerminalKeys.current.has(key)) {
         bufferPendingTerminalEvent(pendingTerminalEvents.current, event, title)
       }
-      setTerminals((current) => applyTerminalEvent(current, event, title))
+      if (event.type !== 'output' || title !== undefined) {
+        setTerminals((current) => applyTerminalEvent(current, event, title))
+      }
       if (event.type === 'error') {
         showErrorMessage(event.data || '终端发生错误')
       }
     })
     return () => {
       unsubscribe()
+      terminalSessions.current?.disposeAll()
       terminalTitleParserStates.current.clear()
       pendingTerminalEvents.current.clear()
       registeredTerminalKeys.current.clear()
@@ -647,6 +658,7 @@ export default function App() {
       const completed = await api.finishTask(finishTask.id)
       setTasks((current) => mergeLifecycleTask(current, completed))
       finishedTerminalTaskIDs.current.add(finishTask.id)
+      terminalSessions.current?.disposeTask(finishTask.id)
       clearTaskTerminalTracking(finishTask.id, terminalTitleParserStates.current, pendingTerminalEvents.current, registeredTerminalKeys.current)
       setTerminals((current) => current.filter((terminal) => terminal.taskId !== finishTask.id))
       if (selectedTaskID === finishTask.id) {
@@ -704,6 +716,7 @@ export default function App() {
 const closeTerminal = async (terminal: TerminalRecord) => {
   try {
     await api.closeTerminal(terminal.taskId, terminal.id)
+    terminalSessions.current?.dispose(terminal.taskId, terminal.id)
     setTerminals((current) => current.filter((currentTerminal) => (
       currentTerminal.id !== terminal.id || currentTerminal.taskId !== terminal.taskId
     )))
@@ -739,10 +752,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			const remainingTasks = await api.deleteCompletedTasks(selectedDeletableCompletedTaskIDs)
 			const deletedTaskIDSet = new Set(selectedDeletableCompletedTaskIDs)
 			setTasks(remainingTasks)
-			setTerminals((current) => current.filter((terminal) => !deletedTaskIDSet.has(terminal.taskId)))
-			setExpandedTasks((current) => Object.fromEntries(Object.entries(current).filter(([taskID]) => !deletedTaskIDSet.has(taskID))))
-			for (const taskID of deletedTaskIDSet) {
-				finishedTerminalTaskIDs.current.delete(taskID)
+				setTerminals((current) => current.filter((terminal) => !deletedTaskIDSet.has(terminal.taskId)))
+				setExpandedTasks((current) => Object.fromEntries(Object.entries(current).filter(([taskID]) => !deletedTaskIDSet.has(taskID))))
+				for (const taskID of deletedTaskIDSet) {
+					terminalSessions.current?.disposeTask(taskID)
+					finishedTerminalTaskIDs.current.delete(taskID)
 				lifecycleStatusTargets.current.delete(taskID)
 				clearTaskTerminalTracking(taskID, terminalTitleParserStates.current, pendingTerminalEvents.current, registeredTerminalKeys.current)
 			}
@@ -1115,7 +1129,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               <TerminalView
                 key={selectedTerminal.id}
                 terminal={selectedTerminal}
-                onWrite={(data) => void api.writeTerminal(selectedTerminal.taskId, selectedTerminal.id, data).catch((error) => showError(error, setMessage))}
+                sessionRegistry={terminalSessions.current!}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onClose={() => void closeTerminal(selectedTerminal)}
               />

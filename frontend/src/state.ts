@@ -6,7 +6,6 @@ import {
 } from './terminal-title'
 
 export interface PendingTerminalEvent {
-  output: string
   title?: string
   state?: TerminalRecord['state']
   realtimeStatus?: TerminalRecord['realtimeStatus']
@@ -105,11 +104,7 @@ export function applyTerminalEvent(terminals: TerminalRecord[], event: TerminalE
       return terminal
     }
     if (event.type === 'output') {
-      return {
-        ...terminal,
-        output: `${terminal.output ?? ''}${event.data ?? ''}`,
-        ...(title !== undefined ? {title} : {}),
-      }
+      return title !== undefined ? {...terminal, title} : terminal
     }
     if (event.type === 'exited') {
       return {...terminal, state: 'exited'}
@@ -151,15 +146,13 @@ export function bufferPendingTerminalEvent(
   const key = terminalEventKey(event.taskId, event.terminalId)
   const current = pendingEvents.get(key)
   if (event.type === 'output') {
-    pendingEvents.set(key, {
-      ...current,
-      output: `${current?.output ?? ''}${event.data ?? ''}`,
-      ...(title !== undefined ? {title} : {}),
-    })
+    if (title !== undefined) {
+      pendingEvents.set(key, {...current, title})
+    }
     return
   }
   if (event.type === 'exited') {
-    pendingEvents.set(key, {...current, output: current?.output ?? '', state: 'exited'})
+    pendingEvents.set(key, {...current, state: 'exited'})
   }
 }
 
@@ -174,7 +167,6 @@ export function bufferPendingRealtimeStatusEvent(
   const current = pendingEvents.get(key)
   pendingEvents.set(key, {
     ...current,
-    output: current?.output ?? '',
     realtimeStatus: event.terminalStatus,
   })
 }
@@ -188,7 +180,6 @@ export function mergePendingTerminalEvents(
   pendingEvents.delete(key)
   return {
     ...terminal,
-    output: `${terminal.output ?? ''}${pending?.output ?? ''}`,
     ...(pending?.title !== undefined ? {title: pending.title} : {}),
     ...(pending?.state !== undefined ? {state: pending.state} : {}),
     ...(pending?.realtimeStatus !== undefined ? {realtimeStatus: pending.realtimeStatus} : {}),

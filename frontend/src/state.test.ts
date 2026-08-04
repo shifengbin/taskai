@@ -78,7 +78,7 @@ describe('终端状态路由', () => {
 		})
 	})
 
-  it('只将输出和退出状态应用到对应终端', () => {
+  it('输出事件不累积到 React 终端记录，退出状态只应用到对应终端', () => {
     const terminals: TerminalRecord[] = [
       {id: 'one', taskId: 'task-a', state: 'active'},
       {id: 'two', taskId: 'task-b', state: 'active'},
@@ -89,15 +89,15 @@ describe('终端状态路由', () => {
     const afterExit = applyTerminalEvent(afterOutput, {taskId: 'task-b', terminalId: 'two', type: 'exited'})
 
     expect(afterExit).toEqual([
-      {id: 'one', taskId: 'task-a', state: 'active', output: 'hello'},
+      {id: 'one', taskId: 'task-a', state: 'active'},
       {id: 'two', taskId: 'task-b', state: 'exited'},
     ])
   })
 
   it('只为收到输出的对应终端更新实时标题', () => {
     const terminals: TerminalRecord[] = [
-      {id: 'one', taskId: 'task-a', state: 'active', output: '已有输出', title: '旧标题'},
-      {id: 'two', taskId: 'task-b', state: 'active', output: '其他输出', title: '其他标题'},
+      {id: 'one', taskId: 'task-a', state: 'active', title: '旧标题'},
+      {id: 'two', taskId: 'task-b', state: 'active', title: '其他标题'},
     ]
 
     const updated = applyTerminalEvent(terminals, {
@@ -105,8 +105,8 @@ describe('终端状态路由', () => {
     }, '实时标题')
 
     expect(updated).toEqual([
-      {id: 'one', taskId: 'task-a', state: 'active', output: '已有输出新增输出', title: '实时标题'},
-      {id: 'two', taskId: 'task-b', state: 'active', output: '其他输出', title: '其他标题'},
+      {id: 'one', taskId: 'task-a', state: 'active', title: '实时标题'},
+      {id: 'two', taskId: 'task-b', state: 'active', title: '其他标题'},
     ])
   })
 
@@ -157,7 +157,7 @@ describe('终端状态路由', () => {
     expect(parseTerminalEventTitle(parserStates, {...terminal, type: 'output', data: '完成\x07'})).toBeUndefined()
   })
 
-  it('合并创建前缓存的输出、最新标题和退出状态后清理缓存', () => {
+  it('合并创建前缓存的最新标题和退出状态后清理缓存', () => {
     const pendingEvents = new Map()
     const terminal = {id: 'terminal-1', taskId: 'task-a', state: 'active' as const}
 
@@ -167,7 +167,6 @@ describe('终端状态路由', () => {
 
     expect(mergePendingTerminalEvents(pendingEvents, terminal)).toEqual({
       ...terminal,
-      output: '初始输出后续输出',
       title: '最新标题',
       state: 'exited',
     })
@@ -182,7 +181,7 @@ describe('终端状态路由', () => {
       version: 1, taskId: terminal.taskId, taskStatus: 'unread', terminalId: terminal.id, terminalStatus: 'unread',
     })
 
-    expect(mergePendingTerminalEvents(pendingEvents, terminal)).toEqual({...terminal, output: '', realtimeStatus: 'unread'})
+    expect(mergePendingTerminalEvents(pendingEvents, terminal)).toEqual({...terminal, realtimeStatus: 'unread'})
   })
 
   it('登记已退出的终端，避免后续事件重新成为创建前缓存', () => {
@@ -203,8 +202,8 @@ describe('终端状态路由', () => {
 
     parseTerminalEventTitle(parserStates, {...taskATerminal, type: 'output', data: '\x1b]2;任务 A'})
     parseTerminalEventTitle(parserStates, {...taskBTerminal, type: 'output', data: '\x1b]2;任务 B'})
-    bufferPendingTerminalEvent(pendingEvents, {...taskATerminal, type: 'output', data: '任务 A 输出'})
-    bufferPendingTerminalEvent(pendingEvents, {...taskBTerminal, type: 'output', data: '任务 B 输出'})
+    bufferPendingTerminalEvent(pendingEvents, {...taskATerminal, type: 'output', data: '任务 A 输出'}, '任务 A')
+    bufferPendingTerminalEvent(pendingEvents, {...taskBTerminal, type: 'output', data: '任务 B 输出'}, '任务 B')
     registerTerminal(registeredTerminalKeys, {id: 'terminal-a', taskId: 'task-a', state: 'active'})
     registerTerminal(registeredTerminalKeys, {id: 'terminal-b', taskId: 'task-b', state: 'exited'})
 

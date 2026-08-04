@@ -2,115 +2,57 @@ import {useEffect, useMemo, useRef} from 'react'
 import {Box, IconButton, Tooltip, Typography, useTheme} from '@mui/material'
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
-import {FitAddon} from '@xterm/addon-fit'
-import {Terminal} from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
+import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
 import {terminalDisplayName, terminalRealtimeStatus, type TerminalRecord} from '../types'
-import {ClipboardGetText, ClipboardSetText} from '../../wailsjs/runtime/runtime'
+import {ClipboardGetText} from '../../wailsjs/runtime/runtime'
 import {TerminalStatusDot} from './TerminalStatusDot'
 
 interface TerminalViewProps {
   terminal: TerminalRecord
-  onWrite(data: string): void
+  sessionRegistry: TerminalSessionRegistry
   onResize(columns: number, rows: number): void
   onClose(): void
 }
 
-export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, onResize, onClose}: TerminalViewProps) {
   const appTheme = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
-  const terminalRef = useRef<Terminal>()
-  const outputRef = useRef('')
+  const onResizeRef = useRef(onResize)
   const terminalTheme = useMemo(() => terminalVisualTheme(appTheme.palette.mode), [appTheme.palette.mode])
 
   useEffect(() => {
-    const instance = new Terminal({
-      cursorBlink: terminal.state === 'active',
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: 13,
-      lineHeight: 1.35,
-      theme: terminalTheme,
-    })
-    const fitAddon = new FitAddon()
-    instance.loadAddon(fitAddon)
-    terminalRef.current = instance
-    outputRef.current = terminal.output ?? ''
     let active = true
-    const refreshVisibleRows = () => {
-      if (active && instance.rows > 0) {
-        instance.refresh(0, instance.rows - 1)
-      }
-    }
-    const fit = () => {
-      try {
-        fitAddon.fit()
-        if (instance.cols > 0 && instance.rows > 0) {
-          onResize(instance.cols, instance.rows)
-        }
-        return true
-      } catch {
-        // The terminal container may be temporarily hidden during a pane switch.
-        return false
-      }
-    }
     const fitAndRefresh = () => {
-      if (fit()) {
-        refreshVisibleRows()
+      if (active) {
+        sessionRegistry.fitAndRefresh(terminal.taskId, terminal.id, onResizeRef.current)
       }
     }
     if (containerRef.current) {
-      instance.open(containerRef.current)
-      fit()
-      instance.write(outputRef.current, refreshVisibleRows)
+      sessionRegistry.attach(terminal, containerRef.current, terminalTheme, onResizeRef.current)
     }
     const observer = new ResizeObserver(fitAndRefresh)
     if (containerRef.current) {
       observer.observe(containerRef.current)
     }
-    const onData = instance.onData((data) => onWrite(data))
-    const onSelectionChange = instance.onSelectionChange(() => {
-      const selection = instance.getSelection()
-      if (selection) {
-        void ClipboardSetText(selection).catch(() => {})
-      }
-    })
     const animationFrame = requestAnimationFrame(() => {
       fitAndRefresh()
-      instance.focus()
+      if (active) {
+        sessionRegistry.focus(terminal.taskId, terminal.id)
+      }
     })
 
     return () => {
       active = false
       cancelAnimationFrame(animationFrame)
-      onData.dispose()
-      onSelectionChange.dispose()
       observer.disconnect()
-      instance.dispose()
-      terminalRef.current = undefined
     }
-  }, [terminal.id])
+  }, [sessionRegistry, terminal.id, terminal.taskId, terminalTheme])
 
   useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.options.theme = terminalTheme
-    }
-  }, [terminalTheme])
-
-  useEffect(() => {
-    const instance = terminalRef.current
-    const output = terminal.output ?? ''
-    if (!instance) {
-      return
-    }
-    if (output.startsWith(outputRef.current)) {
-      instance.write(output.slice(outputRef.current.length))
-    } else {
-      instance.reset()
-      instance.write(output)
-    }
-    outputRef.current = output
-  }, [terminal.output])
+    onResizeRef.current = onResize
+  }, [onResize])
 
   return (
     <Box className="taskai-terminal" sx={{height: '100%', minWidth: 0, display: 'grid', gridTemplateRows: '44px minmax(0, 1fr)'}}>
@@ -142,7 +84,7 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
           event.preventDefault()
           void ClipboardGetText().then((clipboard) => {
             if (clipboard) {
-              onWrite(clipboard)
+              sessionRegistry.writeInput(terminal.taskId, terminal.id, clipboard)
             }
           }).catch(() => {})
         }}
@@ -150,10 +92,4 @@ export function TerminalView({terminal, onWrite, onResize, onClose}: TerminalVie
       />
     </Box>
   )
-}
-
-function terminalVisualTheme(mode: 'light' | 'dark') {
-  return mode === 'dark'
-    ? {background: '#101a14', foreground: '#d8e8dc', cursor: '#9cc3ab', selectionBackground: '#2e4035'}
-    : {background: '#26352e', foreground: '#e3eee5', cursor: '#9bd5ae', selectionBackground: '#3d5748'}
 }

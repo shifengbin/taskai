@@ -154,7 +154,6 @@ export interface TerminalRecord {
   id: string
   taskId: string
   state: TerminalState
-  output?: string
   title?: string
   realtimeStatus?: RealtimeStatus
 }

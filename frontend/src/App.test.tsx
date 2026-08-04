@@ -57,18 +57,33 @@ const bindings = vi.hoisted(() => ({
   PrepareQuit: vi.fn(),
 }))
 const runtime = vi.hoisted(() => ({ClipboardSetText: vi.fn(), EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: vi.fn()}))
+const terminalSessionRegistry = vi.hoisted(() => ({
+  handleTerminalEvent: vi.fn(),
+  disposeAll: vi.fn(),
+  disposeTask: vi.fn(),
+  dispose: vi.fn(),
+}))
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
 vi.mock('../wailsjs/runtime/runtime', () => runtime)
+vi.mock('./terminal-session', () => ({
+  TerminalSessionRegistry: class {
+    handleTerminalEvent = terminalSessionRegistry.handleTerminalEvent
+    disposeAll = terminalSessionRegistry.disposeAll
+    disposeTask = terminalSessionRegistry.disposeTask
+    dispose = terminalSessionRegistry.dispose
+
+    constructor(_onWrite: unknown) {}
+  },
+}))
 vi.mock('./components/TerminalView', async () => {
   const {terminalDisplayName} = await vi.importActual<typeof import('./types')>('./types')
   return {
-    TerminalView: ({terminal}: {terminal: {title?: string, output?: string}}) => <>
+    TerminalView: ({terminal}: {terminal: {title?: string}}) => <>
       <div>终端视图</div>
       <div data-testid="terminal-view-title-container">
         <div data-testid="terminal-view-title" aria-label="右侧终端标题">{terminalDisplayName(terminal)}</div>
       </div>
-      <div aria-label="右侧终端原始输出">{terminal.output}</div>
     </>,
   }
 })
@@ -95,7 +110,8 @@ describe('App confirmation flows', () => {
 
   beforeEach(() => {
     Object.values(bindings).forEach((mock) => mock.mockReset())
-    Object.values(runtime).forEach((mock) => mock.mockReset())
+		Object.values(runtime).forEach((mock) => mock.mockReset())
+    Object.values(terminalSessionRegistry).forEach((mock) => mock.mockReset())
     bindings.SaveSettings.mockImplementation(async (next) => next)
 		bindings.ClearSelectedTerminal.mockResolvedValue(undefined)
 		bindings.SelectTerminal.mockResolvedValue(undefined)
@@ -136,6 +152,16 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '结束'}))
     await user.click(screen.getByRole('button', {name: '结束并删除'}))
     expect(bindings.FinishTask).toHaveBeenCalledWith('task-1')
+    expect(terminalSessionRegistry.disposeTask).toHaveBeenCalledWith('task-1')
+  })
+
+  it('应用卸载时释放全部终端会话', async () => {
+    const {unmount} = render(<App/>)
+
+    await screen.findByRole('tab', {name: /执行中/})
+    unmount()
+
+    expect(terminalSessionRegistry.disposeAll).toHaveBeenCalledOnce()
   })
 
 	it('已完成任务仅选择可删除记录，并在确认后批量删除', async () => {
@@ -2253,7 +2279,7 @@ describe('App confirmation flows', () => {
     await waitFor(() => expect(screen.getByLabelText('右侧终端标题').textContent).toBe('终端'))
   })
 
-  it('右键新增终端时合并创建返回前到达的标题与原始输出', async () => {
+  it('右键新增终端时保留创建返回前到达的标题并直接路由输出', async () => {
     const user = userEvent.setup()
     const output = '\x1b]2;启动标题\x07'
     let resolveTerminal: (terminal: {id: string, taskId: string, state: 'active'}) => void
@@ -2277,10 +2303,11 @@ describe('App confirmation flows', () => {
     }
     terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: output})
 
+    expect(terminalSessionRegistry.handleTerminalEvent).toHaveBeenCalledWith({taskId: 'task-1', terminalId: 'terminal-1', type: 'output', data: output})
+
     resolveTerminal!({id: 'terminal-1', taskId: 'task-1', state: 'active'})
 
     await waitFor(() => expect(screen.getAllByText('启动标题')).toHaveLength(2))
-    expect(screen.getByLabelText('右侧终端原始输出').textContent).toBe(output)
   })
 
   it('任务结束后忽略右键新增终端的晚到创建结果', async () => {
@@ -2335,7 +2362,7 @@ describe('App confirmation flows', () => {
     expect(screen.queryByText('终端视图')).not.toBeInTheDocument()
   })
 
-  it('显示终端的自定义命令时合并创建返回前到达的标题与原始输出', async () => {
+  it('显示终端的自定义命令时保留创建返回前到达的标题并直接路由输出', async () => {
     const user = userEvent.setup()
     const output = '\x1b]2;命令标题\x07'
     let resolveCommand: (result: {terminal: {id: string, taskId: string, state: 'active'}}) => void
@@ -2363,10 +2390,11 @@ describe('App confirmation flows', () => {
     }
     terminalEventListener({taskId: 'task-1', terminalId: 'terminal-codex', type: 'output', data: output})
 
+    expect(terminalSessionRegistry.handleTerminalEvent).toHaveBeenCalledWith({taskId: 'task-1', terminalId: 'terminal-codex', type: 'output', data: output})
+
     resolveCommand!({terminal: {id: 'terminal-codex', taskId: 'task-1', state: 'active'}})
 
     await waitFor(() => expect(screen.getAllByText('命令标题')).toHaveLength(2))
-    expect(screen.getByLabelText('右侧终端原始输出').textContent).toBe(output)
   })
 
   it('自定义菜单通过保存的菜单项 ID 统一执行命令', async () => {

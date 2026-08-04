@@ -1,7 +1,7 @@
 ## 1. Windows 图标构建
 
 - [x] 1.1 修改 `scripts/build-windows.ps1`，在调用 Wails 前删除已有的 `build/windows/icon.ico`，并保持架构、`-NSIS` 与构建失败处理的现有语义。
-- [ ] 1.2 在 Windows 主机上分别运行普通和 `-NSIS` 构建，确认生成的 EXE 与安装程序均使用由当前 `build/appicon.png` 重建的 ICO。
+- [x] 1.2 在 Windows 主机上分别运行普通和 `-NSIS` 构建，确认生成的 EXE 与安装程序均使用由当前 `build/appicon.png` 重建的 ICO。
 
 ## 2. Linux Debian 打包
 
