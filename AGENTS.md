@@ -27,15 +27,15 @@ git diff -- frontend/wailsjs/
 ## Change Boundaries
 
 - Keep changes in the owning layer; preserve existing validation and error handling at API boundaries.
-- Built-in workspace and Git commands must retain path validation, workspace working-directory boundaries, and non-destructive behavior. Do not bypass their checks or add unreviewed destructive filesystem or Git operations.
+- Built-in workspace and Git commands must retain existing path validation and workspace working-directory boundaries. Preserve intentional, controlled cleanup such as post-end workspace deletion; do not bypass its checks or widen its targets.
 - Treat persisted task data as the source of truth. Do not repurpose temporary runtime state as persisted task state.
 
 ## Lifecycle Command Rules
 
 - Preserve the five hooks and their semantics: `beforeStart`, `postStart`, `beforeEnd`, `postEnd`, and `updateTask`.
-- Preserve ordering and commit points: `beforeStart` runs before the start state is committed, then `postStart`; `beforeEnd` runs before completion is committed, then `postEnd`. `updateTask` runs on its dedicated update flow after the task update is persisted.
-- Do not change failure, status-commit, or retry behavior incidentally. A failed pre-transition hook must not advance its task transition; retries must remain valid only for the hook and task status recorded by the execution.
-- Keep durable task status and lifecycle-chain configuration distinct from transient lifecycle execution state, including its run ID, revision, progress, failure, and retry information.
+- Preserve ordering and commit points: `beforeStart` runs before the start state is committed, then `postStart`; `beforeEnd` runs before completion is committed, then `postEnd`. `updateTask` runs only after a successful edit has been saved for a running task.
+- Do not change failure, status-commit, or retry behavior incidentally. A `beforeStart` or `beforeEnd` failure blocks its state transition. `postStart`, `postEnd`, and `updateTask` run after persistence; their failures retain the committed running, completed, or updated state. Retries must remain valid only for the hook and task status recorded by the execution.
+- Keep the persisted `Task.LifecycleExecution` record, including its run ID, revision, progress, failure, and retry information, distinct from task status and lifecycle-chain configuration, and from only-in-memory workers and command requests.
 
 ## Cross-Platform Terminal Rules
 
