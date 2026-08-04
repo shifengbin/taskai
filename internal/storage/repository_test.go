@@ -1219,7 +1219,7 @@ func TestRepositorySaveSettingsPreservesLifecycleConfiguration(t *testing.T) {
 	}
 }
 
-func TestRepositorySaveLifecycleDefaultChainPreservesOtherSettings(t *testing.T) {
+func TestRepositoryManagesLifecyclePresets(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 	data, err := repository.Load()
 	if err != nil {
@@ -1242,21 +1242,78 @@ func TestRepositorySaveLifecycleDefaultChainPreservesOtherSettings(t *testing.T)
 		t.Fatalf("SaveLifecycleCommandChain() error = %v", err)
 
 	}
-	saved, err := repository.SaveLifecycleDefaultChain(task.LifecycleHookPostStart, chain.ID)
+	preset, err := repository.SaveLifecyclePreset(settings.LifecyclePreset{
+		Name:   " 开始后预设 ",
+		Chains: map[task.LifecycleHook]string{task.LifecycleHookPostStart: " " + chain.ID + " "},
+	})
 	if err != nil {
-		t.Fatalf("SaveLifecycleDefaultChain() error = %v", err)
+		t.Fatalf("SaveLifecyclePreset() error = %v", err)
 	}
-	if saved.TaskTreeWidth != settings.DefaultTaskTreeWidth+40 {
-		t.Fatalf("保存默认链改写了普通设置: taskTreeWidth = %d", saved.TaskTreeWidth)
+	if preset.ID == "" || preset.Name != "开始后预设" || preset.Chains[task.LifecycleHookPostStart] != chain.ID {
+		t.Fatalf("保存的预设 = %#v", preset)
 	}
-	if got := saved.DefaultLifecyclePresetChains()[task.LifecycleHookPostStart]; got != chain.ID {
-		t.Fatalf("postStart 默认链 = %q，期望 %q", got, chain.ID)
+	preset.Chains[task.LifecycleHookPostStart] = "changed"
+	listed, err := repository.ListLifecyclePresets()
+	if err != nil {
+		t.Fatalf("ListLifecyclePresets() error = %v", err)
 	}
-	if got := saved.DefaultLifecyclePresetChains()[task.LifecycleHookBeforeStart]; got != settings.LifecycleChainCreateWorkspaceID {
-		t.Fatalf("beforeStart 默认链 = %q，期望保留 %q", got, settings.LifecycleChainCreateWorkspaceID)
+	if len(listed) != 2 || listed[1].Chains[task.LifecycleHookPostStart] != chain.ID {
+		t.Fatalf("列出的预设 = %#v", listed)
 	}
-	if lifecycleCommandIndex(saved.LifecycleCommands, command.ID) < 0 || lifecycleCommandChainIndex(saved.LifecycleChains, chain.ID) < 0 {
-		t.Fatalf("保存默认链改写了生命周期配置: %#v", saved)
+	copy, err := repository.CopyLifecyclePreset(preset.ID)
+	if err != nil {
+		t.Fatalf("CopyLifecyclePreset() error = %v", err)
+	}
+	if copy.ID == preset.ID || !reflect.DeepEqual(copy.Chains, map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID}) {
+		t.Fatalf("复制的预设 = %#v", copy)
+	}
+	data, err = repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Tasks = []task.Task{{
+		ID: "pending", Title: "保留预设快照", Color: task.DefaultColor, Status: task.StatusPending, ExtraInfo: []task.TaskExtraInfo{},
+		LifecycleChains: map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID},
+	}}
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() task snapshot error = %v", err)
+	}
+	preset.Name = "已修改预设"
+	preset.Chains = map[task.LifecycleHook]string{}
+	if _, err := repository.SaveLifecyclePreset(preset); err != nil {
+		t.Fatalf("SaveLifecyclePreset() update error = %v", err)
+	}
+	saved, err := repository.SaveDefaultLifecyclePreset(preset.ID)
+	if err != nil {
+		t.Fatalf("SaveDefaultLifecyclePreset() error = %v", err)
+	}
+	if saved.DefaultLifecyclePresetID != preset.ID || saved.TaskTreeWidth != settings.DefaultTaskTreeWidth+40 {
+		t.Fatalf("保存默认预设后的设置 = %#v", saved)
+	}
+	if saved, err = repository.SaveDefaultLifecyclePreset(""); err != nil || saved.DefaultLifecyclePresetID != "" {
+		t.Fatalf("SaveDefaultLifecyclePreset(\"\") = (%#v, %v)，期望清除默认预设", saved, err)
+	}
+	if _, err := repository.SaveDefaultLifecyclePreset(preset.ID); err != nil {
+		t.Fatalf("SaveDefaultLifecyclePreset() restore error = %v", err)
+	}
+	if err := repository.DeleteLifecyclePreset(preset.ID); err != nil {
+		t.Fatalf("DeleteLifecyclePreset() error = %v", err)
+	}
+	loaded, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if loaded.Settings.DefaultLifecyclePresetID != "" || len(loaded.Settings.LifecyclePresets) != 2 {
+		t.Fatalf("删除默认预设后的设置 = %#v", loaded.Settings)
+	}
+	if got := loaded.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID}) {
+		t.Fatalf("预设改动不应改写任务命令链: %#v", got)
+	}
+	if _, err := repository.SaveLifecyclePreset(settings.LifecyclePreset{Name: "无效", Chains: map[task.LifecycleHook]string{task.LifecycleHookBeforeStart: "missing"}}); err == nil {
+		t.Fatal("SaveLifecyclePreset() error = nil，期望拒绝不存在的命令链")
+	}
+	if _, err := repository.SaveLifecyclePreset(settings.LifecyclePreset{Name: "不适用", Chains: map[task.LifecycleHook]string{task.LifecycleHookBeforeStart: chain.ID}}); err == nil {
+		t.Fatal("SaveLifecyclePreset() error = nil，期望拒绝不适用的命令链")
 	}
 }
 
@@ -1291,7 +1348,7 @@ func TestRepositoryPreservesChainArgumentsWhenCommandDisablesChainArguments(t *t
 	}
 }
 
-func TestRepositoryClearsLifecycleDefaultWhenDeletingCompletedOnlyChain(t *testing.T) {
+func TestRepositoryProtectsLifecyclePresetChainReferences(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 	chain, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
 		Name: "完成后清理", CommandIDs: []string{settings.LifecycleCommandDeleteWorkspaceID}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookPostEnd},
@@ -1312,15 +1369,20 @@ func TestRepositoryClearsLifecycleDefaultWhenDeletingCompletedOnlyChain(t *testi
 		t.Fatalf("Save() error = %v", err)
 	}
 
-	if err := repository.DeleteLifecycleCommandChain(chain.ID); err != nil {
-		t.Fatalf("DeleteLifecycleCommandChain() error = %v", err)
+	if err := repository.DeleteLifecycleCommandChain(chain.ID); err == nil {
+		t.Fatal("DeleteLifecycleCommandChain() error = nil，期望拒绝被预设引用的链")
+	}
+	if _, err := repository.SaveLifecycleCommandChain(settings.LifecycleCommandChain{
+		ID: chain.ID, Name: chain.Name, CommandIDs: chain.CommandIDs, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeEnd},
+	}); err == nil {
+		t.Fatal("SaveLifecycleCommandChain() error = nil，期望拒绝移除预设引用的适用范围")
 	}
 	loaded, err := repository.Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if _, found := loaded.Settings.DefaultLifecyclePresetChains()[task.LifecycleHookPostEnd]; found {
-		t.Fatalf("删除链后仍保留默认值: %#v", loaded.Settings.LifecyclePresets)
+	if got := loaded.Settings.LifecyclePresets[0].Chains[task.LifecycleHookPostEnd]; got != chain.ID {
+		t.Fatalf("拒绝操作后预设引用 = %q，期望 %q", got, chain.ID)
 	}
 }
 

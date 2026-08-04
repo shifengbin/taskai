@@ -608,43 +608,91 @@ func (repository *Repository) ListLifecycleCommandChains() ([]settings.Lifecycle
 	return append([]settings.LifecycleCommandChain(nil), data.Settings.LifecycleChains...), nil
 }
 
-func (repository *Repository) SaveLifecycleDefaultChain(hook task.LifecycleHook, chainID string) (settings.Settings, error) {
-	if !task.IsLifecycleHook(hook) {
-		return settings.Settings{}, fmt.Errorf("不支持的生命周期钩子: %q", hook)
+func (repository *Repository) ListLifecyclePresets() ([]settings.LifecyclePreset, error) {
+	data, err := repository.Load()
+	if err != nil {
+		return nil, err
 	}
+	return copyLifecyclePresets(data.Settings.LifecyclePresets), nil
+}
+
+func (repository *Repository) SaveLifecyclePreset(next settings.LifecyclePreset) (settings.LifecyclePreset, error) {
+	data, err := repository.Load()
+	if err != nil {
+		return settings.LifecyclePreset{}, err
+	}
+	next.ID = strings.TrimSpace(next.ID)
+	if next.ID == "" {
+		next.ID, err = newLifecycleID("preset")
+		if err != nil {
+			return settings.LifecyclePreset{}, err
+		}
+	}
+	index := lifecyclePresetIndex(data.Settings.LifecyclePresets, next.ID)
+	if index >= 0 {
+		data.Settings.LifecyclePresets[index] = next
+	} else {
+		data.Settings.LifecyclePresets = append(data.Settings.LifecyclePresets, next)
+	}
+	data.Settings, err = settings.NormalizeLifecycle(data.Settings)
+	if err != nil {
+		return settings.LifecyclePreset{}, err
+	}
+	if err := repository.Save(data); err != nil {
+		return settings.LifecyclePreset{}, err
+	}
+	return copyLifecyclePreset(data.Settings.LifecyclePresets[lifecyclePresetIndex(data.Settings.LifecyclePresets, next.ID)]), nil
+}
+
+func (repository *Repository) CopyLifecyclePreset(id string) (settings.LifecyclePreset, error) {
+	data, err := repository.Load()
+	if err != nil {
+		return settings.LifecyclePreset{}, err
+	}
+	index := lifecyclePresetIndex(data.Settings.LifecyclePresets, strings.TrimSpace(id))
+	if index < 0 {
+		return settings.LifecyclePreset{}, fmt.Errorf("生命周期预设 %q 不存在", id)
+	}
+	copy := copyLifecyclePreset(data.Settings.LifecyclePresets[index])
+	copy.ID, err = newLifecycleID("preset")
+	if err != nil {
+		return settings.LifecyclePreset{}, err
+	}
+	copy.Name += " 副本"
+	return repository.SaveLifecyclePreset(copy)
+}
+
+func (repository *Repository) DeleteLifecyclePreset(id string) error {
+	data, err := repository.Load()
+	if err != nil {
+		return err
+	}
+	id = strings.TrimSpace(id)
+	index := lifecyclePresetIndex(data.Settings.LifecyclePresets, id)
+	if index < 0 {
+		return fmt.Errorf("生命周期预设 %q 不存在", id)
+	}
+	data.Settings.LifecyclePresets = append(data.Settings.LifecyclePresets[:index], data.Settings.LifecyclePresets[index+1:]...)
+	if data.Settings.DefaultLifecyclePresetID == id {
+		data.Settings.DefaultLifecyclePresetID = ""
+	}
+	data.Settings, err = settings.NormalizeLifecycle(data.Settings)
+	if err != nil {
+		return err
+	}
+	return repository.Save(data)
+}
+
+func (repository *Repository) SaveDefaultLifecyclePreset(id string) (settings.Settings, error) {
 	data, err := repository.Load()
 	if err != nil {
 		return settings.Settings{}, err
 	}
-	presetIndex := -1
-	for index, preset := range data.Settings.LifecyclePresets {
-		if preset.ID == data.Settings.DefaultLifecyclePresetID {
-			presetIndex = index
-			break
-		}
+	id = strings.TrimSpace(id)
+	if id != "" && lifecyclePresetIndex(data.Settings.LifecyclePresets, id) < 0 {
+		return settings.Settings{}, fmt.Errorf("生命周期预设 %q 不存在", id)
 	}
-	if presetIndex < 0 {
-		return settings.Settings{}, fmt.Errorf("当前没有默认生命周期预设")
-	}
-	chains := data.Settings.LifecyclePresets[presetIndex].Chains
-	defaults := make(map[task.LifecycleHook]string, len(chains))
-	for currentHook, currentChainID := range chains {
-		defaults[currentHook] = currentChainID
-	}
-	chainID = strings.TrimSpace(chainID)
-	if chainID == "" {
-		delete(defaults, hook)
-	} else {
-		index := lifecycleCommandChainIndex(data.Settings.LifecycleChains, chainID)
-		if index < 0 {
-			return settings.Settings{}, fmt.Errorf("生命周期默认链不存在: %q", chainID)
-		}
-		if !lifecycleChainSupportsHook(data.Settings.LifecycleChains[index], hook) {
-			return settings.Settings{}, fmt.Errorf("生命周期命令链 %q 不适用于 %s", data.Settings.LifecycleChains[index].Name, hook)
-		}
-		defaults[hook] = chainID
-	}
-	data.Settings.LifecyclePresets[presetIndex].Chains = defaults
+	data.Settings.DefaultLifecyclePresetID = id
 	data.Settings, err = settings.NormalizeLifecycle(data.Settings)
 	if err != nil {
 		return settings.Settings{}, err
@@ -676,6 +724,13 @@ func (repository *Repository) SaveLifecycleCommandChain(next settings.LifecycleC
 		for hook, selectedChainID := range current.LifecycleChains {
 			if selectedChainID == next.ID && !lifecycleChainSupportsHook(next, hook) {
 				return settings.LifecycleCommandChain{}, fmt.Errorf("生命周期命令链 %q 仍被任务 %q 用于 %s，不能移除该适用范围", next.Name, current.Title, hook)
+			}
+		}
+	}
+	for _, preset := range data.Settings.LifecyclePresets {
+		for hook, selectedChainID := range preset.Chains {
+			if selectedChainID == next.ID && !lifecycleChainSupportsHook(next, hook) {
+				return settings.LifecycleCommandChain{}, fmt.Errorf("生命周期命令链 %q 仍被预设 %q 用于 %s，不能移除该适用范围", next.Name, preset.Name, hook)
 			}
 		}
 	}
@@ -736,14 +791,14 @@ func (repository *Repository) DeleteLifecycleCommandChain(id string) error {
 			}
 		}
 	}
-	data.Settings.LifecycleChains = append(data.Settings.LifecycleChains[:index], data.Settings.LifecycleChains[index+1:]...)
-	for presetIndex := range data.Settings.LifecyclePresets {
-		for hook, selectedID := range data.Settings.LifecyclePresets[presetIndex].Chains {
+	for _, preset := range data.Settings.LifecyclePresets {
+		for _, selectedID := range preset.Chains {
 			if selectedID == id {
-				delete(data.Settings.LifecyclePresets[presetIndex].Chains, hook)
+				return fmt.Errorf("生命周期命令链 %q 仍被预设 %q 引用", id, preset.Name)
 			}
 		}
 	}
+	data.Settings.LifecycleChains = append(data.Settings.LifecycleChains[:index], data.Settings.LifecycleChains[index+1:]...)
 	data.Settings, err = settings.NormalizeLifecycle(data.Settings)
 	if err != nil {
 		return err
@@ -767,6 +822,32 @@ func lifecycleCommandChainIndex(chains []settings.LifecycleCommandChain, id stri
 		}
 	}
 	return -1
+}
+
+func lifecyclePresetIndex(presets []settings.LifecyclePreset, id string) int {
+	for index, preset := range presets {
+		if preset.ID == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func copyLifecyclePreset(current settings.LifecyclePreset) settings.LifecyclePreset {
+	copy := current
+	copy.Chains = make(map[task.LifecycleHook]string, len(current.Chains))
+	for hook, chainID := range current.Chains {
+		copy.Chains[hook] = chainID
+	}
+	return copy
+}
+
+func copyLifecyclePresets(presets []settings.LifecyclePreset) []settings.LifecyclePreset {
+	copy := make([]settings.LifecyclePreset, len(presets))
+	for index, preset := range presets {
+		copy[index] = copyLifecyclePreset(preset)
+	}
+	return copy
 }
 
 func lifecycleChainSupportsHook(chain settings.LifecycleCommandChain, hook task.LifecycleHook) bool {
