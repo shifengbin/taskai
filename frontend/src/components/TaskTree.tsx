@@ -1,38 +1,25 @@
-import {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react'
+import {useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties} from 'react'
+import {createPortal} from 'react-dom'
 import {
-	Box,
-	Checkbox,
-	Chip,
-  Collapse,
-  IconButton,
-  List,
-  ListItemButton,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Tab,
-  Tabs,
-  Tooltip,
-  Typography,
-} from '@mui/material'
-import AddOutlinedIcon from '@mui/icons-material/AddOutlined'
-import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined'
-import ChevronRightIcon from '@mui/icons-material/ChevronRight'
-import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined'
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined'
-import MoreVertIcon from '@mui/icons-material/MoreVert'
-import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined'
-import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined'
-import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined'
-import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined'
-import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
-import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined'
+	Archive,
+	ArchiveRestore,
+	ChevronDown,
+	ChevronRight,
+	ExternalLink,
+	FolderOpen,
+	GripVertical,
+	MoreVertical,
+	Pencil,
+	Play,
+	RotateCcw,
+	CircleStop,
+	Terminal,
+	X,
+} from 'lucide-react'
 
 import {defaultTaskColor, defaultTaskMenuItems, terminalDisplayName, terminalRealtimeStatus, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
 import {TerminalStatusDot} from './TerminalStatusDot'
+import {Checkbox, IconButton, Tabs, TabsList, TabsTrigger, cn} from './ui'
 
 interface TaskMenuState {
   taskID: string
@@ -110,7 +97,7 @@ export function TaskTree({
   startedTaskFeedback,
 	onChangeStatus,
 	onToggleCompletedTaskSelection,
-  onToggleTaskExpanded,
+	onToggleTaskExpanded,
   onSelectTask,
   onSelectTerminal,
   onCreateTerminal,
@@ -130,9 +117,11 @@ export function TaskTree({
   const [draggedTaskID, setDraggedTaskID] = useState<string>()
   const [dragPreviewPosition, setDragPreviewPosition] = useState<TaskDragPreviewPosition>()
   const [dropTarget, setDropTarget] = useState<TaskDropTarget>()
+  const [descTooltip, setDescTooltip] = useState<{top: number; left: number; text: string} | null>(null)
   const pointerDragRef = useRef<TaskPointerDrag>()
   const suppressTaskClickRef = useRef(false)
   const taskListRef = useRef<HTMLUListElement | null>(null)
+  const taskMenuRef = useRef<HTMLDivElement | null>(null)
   const reducedMotion = useReducedMotion()
   const terminalsByTask = useMemo(() => {
     return terminals.reduce<Record<string, TerminalRecord[]>>((byTask, terminal) => {
@@ -179,6 +168,30 @@ export function TaskTree({
       taskList.scrollTop = Math.max(0, taskList.scrollTop + offset)
     }
   }, [activeStatus, startedTaskFeedback?.sequence])
+
+  // 任务操作菜单：点击外部或按下 Escape 时关闭。
+  useEffect(() => {
+    if (!taskMenu) {
+      return
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (taskMenuRef.current && event.target instanceof Node && taskMenuRef.current.contains(event.target)) {
+        return
+      }
+      setTaskMenu(null)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setTaskMenu(null)
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [taskMenu])
 
   const toggleExpanded = (taskID: string) => {
     if (onToggleTaskExpanded) {
@@ -321,27 +334,39 @@ export function TaskTree({
 
   const activeMenuItems = taskMenuTask && !taskMenuTask.lifecycleExecution ? menuItems.filter((item) => taskMenuTask.status === 'running' || item.kind === 'edit-task') : []
 
+  const taskMenuStyle = useMemo<CSSProperties>(() => {
+    if (!taskMenu) {
+      return {display: 'none'}
+    }
+    if (taskMenu.anchorEl) {
+      const bounds = taskMenu.anchorEl.getBoundingClientRect()
+      return {position: 'fixed', top: bounds.bottom + 4, left: bounds.left}
+    }
+    return {position: 'fixed', top: taskMenu.position?.top ?? 0, left: taskMenu.position?.left ?? 0}
+  }, [taskMenu])
+
   return (
-    <Box className="taskai-task-tree" component="nav" aria-label="任务和终端" sx={{height: '100%', minHeight: 0, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)'}}>
-      <Tabs
-        value={activeStatus}
-        onChange={(_event, status: TaskStatus) => onChangeStatus(status)}
-        aria-label="任务状态筛选"
-        variant="fullWidth"
-        sx={{borderBottom: 1, borderColor: 'divider', minHeight: 42}}
-      >
-        <Tab value="pending" label={`未执行 (${taskCounts.pending})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
-        <Tab value="running" label={`执行中 (${taskCounts.running})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
-        <Tab value="completed" label={`已完成 (${taskCounts.completed})`} sx={{minHeight: 42, minWidth: 0, px: 0.5}}/>
+    <nav aria-label="任务和终端" className="grid h-full min-h-0" style={{gridTemplateRows: 'auto minmax(0, 1fr)'}}>
+      <Tabs value={activeStatus} onValueChange={(value) => onChangeStatus(value as TaskStatus)}>
+        <TabsList aria-label="任务状态筛选">
+          <TabsTrigger value="pending">{`未执行 (${taskCounts.pending})`}</TabsTrigger>
+          <TabsTrigger value="running">{`执行中 (${taskCounts.running})`}</TabsTrigger>
+          <TabsTrigger value="completed">{`已完成 (${taskCounts.completed})`}</TabsTrigger>
+        </TabsList>
       </Tabs>
-      <List className="taskai-task-tree__list" ref={taskListRef} data-testid="task-tree-list" disablePadding dense sx={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': {display: 'none'}}}>
-		{visibleTasks.map((task) => {
+      <ul
+        ref={taskListRef}
+        data-testid="task-tree-list"
+        className="snap-no-scrollbar m-0 list-none p-0 pt-3"
+        style={{minHeight: 0, overflowX: 'hidden', overflowY: 'auto', scrollbarWidth: 'none'}}
+      >
+			{visibleTasks.map((task) => {
           const childTerminals = terminalsByTask[task.id] ?? []
           const isExpanded = expanded[task.id] ?? true
-			const isSelectedTask = task.id === selectedTaskID
+				const isSelectedTask = task.id === selectedTaskID
           const taskColor = task.color || defaultTaskColor
           const dropPosition = dropTarget?.taskID === task.id ? dropTarget.position : undefined
-			const execution = task.lifecycleExecution
+				const execution = task.lifecycleExecution
 					const locked = Boolean(execution)
 					const canSelectCompletedTask = selectingCompletedTasks && !locked && Boolean(onToggleCompletedTaskSelection)
 					const isCompletedTaskSelected = canSelectCompletedTask && selectedCompletedTaskIDs.includes(task.id)
@@ -353,42 +378,42 @@ export function TaskTree({
             ? reducedMotion ? 'static' : 'flash'
             : undefined
           return (
-            <Box
-              key={task.id}
-            >
+            <li key={task.id}>
               {isFirstShelvedTask && (
-                <ListItemButton
-                  className="taskai-task-row taskai-task-row--shelved"
+                <button
+                  type="button"
                   aria-label={shelvedExpanded ? '收起已搁置任务' : '展开已搁置任务'}
                   onClick={() => setShelvedExpanded((current) => !current)}
-                  sx={{minHeight: 44, gap: 0.75, borderTop: 1, borderColor: 'divider'}}
+                  className="taskai-shelved-toggle flex w-full items-center gap-2 border-t-2 border-snap-outline/25 px-2 py-2 text-left text-sm font-semibold text-snap-ink"
                 >
-                  {shelvedExpanded ? <ExpandMoreIcon fontSize="small"/> : <ChevronRightIcon fontSize="small"/>}
-                  <ListItemText primary={`已搁置 (${shelvedTasks.length})`} slotProps={{primary: {noWrap: true, sx: {fontWeight: 600}}}}/>
-                </ListItemButton>
+                  {shelvedExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+                  <span>{`已搁置 (${shelvedTasks.length})`}</span>
+                </button>
               )}
               {(!isShelvedTask || shelvedExpanded) && (
-                <Box
-              data-task-container={task.id}
-            >
+                <div data-task-container={task.id}>
               {dropPosition === 'before' && <TaskDropIndicator taskTitle={task.title} position={dropPosition}/>}
-              <Tooltip
-                title={task.description || '暂无任务描述'}
-                placement="right"
-                slotProps={{tooltip: {sx: {maxWidth: 480, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}}}
-              >
-                <ListItemButton
-                  className="taskai-task-row"
-                  data-task-id={task.id}
+              <div
+                className={cn(
+                  'taskai-task-row relative flex min-h-[48px] items-center gap-1.5 border-l-4 border-solid py-2 pl-2 pr-1.5 shadow-snap-sm',
+                  'cursor-default touch-none select-none',
+                  isTaskRowSelected && 'taskai-task-row--selected',
+                )}
+                data-task-id={task.id}
 						data-task-selected={isTaskRowSelected || undefined}
 						data-task-start-feedback={startFeedbackMode}
-						selected={isTaskRowSelected}
+                onContextMenu={(event) => requestContextMenu(event, task)}
+                onMouseEnter={(event) => {
+                  const bounds = event.currentTarget.getBoundingClientRect()
+                  setDescTooltip({top: bounds.top, left: bounds.right + 8, text: task.description || '暂无任务描述'})
+                }}
+                onMouseLeave={() => setDescTooltip(null)}
 						onClick={(event) => {
-                    if (suppressTaskClickRef.current) {
-                      suppressTaskClickRef.current = false
-                      event.preventDefault()
-                      return
-                    }
+                  if (suppressTaskClickRef.current) {
+                    suppressTaskClickRef.current = false
+                    event.preventDefault()
+                    return
+                  }
 							if (selectingCompletedTasks) {
 								if (canSelectCompletedTask) {
 									onToggleCompletedTaskSelection?.(task.id)
@@ -397,11 +422,10 @@ export function TaskTree({
 							}
 							onSelectTask(task)
                   }}
-                  onContextMenu={(event) => requestContextMenu(event, task)}
-						onDoubleClick={(event) => {
-							if (selectingCompletedTasks) {
-								return
-							}
+                  onDoubleClick={(event) => {
+                    if (selectingCompletedTasks) {
+                      return
+                    }
                     if ((event.target as HTMLElement).closest('button')) {
                       return
                     }
@@ -411,214 +435,226 @@ export function TaskTree({
                   onPointerMove={moveTaskPointerDrag}
                   onPointerUp={completeTaskPointerDrag}
                   onPointerCancel={cancelTaskPointerDrag}
-                  style={{borderLeftColor: taskColor}}
-                  sx={{
-                    minHeight: 48,
-                    gap: 0.5,
-                    borderLeft: 4,
-                    borderLeftStyle: 'solid',
-                    position: 'relative',
-                    borderRadius: 0,
-							bgcolor: isTaskRowSelected ? 'action.selected' : `${taskColor}0A`,
+                  style={{
+                    borderRadius: '7px',
+                    ['--task-color' as string]: taskColor,
+                    borderLeftColor: taskColor,
+                    backgroundColor: isTaskRowSelected ? `${taskColor}1a` : `${taskColor}0a`,
                     opacity: draggedTaskID === task.id ? 0.5 : 1,
-                    outline: draggedTaskID === task.id ? '2px solid' : '2px solid transparent',
-						outlineColor: draggedTaskID === task.id ? 'primary.main' : 'transparent',
-						outlineOffset: -2,
-						'&.Mui-selected': {backgroundColor: 'action.selected', boxShadow: `inset 3px 0 0 ${taskColor}`},
-						'&.Mui-selected:hover': {backgroundColor: 'action.hover'},
-						...(startFeedbackMode === 'static' && {boxShadow: `inset 0 0 0 2px ${taskColor}`}),
-						...(startFeedbackMode === 'flash' && {
-							animation: 'taskai-task-start-feedback 350ms ease-in-out 2',
-							'@keyframes taskai-task-start-feedback': {
-								'0%, 100%': {boxShadow: `inset 0 0 0 0 ${taskColor}`, backgroundColor: `${taskColor}14`},
-								'50%': {boxShadow: `inset 0 0 0 2px ${taskColor}`, backgroundColor: `${taskColor}2e`},
-							},
-						}),
-							cursor: selectingCompletedTasks ? (canSelectCompletedTask ? 'pointer' : 'not-allowed') : locked ? 'not-allowed' : 'grab',
-                    touchAction: 'none',
-                    userSelect: 'none',
-                    '&:active': {cursor: 'grabbing'},
-                  }}
+                    outline: draggedTaskID === task.id ? '2px solid var(--snap-cobalt)' : '2px solid transparent',
+                    outlineOffset: -2,
+                    cursor: selectingCompletedTasks ? (canSelectCompletedTask ? 'pointer' : 'not-allowed') : locked ? 'not-allowed' : 'grab',
+                  } as CSSProperties}
                 >
-					{selectingCompletedTasks && (
-						<Checkbox
-							checked={isCompletedTaskSelected}
-							disabled={!canSelectCompletedTask}
-								slotProps={{input: {'aria-label': `选择任务 ${task.title}`}}}
-							size="small"
-							onClick={(event) => event.stopPropagation()}
-							onChange={() => onToggleCompletedTaskSelection?.(task.id)}
-						/>
-					)}
-					{task.status === 'running' && (
+						{selectingCompletedTasks && (
+							<Checkbox
+								checked={isCompletedTaskSelected}
+								disabled={!canSelectCompletedTask}
+								aria-label={`选择任务 ${task.title}`}
+								className="mr-1"
+								onClick={(event) => event.stopPropagation()}
+								onCheckedChange={() => onToggleCompletedTaskSelection?.(task.id)}
+							/>
+						)}
+						{task.status === 'running' && (
                   <IconButton
                     aria-label={isExpanded ? '收起终端' : '展开终端'}
-                    size="small"
+                    title={isExpanded ? '收起终端' : '展开终端'}
+                    className="h-7 w-7"
                     onClick={(event) => {
                       event.stopPropagation()
                       toggleExpanded(task.id)
                     }}
                   >
-                    {isExpanded ? <ExpandMoreIcon fontSize="small"/> : <ChevronRightIcon fontSize="small"/>}
+                    {isExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
                   </IconButton>
                 )}
-                <ListItemText
-                  primary={task.title}
-                  secondary={task.description || undefined}
-                  slotProps={{
-                    primary: {noWrap: true, sx: {fontWeight: 600}},
-                    secondary: {noWrap: true},
-                  }}
-                />
-						{execution && <Tooltip title={execution.error || '命令链正在执行'}>
-							<Chip label={executionLabel} size="small" color={execution.state === 'failed' ? 'error' : 'warning'} variant="outlined" sx={{maxWidth: 180, '& .MuiChip-label': {overflow: 'hidden', textOverflow: 'ellipsis'}}}/>
-						</Tooltip>}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-display text-sm font-bold text-snap-ink">{task.title}</span>
+                  {task.description && <span className="truncate text-xs text-snap-muted">{task.description}</span>}
+                </div>
+						{execution && (
+							<span
+                  title={execution.error || '命令链正在执行'}
+                  className={cn(
+                    'taskai-lifecycle-chip ml-1 inline-flex max-w-[180px] shrink-0 items-center rounded-snap-sm border-2 px-2 py-0.5 text-xs font-bold',
+                    execution.state === 'failed' ? 'taskai-lifecycle-chip--error' : 'taskai-lifecycle-chip--warning',
+                  )}
+                >
+                  <span className="truncate">{executionLabel}</span>
+                </span>
+						)}
                 {task.status === 'running' && !isExpanded && <TerminalStatusDot status={task.realtimeStatus ?? 'idle'}/>}
                 {task.status === 'pending' && (
-                  <Tooltip title="执行">
-						<span>
-							<IconButton
-                      aria-label="执行"
-                      size="small"
-						disabled={locked}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onStartTask(task.id)
-                      }}
-							>
-								<PlayArrowOutlinedIcon fontSize="small"/>
-							</IconButton>
-						</span>
-                  </Tooltip>
-                )}
-                {task.status === 'running' && (
-                  <Tooltip title="结束">
-						<span>
-							<IconButton
-                      aria-label="结束"
-                      size="small"
-						disabled={locked}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onFinishTask(task.id)
-                      }}
-							>
-								<TaskAltOutlinedIcon fontSize="small"/>
-							</IconButton>
-						</span>
-                  </Tooltip>
-                )}
-						{execution?.state === 'failed' && onRetryLifecycle && (
-							<Tooltip title="从命令链首条命令重新执行">
-								<IconButton aria-label="重试命令链" size="small" color="error" onClick={(event) => {
-									event.stopPropagation()
-									onRetryLifecycle(task.id)
-								}}>
-									<ReplayOutlinedIcon fontSize="small"/>
-								</IconButton>
-							</Tooltip>
-						)}
-					{!selectingCompletedTasks && <Tooltip title="任务操作">
-						<span>
-							<IconButton
-                    aria-label="任务操作"
-                    size="small"
-						disabled={locked}
+                  <IconButton
+                    aria-label="执行"
+                    title="执行"
+                    disabled={locked}
+                    className="h-7 w-7"
                     onClick={(event) => {
                       event.stopPropagation()
-                      setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
+                      onStartTask(task.id)
                     }}
-							>
-								<MoreVertIcon fontSize="small"/>
-							</IconButton>
-						</span>
-					</Tooltip>}
-                </ListItemButton>
-              </Tooltip>
-              <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                <List disablePadding dense sx={{pl: 3.25}}>
+                  >
+                    <Play className="h-4 w-4"/>
+                  </IconButton>
+                )}
+                {task.status === 'running' && (
+                  <IconButton
+                    aria-label="结束"
+                    title="结束"
+                    disabled={locked}
+                    className="h-7 w-7"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onFinishTask(task.id)
+                    }}
+                  >
+                    <CircleStop className="h-4 w-4"/>
+                  </IconButton>
+                )}
+						{execution?.state === 'failed' && onRetryLifecycle && (
+							<IconButton
+                  aria-label="重试命令链"
+                  title="从命令链首条命令重新执行"
+                  className="h-7 w-7 text-snap-error"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onRetryLifecycle(task.id)
+                  }}
+                >
+                  <RotateCcw className="h-4 w-4"/>
+                </IconButton>
+						)}
+					{!selectingCompletedTasks && (
+            <IconButton
+              aria-label="任务操作"
+              title="任务操作"
+              disabled={locked}
+              className="h-7 w-7"
+              onClick={(event) => {
+                event.stopPropagation()
+                setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
+              }}
+            >
+              <MoreVertical className="h-4 w-4"/>
+            </IconButton>
+          )}
+              </div>
+              {isExpanded && (childTerminals.length > 0 || task.status === 'running') && (
+                <ul className="snap-no-scrollbar m-0 list-none p-0 pl-3 pr-2 flex flex-col gap-1 mb-3">
                   {childTerminals.map((terminal) => (
-                    <ListItemButton
-                      className="taskai-terminal-row"
-                      key={terminal.id}
-                      selected={terminal.id === selectedTerminalId}
-                      onClick={() => onSelectTerminal(terminal)}
-                      sx={{minHeight: 38, gap: 0.75}}
-                    >
-                      <TerminalOutlinedIcon fontSize="small" color={terminal.state === 'active' ? 'primary' : 'disabled'}/>
-                      <ListItemText
-                        sx={{flex: 1, minWidth: 0}}
-                        primary={
-                          <Typography
+                    <li key={terminal.id}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={terminal.id === selectedTerminalId}
+                        onClick={() => onSelectTerminal(terminal)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onSelectTerminal(terminal)
+                          }
+                        }}
+                        className={cn(
+                          'flex min-h-[38px] cursor-default items-center gap-2 rounded-snap-sm border-2 px-2 py-1 text-sm shadow-snap-sm transition-colors',
+                          terminal.id === selectedTerminalId
+                            ? 'border-snap-cobalt bg-snap-cobalt/15 text-snap-ink'
+                            : 'border-snap-outline/30 bg-snap-surface text-snap-ink hover:border-snap-outline/60',
+                        )}
+                      >
+                        <Terminal className={cn('h-4 w-4 shrink-0', terminal.state === 'active' ? 'text-snap-cobalt' : 'text-snap-muted')}/>
+                        <div style={{flex: 1, minWidth: 0}}>
+                          <span
                             data-testid={`task-tree-terminal-title-${terminal.id}`}
-                            variant="body2"
-                            sx={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'}}
+                            style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'}}
+                            className="block"
                           >
                             {terminalDisplayName(terminal)}
-                          </Typography>
-                        }
-                      />
-                      <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
-                      {onCloseTerminal && (
-                        <Tooltip title="关闭终端">
+                          </span>
+                        </div>
+                        <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
+                        {onCloseTerminal && (
                           <IconButton
                             aria-label="关闭终端"
-                            size="small"
+                            title="关闭终端"
+                            className="h-7 w-7"
                             onClick={(event) => {
                               event.stopPropagation()
                               onCloseTerminal(terminal)
                             }}
                           >
-                            <CloseOutlinedIcon fontSize="small"/>
+                            <X className="h-4 w-4"/>
                           </IconButton>
-                        </Tooltip>
-                      )}
-                    </ListItemButton>
+                        )}
+                      </div>
+                    </li>
                   ))}
                   {task.status === 'running' && childTerminals.length === 0 && (
-                    <Box sx={{display: 'flex', alignItems: 'center', gap: 0.75, px: 2, py: 1, color: 'text.secondary'}}>
-                      <TerminalOutlinedIcon fontSize="small"/>
-                      <Typography variant="caption">右键任务后可新增终端</Typography>
-                    </Box>
+                    <li className="flex items-center gap-2 px-3 py-2 text-xs text-snap-muted">
+                      <Terminal className="h-4 w-4"/>
+                      <span>右键任务后可新增终端</span>
+                    </li>
                   )}
-                </List>
-              </Collapse>
-              {dropPosition === 'after' && <TaskDropIndicator taskTitle={task.title} position={dropPosition}/>}
-            </Box>
+                </ul>
               )}
-            </Box>
+              {dropPosition === 'after' && <TaskDropIndicator taskTitle={task.title} position={dropPosition}/>}
+            </div>
+              )}
+            </li>
           )
         })}
-      </List>
+      </ul>
       {draggedTask && dragPreviewPosition && <TaskDragPreview task={draggedTask} position={dragPreviewPosition}/>}
-      <Menu
-        className="taskai-task-menu"
-        open={taskMenu !== null}
-        onClose={() => setTaskMenu(null)}
-        anchorEl={taskMenu?.anchorEl}
-        anchorReference={taskMenu?.anchorEl ? 'anchorEl' : 'anchorPosition'}
-        anchorPosition={taskMenu?.position}
-      >
-        {activeMenuItems.map((item) => (
-          <MenuItem key={item.id} onClick={() => runTaskMenuItem(item)}>
-            {item.kind === 'edit-task' && <EditOutlinedIcon fontSize="small"/>}
-            {item.kind === 'create-terminal' && <TerminalOutlinedIcon fontSize="small"/>}
-            {item.kind === 'open-folder' && <FolderOpenOutlinedIcon fontSize="small"/>}
-            {item.kind === 'command' && (item.showTerminal ? <TerminalOutlinedIcon fontSize="small"/> : <OpenInNewOutlinedIcon fontSize="small"/>)}
-            <Typography component="span" sx={{ml: 1}}>{item.name}</Typography>
-          </MenuItem>
-        ))}
-        {taskMenuTask?.status === 'running' && !taskMenuTask.lifecycleExecution && (
-          <MenuItem onClick={() => {
-            onSetTaskShelved?.(taskMenuTask.id, !taskMenuTask.shelved)
-            setTaskMenu(null)
-          }}>
-            {taskMenuTask.shelved ? <UnarchiveOutlinedIcon fontSize="small"/> : <ArchiveOutlinedIcon fontSize="small"/>}
-            <Typography component="span" sx={{ml: 1}}>{taskMenuTask.shelved ? '取消搁置' : '搁置任务'}</Typography>
-          </MenuItem>
-        )}
-      </Menu>
-    </Box>
+      {descTooltip && createPortal(
+        <div
+          role="tooltip"
+          className="pointer-events-none fixed z-50 max-w-[480px] break-words rounded-snap-sm border-2 border-snap-outline bg-snap-surface px-2 py-1 text-xs font-bold text-snap-ink shadow-snap"
+          style={{top: descTooltip.top, left: descTooltip.left}}
+        >
+          {descTooltip.text}
+        </div>,
+        document.body,
+      )}
+      {taskMenu && createPortal(
+        <div
+          ref={taskMenuRef}
+          role="menu"
+          className="z-50 min-w-[12rem] border-2 border-snap-outline rounded-snap bg-snap-surface py-1 text-snap-ink shadow-snap-lg"
+          style={taskMenuStyle}
+        >
+          {activeMenuItems.map((item) => (
+            <div
+              key={item.id}
+              role="menuitem"
+              className="flex cursor-default items-center gap-2 px-3 py-1.5 text-sm font-semibold text-snap-ink transition-colors hover:bg-snap-cobalt hover:text-white"
+              onClick={() => runTaskMenuItem(item)}
+            >
+              {item.kind === 'edit-task' && <Pencil className="h-4 w-4"/>}
+              {item.kind === 'create-terminal' && <Terminal className="h-4 w-4"/>}
+              {item.kind === 'open-folder' && <FolderOpen className="h-4 w-4"/>}
+              {item.kind === 'command' && (item.showTerminal ? <Terminal className="h-4 w-4"/> : <ExternalLink className="h-4 w-4"/>)}
+              <span>{item.name}</span>
+            </div>
+          ))}
+          {taskMenuTask?.status === 'running' && !taskMenuTask.lifecycleExecution && (
+            <div
+              role="menuitem"
+              className="flex cursor-default items-center gap-2 px-3 py-1.5 text-sm font-semibold text-snap-ink transition-colors hover:bg-snap-cobalt hover:text-white"
+              onClick={() => {
+                if (!taskMenuTask) return
+                onSetTaskShelved?.(taskMenuTask.id, !taskMenuTask.shelved)
+                setTaskMenu(null)
+              }}
+            >
+              {taskMenuTask.shelved ? <ArchiveRestore className="h-4 w-4"/> : <Archive className="h-4 w-4"/>}
+              <span>{taskMenuTask.shelved ? '取消搁置' : '搁置任务'}</span>
+            </div>
+          )}
+        </div>,
+        document.body,
+      )}
+    </nav>
   )
 }
 
@@ -655,75 +691,43 @@ function readReducedMotionPreference(): boolean {
 function TaskDropIndicator({taskTitle, position}: {taskTitle: string; position: TaskDropPosition}) {
   const positionLabel = position === 'before' ? '之前' : '之后'
   return (
-    <Box
+    <div
       role="status"
       aria-label={`将任务插入“${taskTitle}”${positionLabel}`}
-      sx={{
-        height: 14,
-        mx: 1,
-        position: 'relative',
-        pointerEvents: 'none',
-        zIndex: 1,
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          top: '50%',
-          right: 0,
-          left: 0,
-          height: 4,
-          borderRadius: 99,
-          bgcolor: 'primary.main',
-          transform: 'translateY(-50%)',
-        },
-        '&::after': {
-          content: '""',
-          position: 'absolute',
-          top: '50%',
-          left: -4,
-          width: 10,
-          height: 10,
-          borderRadius: '50%',
-          bgcolor: 'primary.main',
-          transform: 'translateY(-50%)',
-          boxShadow: (theme) => `0 0 0 2px ${theme.palette.background.paper}`,
-        },
-      }}
-    />
+      className="relative mx-1 my-0 h-3.5"
+      style={{pointerEvents: 'none', zIndex: 1}}
+    >
+      <span
+        aria-hidden
+        className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-snap-cobalt"
+      />
+      <span
+        aria-hidden
+        className="absolute left-[-4px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border-2 border-snap-surface bg-snap-cobalt"
+      />
+    </div>
   )
 }
 
 function TaskDragPreview({task, position}: {task: TaskRecord; position: TaskDragPreviewPosition}) {
   const taskColor = task.color || defaultTaskColor
   return (
-    <Box
+    <div
       role="status"
       aria-label={`正在调整任务“${task.title}”`}
-      className="taskai-task-drag-preview"
-      sx={{
+      className="taskai-task-drag-preview pointer-events-none flex max-w-[min(300px,calc(100vw-32px))] items-center gap-2 border border-snap-outline/25 py-1 pl-1 pr-2"
+      style={{
         position: 'fixed',
-        zIndex: (theme) => theme.zIndex.tooltip,
+        zIndex: 60,
         top: `min(${position.y + 14}px, calc(100vh - 56px))`,
         left: `min(${position.x + 14}px, calc(100vw - 32px))`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.75,
-        maxWidth: 'min(300px, calc(100vw - 32px))',
         minHeight: 40,
-        px: 1,
-        py: 0.5,
-        border: 1,
-        borderColor: 'divider',
-        borderLeft: 4,
-        borderLeftStyle: 'solid',
-        borderLeftColor: taskColor,
-        borderRadius: 0,
-        bgcolor: 'background.paper',
-        boxShadow: 'none',
-        pointerEvents: 'none',
+        borderLeft: `4px solid ${taskColor}`,
+        backgroundColor: 'var(--snap-surface)',
       }}
     >
-      <DragIndicatorIcon fontSize="small" color="action"/>
-      <Typography variant="body2" sx={{fontWeight: 600, overflowWrap: 'anywhere'}}>{task.title}</Typography>
-    </Box>
+      <GripVertical className="h-4 w-4 text-snap-muted"/>
+      <span className="font-display text-sm font-bold text-snap-ink" style={{overflowWrap: 'anywhere'}}>{task.title}</span>
+    </div>
   )
 }

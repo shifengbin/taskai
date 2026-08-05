@@ -1,5 +1,4 @@
 import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
-import {ThemeProvider, createTheme} from '@mui/material'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const terminalInstances = vi.hoisted(() => [] as Array<{
@@ -123,14 +122,12 @@ describe('TerminalView', () => {
     expect(screen.getByTestId('terminal-view-title-container')).toHaveStyle({flex: '1', minWidth: '0'})
   })
 
-  it('暗色和亮色模式使用对应的庭院终端底色', () => {
+  it('暗色模式注入快门波普深表面终端底色', () => {
     const darkRegistry = new TerminalSessionRegistry(vi.fn())
     render(
-      <ThemeProvider theme={createTheme({palette: {mode: 'dark'}})}>
-        <TerminalView terminal={terminal} sessionRegistry={darkRegistry} onResize={vi.fn()} onClose={vi.fn()} />
-      </ThemeProvider>,
+      <TerminalView mode="dark" terminal={terminal} sessionRegistry={darkRegistry} onResize={vi.fn()} onClose={vi.fn()} />,
     )
-    expect(terminalInstances[0].options.theme?.background).toBe('#101a14')
+    expect(terminalInstances[0].options.theme?.background).toBe('#16242B')
   })
 
   it('挂载活动终端后限制滚屏并自动聚焦 xterm 输入区', () => {

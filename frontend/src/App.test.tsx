@@ -295,9 +295,10 @@ describe('App confirmation flows', () => {
     expect(bindings.GetLifecycleCommandInput).toHaveBeenCalledWith('task-1')
     expect(runtime.ClipboardSetText).toHaveBeenCalledWith('{"id":"task-1"}')
     expect(await screen.findByText('已复制当前命令链输入 JSON')).toBeInTheDocument()
-    expect(screen.getByText('已复制当前命令链输入 JSON').closest('[role="alert"]')).toHaveClass('MuiAlert-colorSuccess')
+    const successToast = screen.getByText('已复制当前命令链输入 JSON').closest('[role="alert"]') as HTMLElement
+    expect(successToast).toHaveAttribute('data-severity', 'success')
 
-    await user.click(screen.getByText('已复制当前命令链输入 JSON').closest('[role="alert"]')!.querySelector('button[aria-label="Close"]')!)
+    await user.click(within(successToast).getByRole('button', {name: '关闭'}))
     expect(screen.queryAllByRole('alert').some((alert) => alert.textContent?.trim() === '')).toBe(false)
   })
 
@@ -311,7 +312,7 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '复制当前命令链输入 JSON'}))
 
     expect(await screen.findByText('任务不存在')).toBeInTheDocument()
-    expect(screen.getByText('任务不存在').closest('[role="alert"]')).toHaveClass('MuiAlert-colorError')
+    expect(screen.getByText('任务不存在').closest('[role="alert"]')).toHaveAttribute('data-severity', 'error')
     expect(runtime.ClipboardSetText).not.toHaveBeenCalled()
   })
 
@@ -739,16 +740,16 @@ describe('App confirmation flows', () => {
 		await user.click(within(editor).getByRole('button', {name: '新增字段'}))
 		await user.type(within(editor).getByRole('textbox', {name: /字段 2 键/}), 'deploy')
 		await user.type(within(editor).getByRole('textbox', {name: /字段 2 显示名称/}), '立即部署')
-		await user.click(within(editor).getByRole('combobox', {name: '字段 2 类型'}))
-		await user.click(screen.getByRole('option', {name: '布尔值'}))
+		await user.selectOptions(within(editor).getByRole('combobox', {name: '字段 2 类型'}), '布尔值')
+		// 字段 2 类型已通过 selectOptions 选择
 		await user.click(within(editor).getByLabelText('默认选中'))
 		await user.click(within(editor).getByLabelText('必填（必须勾选）'))
 		await user.click(within(editor).getAllByLabelText('注入生命周期环境变量')[1])
 		await user.click(within(editor).getByRole('button', {name: '保存模板'}))
 
 		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增任务模板'})).not.toBeInTheDocument())
-		await user.click(screen.getByRole('combobox', {name: '当前任务模板'}))
-		await user.click(screen.getByRole('option', {name: '发布任务'}))
+		await user.selectOptions(screen.getByRole('combobox', {name: '当前任务模板'}), '发布任务')
+		// 当前任务模板已通过 selectOptions 选择
 		await user.click(screen.getByRole('button', {name: '保存'}))
 
 		await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledOnce())
@@ -814,7 +815,7 @@ describe('App confirmation flows', () => {
 		expect(protectedDelete).toBeDisabled()
 		expect(completedDelete).toBeEnabled()
 		await user.hover(protectedDelete.parentElement!)
-		expect(await screen.findByRole('tooltip')).toHaveTextContent('未执行或执行中的任务正在使用此模板，暂不能删除')
+		expect(protectedDelete).toHaveAttribute('title', '未执行或执行中的任务正在使用此模板，暂不能删除')
 
 		await user.click(completedDelete)
 		await user.click(screen.getByRole('button', {name: '保存'}))
@@ -844,7 +845,7 @@ describe('App confirmation flows', () => {
 		expect(protectedDelete).toBeDisabled()
 		expect(screen.getByRole('button', {name: '删除任务模板 归档模板'})).toBeDisabled()
 		await user.hover(protectedDelete.parentElement!)
-		await waitFor(() => expect(screen.getAllByRole('tooltip').some((tooltip) => tooltip.textContent === '未执行或执行中的旧任务包含无法归属的模板字段，完成这些任务后才能删除模板')).toBe(true))
+		expect(protectedDelete).toHaveAttribute('title', '未执行或执行中的旧任务包含无法归属的模板字段，完成这些任务后才能删除模板')
 	})
 
   it('通过颜色选择器创建未执行任务', async () => {
@@ -1101,10 +1102,9 @@ describe('App confirmation flows', () => {
 		render(<App/>)
 
 		await user.click(await screen.findByRole('button', {name: '新建任务'}))
-		await user.click(screen.getByLabelText('开始前'))
-		expect(await screen.findByRole('option', {name: '开始前准备'})).toBeInTheDocument()
-		expect(screen.queryByRole('option', {name: '开始后通知'})).not.toBeInTheDocument()
-		await user.keyboard('{Escape}')
+		const beforeStartSelect = screen.getByLabelText('开始前')
+		expect(within(beforeStartSelect).getByRole('option', {name: '开始前准备'})).toBeInTheDocument()
+		expect(within(beforeStartSelect).queryByRole('option', {name: '开始后通知'})).not.toBeInTheDocument()
 		await user.click(screen.getByRole('button', {name: '取消'}))
 
 		await user.click(await screen.findByRole('tab', {name: /执行中/}))
@@ -1647,12 +1647,12 @@ describe('App confirmation flows', () => {
 
 		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增模板'}))
-		expect(screen.getByRole('dialog', {name: '新增模板'})).toHaveClass('MuiDialog-paperWidthMd')
+		expect(screen.getByRole('dialog', {name: '新增模板'})).toHaveClass('max-w-2xl')
 		await user.click(screen.getByRole('button', {name: '取消'}))
 		await waitFor(() => expect(screen.queryByRole('dialog', {name: '新增模板'})).not.toBeInTheDocument())
 
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
-		expect(screen.getByRole('dialog', {name: '新增信息'})).toHaveClass('MuiDialog-paperWidthMd')
+		expect(screen.getByRole('dialog', {name: '新增信息'})).toHaveClass('max-w-2xl')
 	})
 
 	it('模板动态参数可切换为复选框，且不再设置必填状态', async () => {
@@ -1686,8 +1686,8 @@ describe('App confirmation flows', () => {
 		const templateBasicFields = screen.getByTestId('extra-info-template-basic-fields')
 		expect(getComputedStyle(templateBasicFields).display).toBe('grid')
 		expect(getComputedStyle(templateBasicFields).gridTemplateColumns).toBe('repeat(auto-fit, minmax(220px, 1fr))')
-		expect(screen.getByRole('textbox', {name: '分类'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
-		expect(screen.getByRole('textbox', {name: '模板备注'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
+		expect(screen.getByRole('textbox', {name: '分类'})).toHaveClass('text-sm')
+		expect(screen.getByRole('textbox', {name: '模板备注'})).toHaveClass('text-sm')
 		const templateFixedField = screen.getByTestId('extra-info-template-fixed-field-0')
 		expect(getComputedStyle(templateFixedField).borderTopStyle).toBe('solid')
 		expect(getComputedStyle(templateFixedField).gridTemplateColumns).toBe('minmax(0, 1fr) auto')
@@ -1703,7 +1703,7 @@ describe('App confirmation flows', () => {
 		const draftFields = screen.getByTestId('extra-info-draft-fields')
 		expect(getComputedStyle(draftFields).display).toBe('grid')
 		expect(getComputedStyle(draftFields).gridTemplateColumns).toBe('1fr')
-		expect(screen.getByRole('textbox', {name: '项目名称'}).closest('.MuiInputBase-root')).toHaveClass('MuiInputBase-sizeSmall')
+		expect(screen.getByRole('textbox', {name: '项目名称'})).toHaveClass('text-sm')
 		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
 		const draftParameter = screen.getByTestId('extra-info-draft-parameter-0')
 		expect(getComputedStyle(draftParameter).borderTopStyle).toBe('solid')
@@ -1922,8 +1922,7 @@ describe('App confirmation flows', () => {
 		expect(screen.queryByRole('textbox', {name: '显示名称'})).not.toBeInTheDocument()
 		expect(screen.queryByRole('combobox', {name: '参数类型'})).not.toBeInTheDocument()
 		expect(screen.queryByRole('button', {name: /删除动态参数/})).not.toBeInTheDocument()
-		await user.click(screen.getByLabelText('选择分类'))
-		await user.click(screen.getByRole('option', {name: 'issue'}))
+		await user.selectOptions(screen.getByLabelText('选择分类'), 'issue')
 		expect(search).toHaveValue('API')
 		expect(screen.queryByRole('checkbox', {name: '缺陷单'})).not.toBeInTheDocument()
 		await user.clear(search)
@@ -2039,14 +2038,34 @@ describe('App confirmation flows', () => {
     expect(within(taskTreeHeader).getByRole('button', {name: '展开全部任务'})).toBeInTheDocument()
   })
 
-  it('暗色模式使用庭院的低对比分隔条', async () => {
+  it('暗色模式分隔条使用快门波普描边色', async () => {
     bindings.GetSettings.mockResolvedValue({
       workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'dark', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
     })
     render(<App/>)
 
     const divider = await screen.findByRole('separator', {name: '调整任务树宽度'})
-    expect(getComputedStyle(divider).backgroundColor).toBe('rgb(60, 75, 65)')
+    // jsdom 无法计算 Tailwind 的 color-mix 透明度，故不断言计算色，改断言快门波普描边工具类已应用
+    expect(divider).toHaveClass('bg-snap-outline/25')
+  })
+
+  it('亮色模式根容器标注 data-color-scheme=light 且文档根不附 dark 类', async () => {
+    render(<App/>)
+    await screen.findByRole('img', {name: '任务 AI 图标'})
+    const root = document.querySelector('.taskai-app') as HTMLElement
+    expect(root).toHaveAttribute('data-color-scheme', 'light')
+    expect(document.documentElement).not.toHaveClass('dark')
+  })
+
+  it('暗色模式根容器标注 data-color-scheme=dark 并在文档根附 dark 类以激活暗色令牌', async () => {
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'dark', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+    })
+    render(<App/>)
+    await screen.findByRole('img', {name: '任务 AI 图标'})
+    const root = document.querySelector('.taskai-app') as HTMLElement
+    expect(root).toHaveAttribute('data-color-scheme', 'dark')
+    expect(document.documentElement).toHaveClass('dark')
   })
 
   it('在工作台标题中展示任务 AI 图标', async () => {

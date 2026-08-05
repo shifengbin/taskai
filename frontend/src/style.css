@@ -1,4 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 快门波普（Snap）令牌 —— 亮色为默认（:root），暗色在 .dark 下覆盖。
+   根容器由 App 在 colorScheme 为 dark 时附加 .dark class。 */
+:root {
+  color-scheme: light;
+  --snap-canvas: #F1F5F4;
+  --snap-surface: #FFFFFF;
+  --snap-surface-2: #E3EAE9;
+  --snap-detail: #FFFFFF;
+  --snap-ink: #10212B;
+  --snap-muted: #5A6E78;
+  --snap-outline: #10212B;
+  --snap-coral: #FF5A4E;
+  --snap-cobalt: #1E66F5;
+  --snap-amber: #F5B700;
+  --snap-violet: #8B5CF6;
+  --snap-error: #E0341B;
+  --snap-dots: rgba(16, 33, 43, 0.06);
+}
+.dark {
+  color-scheme: dark;
+  --snap-canvas: #0B151A;
+  --snap-surface: #16242B;
+  --snap-surface-2: #1F3038;
+  --snap-detail: #16242B;
+  --snap-ink: #E6EEF1;
+  --snap-muted: #8AA0A8;
+  --snap-outline: #E6EEF1;
+  --snap-coral: #FF7A6E;
+  --snap-cobalt: #5C8CFF;
+  --snap-amber: #FFCD33;
+  --snap-violet: #A98CFF;
+  --snap-error: #FF6A5A;
+  --snap-dots: rgba(230, 238, 241, 0.06);
+}
+
 body {
   overflow: hidden;
   font-family: Nunito, "Noto Sans SC", sans-serif;
 }
+
+/* —— 快门波普动效（由令牌与每任务 --task-color 驱动） —— */
+
+/* 终端状态点：工作中/未读的脉冲外环 */
+@keyframes snap-status-pulse {
+  0% { opacity: 0.7; transform: scale(0.65); }
+  80%, 100% { opacity: 0; transform: scale(1.75); }
+}
+.snap-status-pulse-ring {
+  animation: snap-status-pulse 1.4s ease-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .snap-status-pulse-ring { animation: none; opacity: 0; }
+}
+
+/* 任务行：开始反馈闪烁（每行内联 --task-color 决定色相） */
+@keyframes taskai-task-start-feedback {
+  0%, 100% { box-shadow: inset 0 0 0 0 var(--task-color); background-color: color-mix(in srgb, var(--task-color) 8%, transparent); }
+  50% { box-shadow: inset 0 0 0 2px var(--task-color); background-color: color-mix(in srgb, var(--task-color) 18%, transparent); }
+}
+[data-task-start-feedback="flash"] { animation: taskai-task-start-feedback 350ms ease-in-out 2; }
+[data-task-start-feedback="static"] { box-shadow: inset 0 0 0 2px var(--task-color); }
+@media (prefers-reduced-motion: reduce) {
+  [data-task-start-feedback="flash"] { animation: none; box-shadow: inset 0 0 0 2px var(--task-color); }
+}
+
+/* 隐藏滚动条（任务列表等可滚动容器） */
+.snap-no-scrollbar { scrollbar-width: none; }
+.snap-no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* 命令链进度标签：失败=红、运行中=琥珀（描边款） */
+.taskai-lifecycle-chip--error {
+  border-color: var(--snap-error);
+  color: var(--snap-error);
+  background-color: color-mix(in srgb, var(--snap-error) 8%, transparent);
+}
+.taskai-lifecycle-chip--warning {
+  border-color: var(--snap-amber);
+  color: #8a6d00;
+  background-color: color-mix(in srgb, var(--snap-amber) 16%, transparent);
+}
+.dark .taskai-lifecycle-chip--warning { color: #ffefa6; }

@@ -1,7 +1,7 @@
 @font-face {
   font-family: "Nunito";
   font-style: normal;
-  font-weight: 400 900;
+  font-weight: 400;
   font-display: swap;
   src: url("./assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
 }
@@ -11,40 +11,13 @@ html, body, #root {
   min-height: 100%;
   height: 100%;
   margin: 0;
-  background-color: #edf0ea;
+  background-color: var(--snap-canvas);
 }
 
 * { box-sizing: border-box; }
 
-.taskai-app { color: var(--taskai-ink); background: var(--taskai-canvas); }
-
-.taskai-app--light {
-  --taskai-canvas: #edf0ea;
-  --taskai-paper: #fafbf7;
-  --taskai-sidebar: #e4ebe3;
-  --taskai-detail: #ffffff;
-  --taskai-ink: #29332c;
-  --taskai-muted: #657268;
-  --taskai-divider: #b8c5b9;
-  --taskai-primary: #547565;
-  --taskai-accent: #b16b50;
-  --taskai-soft: #dbe8de;
-}
-
-.taskai-app--dark {
-  --taskai-canvas: #19221d;
-  --taskai-paper: #222d26;
-  --taskai-sidebar: #29362c;
-  --taskai-detail: #1d2821;
-  --taskai-ink: #e7eee7;
-  --taskai-muted: #a6b5a7;
-  --taskai-divider: #3c4b41;
-  --taskai-primary: #9cc3ab;
-  --taskai-accent: #db9a7f;
-  --taskai-soft: #2e4035;
-}
-
-.taskai-topbar { background: var(--taskai-paper) !important; }
+/* 应用根容器：快门波普画布底色 + 墨色正文（令牌定义见 style.css 的 :root/.dark）。 */
+.taskai-app { color: var(--snap-ink); background: var(--snap-canvas); }
 
 .taskai-brand-mark {
   display: block;
@@ -54,64 +27,26 @@ html, body, #root {
   object-fit: contain;
 }
 
-.taskai-topbar .MuiIconButton-root { color: var(--taskai-ink); background-color: transparent; }
-.taskai-sidebar-shell { background-color: var(--taskai-sidebar) !important; }
-.taskai-sidebar-header { background: var(--taskai-sidebar); }
-.taskai-sidebar-header .MuiIconButton-root:last-child { color: var(--taskai-paper); background: var(--taskai-primary); }
+/* 侧栏用次级表面以与主画布区分；内容区沿用画布底色。 */
+.taskai-sidebar-shell { background-color: var(--snap-surface-2); }
+.taskai-sidebar-header { background: var(--snap-surface-2); }
 .taskai-panel-resizer::after { display: none; }
-.taskai-content-pane { background-color: var(--taskai-canvas) !important; }
+.taskai-content-pane { background-color: var(--snap-canvas); }
 
-.taskai-task-tree .MuiTabs-root { background: var(--taskai-paper); }
-.taskai-task-tree .MuiTab-root { min-height: 42px; color: var(--taskai-muted); font-size: .72rem; }
-.taskai-task-tree .MuiTab-root.Mui-selected { color: var(--taskai-ink); }
-.taskai-task-tree__list { background: var(--taskai-paper); }
-
+/* 任务行分隔线与悬停过渡（颜色由快门波普墨色描边低透明派生）。 */
 .taskai-task-row {
-  margin: 0;
+  margin: 0 4px 6px;
   overflow: hidden;
-  border-bottom: 1px solid color-mix(in srgb, var(--taskai-divider) 70%, transparent);
   transition: background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.taskai-task-row--shelved { color: var(--taskai-muted); background-color: var(--taskai-soft); }
-
-.taskai-terminal-row {
-  margin: 0;
-  border-left: 2px solid var(--taskai-primary);
-  border-radius: 0;
-}
-
-.taskai-terminal-row.Mui-selected { background-color: var(--taskai-soft); }
-.taskai-terminal { background: var(--taskai-detail); }
-.taskai-terminal__header { background: var(--taskai-paper); }
-.taskai-terminal__content { border-top: 1px solid var(--taskai-divider); }
-
-.taskai-detail-empty { background: var(--taskai-canvas); }
-.taskai-detail-empty__card {
-  max-width: 360px;
-  padding: 28px 32px;
-  color: var(--taskai-muted);
-  border: 1px solid var(--taskai-divider);
-  border-radius: 8px;
-  background: var(--taskai-paper);
-}
-
 .taskai-task-detail { position: relative; }
-.taskai-task-detail__heading { padding-bottom: 12px; border-bottom: 1px solid var(--taskai-divider); }
-.taskai-task-detail__heading .MuiChip-root { color: var(--taskai-ink); border-color: var(--taskai-divider); background: var(--taskai-soft); }
-.taskai-detail-section__title { width: fit-content; padding: 3px 8px; color: var(--taskai-muted) !important; background: transparent; }
-.taskai-detail-card { border-radius: 8px !important; background: var(--taskai-detail); box-shadow: none; }
-.taskai-detail-value { padding-left: 9px; border-left: 2px solid var(--taskai-primary); }
-
-.taskai-startup { background: var(--taskai-canvas) !important; }
-.taskai-startup > div {
-  padding: 28px 36px;
-  color: var(--taskai-ink) !important;
-  border: 1px solid var(--taskai-divider);
-  border-radius: 8px;
-  background: var(--taskai-paper);
+.taskai-task-detail__heading {
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--snap-outline) 14%, transparent);
 }
-.taskai-startup .MuiSvgIcon-root { color: var(--taskai-primary); }
+.taskai-detail-card { background: var(--snap-surface); }
+.taskai-terminal { background: var(--snap-detail); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

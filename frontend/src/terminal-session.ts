@@ -1,17 +1,15 @@
 import {FitAddon} from '@xterm/addon-fit'
-import {Terminal} from '@xterm/xterm'
+import {Terminal, type ITheme} from '@xterm/xterm'
 
 import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import {type TerminalEvent, type TerminalRecord} from './types'
 
 export const terminalScrollback = 1000
 
-export interface TerminalVisualTheme {
-  background: string
-  foreground: string
-  cursor: string
-  selectionBackground: string
-}
+// 快门波普终端主题：直接注入 xterm ITheme。背景取自令牌（亮色=浅次表面 #E3EAE9，
+// 暗色=深表面 #16242B），前景/光标用墨色/钴蓝；ANSI 调色板把成功→钴蓝、关键字→紫罗兰、
+// 提示/错误→珊瑚、警告→琥珀，使原始 PTY 输出整体偏快门波普色系。
+export type TerminalVisualTheme = ITheme
 
 interface TerminalSession {
   taskID: string
@@ -158,8 +156,54 @@ export class TerminalSessionRegistry {
 
 export function terminalVisualTheme(mode: 'light' | 'dark'): TerminalVisualTheme {
   return mode === 'dark'
-    ? {background: '#101a14', foreground: '#d8e8dc', cursor: '#9cc3ab', selectionBackground: '#2e4035'}
-    : {background: '#26352e', foreground: '#e3eee5', cursor: '#9bd5ae', selectionBackground: '#3d5748'}
+    ? {
+        background: '#16242B',
+        foreground: '#E6EEF1',
+        cursor: '#5C8CFF',
+        cursorAccent: '#16242B',
+        selectionBackground: '#5C8CFF40',
+        selectionForeground: '#FFFFFF',
+        black: '#16242B',
+        red: '#FF6A5A',
+        green: '#5C8CFF',
+        yellow: '#FFCD33',
+        blue: '#5C8CFF',
+        magenta: '#A98CFF',
+        cyan: '#3FA9C0',
+        white: '#8AA0A8',
+        brightBlack: '#8AA0A8',
+        brightRed: '#FF7A6E',
+        brightGreen: '#5C8CFF',
+        brightYellow: '#FFCD33',
+        brightBlue: '#5C8CFF',
+        brightMagenta: '#A98CFF',
+        brightCyan: '#3FA9C0',
+        brightWhite: '#E6EEF1',
+      }
+    : {
+        background: '#E3EAE9',
+        foreground: '#10212B',
+        cursor: '#1E66F5',
+        cursorAccent: '#E3EAE9',
+        selectionBackground: '#1E66F540',
+        selectionForeground: '#FFFFFF',
+        black: '#10212B',
+        red: '#E0341B',
+        green: '#1E66F5',
+        yellow: '#B07A00',
+        blue: '#1E66F5',
+        magenta: '#8B5CF6',
+        cyan: '#0E7C9B',
+        white: '#5A6E78',
+        brightBlack: '#5A6E78',
+        brightRed: '#FF5A4E',
+        brightGreen: '#1E66F5',
+        brightYellow: '#F5B700',
+        brightBlue: '#1E66F5',
+        brightMagenta: '#8B5CF6',
+        brightCyan: '#0E7C9B',
+        brightWhite: '#10212B',
+      }
 }
 
 function terminalSessionKey(taskID: string, terminalID: string): string {

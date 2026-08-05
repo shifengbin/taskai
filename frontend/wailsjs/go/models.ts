@@ -113,16 +113,16 @@ export namespace settings {
 		    return a;
 		}
 	}
-
+	
 	export class LifecyclePreset {
 	    id: string;
 	    name: string;
 	    chains: Record<string, string>;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new LifecyclePreset(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -616,3 +616,4 @@ export namespace terminal {
 	}
 
 }
+

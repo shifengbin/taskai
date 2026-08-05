@@ -1,4 +1,4 @@
-import {Box} from '@mui/material'
+import {type CSSProperties} from 'react'
 
 import {realtimeStatusLabel, type RealtimeStatus} from '../types'
 
@@ -6,49 +6,35 @@ interface TerminalStatusDotProps {
   status: RealtimeStatus
 }
 
+// 快门波普状态点配色（覆盖 design-preview 的绿/紫）：
+// 空闲=墨灰、工作中=钴蓝、未读=琥珀、异常=红。颜色取自令牌，亮暗自适应。
 const statusColor: Record<RealtimeStatus, string> = {
-  idle: 'text.secondary',
-  working: 'success.main',
-  unread: 'secondary.main',
-  error: 'error.main',
+  idle: 'var(--snap-muted)',
+  working: 'var(--snap-cobalt)',
+  unread: 'var(--snap-amber)',
+  error: 'var(--snap-error)',
 }
 
 export function TerminalStatusDot({status}: TerminalStatusDotProps) {
   const hasPulse = status === 'working' || status === 'unread'
+  const color = statusColor[status]
 
   return (
-    <Box
+    <span
       role="status"
       aria-label={`终端状态：${realtimeStatusLabel[status]}`}
       data-status={status}
       data-pulse={hasPulse ? 'active' : undefined}
-      sx={{
-        width: 8,
-        height: 8,
-        flexShrink: 0,
-        position: 'relative',
-        borderRadius: '50%',
-        bgcolor: statusColor[status],
-        ...(hasPulse && {
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            inset: -4,
-            pointerEvents: 'none',
-            border: '1px solid',
-            borderColor: status === 'working' ? 'success.main' : 'secondary.main',
-            borderRadius: 'inherit',
-            animation: 'taskai-status-pulse 1.4s ease-out infinite',
-          },
-          '@keyframes taskai-status-pulse': {
-            '0%': {opacity: 0.7, transform: 'scale(0.65)'},
-            '80%, 100%': {opacity: 0, transform: 'scale(1.75)'},
-          },
-          '@media (prefers-reduced-motion: reduce)': {
-            '&::before': {animation: 'none', opacity: 0},
-          },
-        }),
-      }}
-    />
+      className="relative inline-block h-2 w-2 shrink-0 rounded-full"
+      style={{backgroundColor: color, ...({'--snap-dot': color} as CSSProperties)}}
+    >
+      {hasPulse && (
+        <span
+          aria-hidden
+          className="snap-status-pulse-ring pointer-events-none absolute -inset-1 rounded-full border"
+          style={{borderColor: color}}
+        />
+      )}
+    </span>
   )
 }

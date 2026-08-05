@@ -93,12 +93,12 @@ describe('TaskTree', () => {
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     const shelveMenuItem = screen.getByRole('menuitem', {name: '搁置任务'})
     expect(shelveMenuItem).toBeInTheDocument()
-    expect(within(shelveMenuItem).getByTestId('ArchiveOutlinedIcon')).toBeInTheDocument()
+    expect(shelveMenuItem.querySelector('svg')).toBeInTheDocument()
     await user.click(shelveMenuItem)
     expect(onSetTaskShelved).toHaveBeenCalledWith('task-1', true)
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
-    expect(within(screen.getByRole('menuitem', {name: '搁置任务'})).getByTestId('ArchiveOutlinedIcon')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', {name: '搁置任务'}).querySelector('svg')).toBeInTheDocument()
   })
 
   it('为已搁置任务的操作菜单提供取消搁置图标', async () => {
@@ -126,12 +126,12 @@ describe('TaskTree', () => {
     await user.click(screen.getByRole('button', {name: '展开已搁置任务'}))
     await user.click(screen.getByRole('button', {name: '任务操作'}))
     const unshelveMenuItem = screen.getByRole('menuitem', {name: '取消搁置'})
-    expect(within(unshelveMenuItem).getByTestId('UnarchiveOutlinedIcon')).toBeInTheDocument()
+    expect(unshelveMenuItem.querySelector('svg')).toBeInTheDocument()
     await user.click(unshelveMenuItem)
     expect(onSetTaskShelved).toHaveBeenCalledWith('task-1', false)
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
-    expect(within(screen.getByRole('menuitem', {name: '取消搁置'})).getByTestId('UnarchiveOutlinedIcon')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', {name: '取消搁置'}).querySelector('svg')).toBeInTheDocument()
   })
 
   it('任务操作下拉菜单和右键菜单均可创建终端、打开任务文件夹或编辑任务，并可选择终端子节点', async () => {
@@ -257,10 +257,10 @@ describe('TaskTree', () => {
 
     const row = screen.getByText('整理发布说明').closest('[data-task-id]')
     expect(row).toHaveAttribute('data-task-selected', 'true')
-    expect(row).toHaveStyle({backgroundColor: 'rgba(0, 0, 0, 0.08)'})
+    expect(row).toHaveClass('taskai-task-row--selected')
   })
 
-  it('庭院任务行保持平面边界', () => {
+  it('任务行为快门波普圆角卡片', () => {
     render(
       <TaskTree
         {...({
@@ -284,7 +284,7 @@ describe('TaskTree', () => {
     if (!(row instanceof HTMLElement)) {
       throw new Error('未找到任务行')
     }
-    expect(getComputedStyle(row).borderRadius).toBe('0')
+    expect(getComputedStyle(row).borderRadius).toBe('7px')
   })
 
   it('任务收起时显示聚合状态点，展开后仅展示终端状态点', () => {
@@ -803,7 +803,7 @@ describe('TaskTree', () => {
     )
 
     expect(screen.getByText('开始后 · 部署项目 2/3')).toBeInTheDocument()
-    expect(screen.getByText('开始后 · 部署项目 2/3').closest('.MuiChip-root')).toHaveClass('MuiChip-colorError')
+    expect(screen.getByText('开始后 · 部署项目 2/3').closest('.taskai-lifecycle-chip')).toHaveClass('taskai-lifecycle-chip--error')
     expect(screen.getByRole('button', {name: '任务操作'})).toBeDisabled()
     expect(screen.getByRole('button', {name: '结束'})).toBeDisabled()
     await user.click(screen.getByRole('button', {name: '重试命令链'}))
@@ -841,7 +841,7 @@ describe('TaskTree', () => {
     )
 
     expect(screen.getByText('更新后 · 准备环境 1/3')).toBeInTheDocument()
-    expect(screen.getByText('更新后 · 准备环境 1/3').closest('.MuiChip-root')).toHaveClass('MuiChip-colorWarning')
+    expect(screen.getByText('更新后 · 准备环境 1/3').closest('.taskai-lifecycle-chip')).toHaveClass('taskai-lifecycle-chip--warning')
     expect(screen.getByRole('button', {name: '任务操作'})).toBeDisabled()
     expect(screen.getByRole('button', {name: '结束'})).toBeDisabled()
     expect(screen.queryByRole('button', {name: '重试命令链'})).not.toBeInTheDocument()
