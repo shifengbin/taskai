@@ -290,13 +290,14 @@ func (backend *fakeBackend) request(id string) StartRequest {
 }
 
 type fakeSession struct {
-	id        string
-	reader    *io.PipeReader
-	writer    *io.PipeWriter
-	mu        sync.Mutex
-	writes    string
-	closed    bool
-	closeOnce sync.Once
+	id         string
+	reader     *io.PipeReader
+	writer     *io.PipeWriter
+	mu         sync.Mutex
+	writes     string
+	writeCount int
+	closed     bool
+	closeOnce  sync.Once
 }
 
 func newFakeSession(id string) *fakeSession {
@@ -315,6 +316,7 @@ func (session *fakeSession) Write(data []byte) (int, error) {
 		return 0, errors.New("已关闭")
 	}
 	session.writes += string(data)
+	session.writeCount++
 	return len(data), nil
 }
 
@@ -339,6 +341,12 @@ func (session *fakeSession) input() string {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	return session.writes
+}
+
+func (session *fakeSession) inputWriteCount() int {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.writeCount
 }
 
 func (session *fakeSession) wasClosed() bool {

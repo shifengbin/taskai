@@ -9,10 +9,15 @@ deb_version="${TASKAI_DEB_VERSION:-}"
 version_from_cli=false
 package_workdir=""
 staging_dir=""
+wails_patch_workspace=""
+wails_go_work=""
 
 cleanup() {
   if [[ -n "$package_workdir" && -d "$package_workdir" ]]; then
     rm -rf -- "$package_workdir"
+  fi
+  if [[ -n "$wails_patch_workspace" && -d "$wails_patch_workspace" ]]; then
+    rm -rf -- "$wails_patch_workspace"
   fi
 }
 trap cleanup EXIT
@@ -111,8 +116,32 @@ if [[ "$generate_deb" == true ]]; then
   fi
 fi
 
+prepare_wails_linux_file_drop_patch() {
+  local module_dir
+  local module_version
+
+  module_version="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)"
+  if [[ "$module_version" != "v2.12.0" ]]; then
+    echo "Linux 文件拖放补丁只支持 Wails v2.12.0，当前版本: $module_version" >&2
+    exit 1
+  fi
+
+  module_dir="$(go list -m -f '{{.Dir}}' github.com/wailsapp/wails/v2)"
+  if [[ ! -d "$module_dir" ]]; then
+    echo "未找到 Wails v2.12.0 模块目录: $module_dir" >&2
+    exit 1
+  fi
+
+  wails_patch_workspace="$(mktemp -d "${TMPDIR:-/tmp}/taskai-wails-file-drop.XXXXXX")"
+  cp -a "$module_dir" "$wails_patch_workspace/wails"
+  chmod -R u+w "$wails_patch_workspace/wails"
+  "$project_dir/scripts/prepare-wails-linux-file-drop-patch.sh" "$wails_patch_workspace/wails" "$wails_patch_workspace"
+  wails_go_work="$wails_patch_workspace/go.work"
+}
+
 cd "$project_dir"
-wails build -platform "linux/$architecture" "${build_tags[@]}" -clean
+prepare_wails_linux_file_drop_patch
+GOWORK="$wails_go_work" wails build -platform "linux/$architecture" "${build_tags[@]}" -clean
 echo "Linux 构建完成: $project_dir/build/bin/taskai"
 
 if [[ "$generate_deb" != true ]]; then

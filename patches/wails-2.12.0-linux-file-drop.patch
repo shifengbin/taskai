@@ -1,0 +1,9 @@
+--- a/internal/frontend/desktop/linux/window.c
++++ b/internal/frontend/desktop/linux/window.c
+@@ -553,3 +553,5 @@ static gboolean onDragDrop(GtkWidget* self, GdkDragContext* context, gint x, gi
+     processMessage(res);
+-    return FALSE;
++    free(res);
++    gtk_drag_finish(context, TRUE, FALSE, time);
++    return TRUE;
+ }

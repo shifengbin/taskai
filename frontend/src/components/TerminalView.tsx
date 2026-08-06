@@ -1,10 +1,11 @@
-import {useEffect, useMemo, useRef} from 'react'
+import {useEffect, useMemo, useRef, type CSSProperties} from 'react'
 import {Terminal as TerminalIcon, X} from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
 import {terminalDisplayName, terminalRealtimeStatus, type TerminalRecord} from '../types'
-import {ClipboardGetText} from '../../wailsjs/runtime/runtime'
+import {api} from '../api'
+import {ClipboardGetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
 import {TerminalStatusDot} from './TerminalStatusDot'
 import {IconButton} from './ui'
 
@@ -15,11 +16,13 @@ interface TerminalViewProps {
   mode?: 'light' | 'dark'
   onResize(columns: number, rows: number): void
   onClose(): void
+  onError?(error: unknown): void
 }
 
-export function TerminalView({terminal, sessionRegistry, mode = 'light', onResize, onClose}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, mode = 'light', onResize, onClose, onError}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const onResizeRef = useRef(onResize)
+  const onErrorRef = useRef(onError)
   const terminalTheme = useMemo(() => terminalVisualTheme(mode), [mode])
 
   useEffect(() => {
@@ -53,6 +56,32 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
   useEffect(() => {
     onResizeRef.current = onResize
   }, [onResize])
+
+  useEffect(() => {
+    onErrorRef.current = onError
+  }, [onError])
+
+  useEffect(() => {
+    let active = true
+    try {
+      OnFileDrop((_x, _y, paths) => {
+        if (!active || paths.length === 0) {
+          return
+        }
+        void api.writeTerminalFilePaths(terminal.taskId, terminal.id, paths).catch((error) => onErrorRef.current?.(error))
+      }, true)
+    } catch {
+      // The browser development server has no Wails drag-and-drop runtime.
+    }
+    return () => {
+      active = false
+      try {
+        OnFileDropOff()
+      } catch {
+        // The browser development server has no Wails drag-and-drop runtime.
+      }
+    }
+  }, [terminal.id, terminal.taskId])
 
   return (
     <div className="taskai-terminal grid h-full min-w-0" style={{gridTemplateRows: '44px minmax(0, 1fr)'}}>
@@ -88,7 +117,7 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
             }
           }).catch(() => {})
         }}
-        style={{backgroundColor: terminalTheme.background}}
+        style={{backgroundColor: terminalTheme.background, '--wails-drop-target': 'drop'} as CSSProperties}
       >
         <div
           aria-hidden

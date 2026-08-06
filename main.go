@@ -16,7 +16,15 @@ func main() {
 	app := NewApp()
 
 	// Create application with options
-	err := wails.Run(&options.App{
+	err := wails.Run(applicationOptions(app))
+
+	if err != nil {
+		println("Error:", err.Error())
+	}
+}
+
+func applicationOptions(app *App) *options.App {
+	return &options.App{
 		Title:  "taskai",
 		Width:  1024,
 		Height: 768,
@@ -24,15 +32,14 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 248, G: 250, B: 252, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		OnBeforeClose:    app.beforeClose,
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+		},
+		OnStartup:     app.startup,
+		OnShutdown:    app.shutdown,
+		OnBeforeClose: app.beforeClose,
 		Bind: []interface{}{
 			app,
 		},
-	})
-
-	if err != nil {
-		println("Error:", err.Error())
 	}
 }

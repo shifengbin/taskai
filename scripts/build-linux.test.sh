@@ -10,15 +10,52 @@ test_project="$test_dir/project"
 fake_bin="$test_dir/bin"
 mkdir -p "$test_project/scripts" "$test_project/build" "$fake_bin"
 cp "$project_dir/scripts/build-linux.sh" "$test_project/scripts/build-linux.sh"
+cp "$project_dir/scripts/prepare-wails-linux-file-drop-patch.sh" "$test_project/scripts/prepare-wails-linux-file-drop-patch.sh"
+mkdir -p "$test_project/patches"
+cp "$project_dir/patches/wails-2.12.0-linux-file-drop.patch" "$test_project/patches/wails-2.12.0-linux-file-drop.patch"
 cp "$project_dir/build/appicon.png" "$test_project/build/appicon.png"
+
+wails_module_dir="$(go list -m -f '{{.Dir}}' github.com/wailsapp/wails/v2)"
 
 cat > "$fake_bin/wails" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+[[ -f "${GOWORK:-}" ]] || {
+  echo "Wails 构建未收到临时 Go workspace" >&2
+  exit 1
+}
+grep -F 'replace github.com/wailsapp/wails/v2 v2.12.0 =>' "$GOWORK" >/dev/null
 mkdir -p "$PWD/build/bin"
 cp /bin/true "$PWD/build/bin/taskai"
 EOF
 chmod +x "$fake_bin/wails"
+
+cat > "$fake_bin/go" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$1" == "list" && "$2" == "-m" ]]; then
+  if [[ "$4" == "{{.Version}}" ]]; then
+    echo "v2.12.0"
+  else
+    echo "$TASKAI_WAILS_MODULE_DIR"
+  fi
+  exit 0
+fi
+
+if [[ "$1" == "work" && "$2" == "init" ]]; then
+  printf 'go 1.23.0\n\nuse %s\n' "$3" > go.work
+  exit 0
+fi
+
+if [[ "$1" == "work" && "$2" == "edit" && "$3" == "-replace" ]]; then
+  printf 'replace github.com/wailsapp/wails/v2 v2.12.0 => %s\n' "${4#*=}" >> go.work
+  exit 0
+fi
+
+exec /usr/bin/go "$@"
+EOF
+chmod +x "$fake_bin/go"
 
 cat > "$fake_bin/pkg-config" <<'EOF'
 #!/usr/bin/env bash
@@ -27,7 +64,7 @@ EOF
 chmod +x "$fake_bin/pkg-config"
 
 run_build() {
-  PATH="$fake_bin:$PATH" "$test_project/scripts/build-linux.sh" "$@"
+  PATH="$fake_bin:$PATH" TASKAI_WAILS_MODULE_DIR="$wails_module_dir" "$test_project/scripts/build-linux.sh" "$@"
 }
 
 assert_transparent_corner() {

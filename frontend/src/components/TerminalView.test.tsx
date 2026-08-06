@@ -19,7 +19,8 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
 const fitAddonInstances = vi.hoisted(() => [] as Array<{fit: ReturnType<typeof vi.fn>}>)
 const animationFrameCallbacks = vi.hoisted(() => new Map<number, FrameRequestCallback>())
 const animationFrameID = vi.hoisted(() => ({next: 0}))
-const runtime = vi.hoisted(() => ({ClipboardGetText: vi.fn(), ClipboardSetText: vi.fn()}))
+const runtime = vi.hoisted(() => ({ClipboardGetText: vi.fn(), ClipboardSetText: vi.fn(), OnFileDrop: vi.fn(), OnFileDropOff: vi.fn()}))
+const api = vi.hoisted(() => ({writeTerminalFilePaths: vi.fn()}))
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
@@ -64,6 +65,7 @@ vi.mock('@xterm/addon-fit', () => ({
   },
 }))
 vi.mock('../../wailsjs/runtime/runtime', () => runtime)
+vi.mock('../api', () => ({api}))
 
 import {TerminalView} from './TerminalView'
 import {TerminalSessionRegistry} from '../terminal-session'
@@ -101,6 +103,10 @@ describe('TerminalView', () => {
     runtime.ClipboardGetText.mockResolvedValue('')
     runtime.ClipboardSetText.mockReset()
     runtime.ClipboardSetText.mockResolvedValue(true)
+    runtime.OnFileDrop.mockReset()
+    runtime.OnFileDropOff.mockReset()
+    api.writeTerminalFilePaths.mockReset()
+    api.writeTerminalFilePaths.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -188,5 +194,54 @@ describe('TerminalView', () => {
 
     expect(event.defaultPrevented).toBe(true)
     await waitFor(() => expect(onWrite).toHaveBeenCalledWith('task-1', 'terminal-1', 'paste from system clipboard'))
+  })
+
+  it('仅将投放到终端内容区的原生文件路径交给后端写入', async () => {
+    let onFileDrop: ((x: number, y: number, paths: string[]) => void) | undefined
+    runtime.OnFileDrop.mockImplementation((listener: (x: number, y: number, paths: string[]) => void) => {
+      onFileDrop = listener
+    })
+    const onWrite = vi.fn()
+    const view = render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(onWrite)} onResize={vi.fn()} onClose={vi.fn()} />)
+
+    expect(runtime.OnFileDrop).toHaveBeenCalledWith(expect.any(Function), true)
+    expect(screen.getByTestId('terminal-content')).toHaveStyle({'--wails-drop-target': 'drop'})
+
+    onFileDrop?.(20, 30, ['/tmp/My Project/file.txt'])
+
+    await waitFor(() => expect(api.writeTerminalFilePaths).toHaveBeenCalledWith('task-1', 'terminal-1', ['/tmp/My Project/file.txt']))
+    expect(onWrite).not.toHaveBeenCalled()
+
+    view.unmount()
+    expect(runtime.OnFileDropOff).toHaveBeenCalledOnce()
+  })
+
+  it('忽略空投放，在后端拒绝时不输入原始路径并报告错误', async () => {
+    let onFileDrop: ((x: number, y: number, paths: string[]) => void) | undefined
+    runtime.OnFileDrop.mockImplementation((listener: (x: number, y: number, paths: string[]) => void) => {
+      onFileDrop = listener
+    })
+    const failure = new Error('终端已关闭')
+    api.writeTerminalFilePaths.mockRejectedValueOnce(failure)
+    const onWrite = vi.fn()
+    const onError = vi.fn()
+    render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(onWrite)} onResize={vi.fn()} onClose={vi.fn()} onError={onError} />)
+
+    onFileDrop?.(20, 30, [])
+    expect(api.writeTerminalFilePaths).not.toHaveBeenCalled()
+
+    onFileDrop?.(20, 30, ['/tmp/rejected file.txt'])
+    await waitFor(() => expect(api.writeTerminalFilePaths).toHaveBeenCalledOnce())
+    expect(onWrite).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(failure)
+  })
+
+  it('缺少 Wails 拖放运行时时保持终端可用', () => {
+    runtime.OnFileDrop.mockImplementation(() => {
+      throw new Error('Wails runtime is unavailable')
+    })
+
+    expect(() => render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={vi.fn()} onClose={vi.fn()} />)).not.toThrow()
+    expect(api.writeTerminalFilePaths).not.toHaveBeenCalled()
   })
 })

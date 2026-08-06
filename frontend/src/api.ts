@@ -54,6 +54,7 @@ import {
 	UpdateTaskWithExtraInfoAndTemplateFields,
 	UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains,
   WriteTerminal,
+  WriteTerminalFilePaths,
 } from '../wailsjs/go/main/App'
 import {settings as settingsModel} from '../wailsjs/go/models'
 import {task as taskModel} from '../wailsjs/go/models'
@@ -144,6 +145,7 @@ export const api = {
   openTaskFolder: (taskID: string) => OpenTaskFolder(taskID),
   runTaskCommand: (taskID: string, command: string, arguments_: string[]) => RunTaskCommand(taskID, command, arguments_),
   writeTerminal: (taskID: string, terminalID: string, data: string) => WriteTerminal(taskID, terminalID, data),
+  writeTerminalFilePaths: (taskID: string, terminalID: string, paths: string[]) => WriteTerminalFilePaths(taskID, terminalID, paths),
   resizeTerminal: (taskID: string, terminalID: string, columns: number, rows: number) => ResizeTerminal(taskID, terminalID, columns, rows),
   closeTerminal: (taskID: string, terminalID: string) => CloseTerminal(taskID, terminalID),
 	reportTerminalTitleActivity: (taskID: string, terminalID: string) => ReportTerminalTitleActivity(taskID, terminalID),

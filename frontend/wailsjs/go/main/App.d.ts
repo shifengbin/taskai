@@ -114,3 +114,5 @@ export function UpdateTaskWithExtraInfoAndTemplateFields(arg1:string,arg2:string
 export function UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<task.TaskExtraInfo>,arg6:Record<string, any>,arg7:Record<task.LifecycleHook, string>):Promise<task.Task>;
 
 export function WriteTerminal(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function WriteTerminalFilePaths(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;

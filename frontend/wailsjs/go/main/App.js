@@ -221,3 +221,7 @@ export function UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(arg1, ar
 export function WriteTerminal(arg1, arg2, arg3) {
   return window['go']['main']['App']['WriteTerminal'](arg1, arg2, arg3);
 }
+
+export function WriteTerminalFilePaths(arg1, arg2, arg3) {
+  return window['go']['main']['App']['WriteTerminalFilePaths'](arg1, arg2, arg3);
+}

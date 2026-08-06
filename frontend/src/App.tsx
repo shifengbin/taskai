@@ -248,6 +248,21 @@ export default function App() {
 
   useEffect(() => api.onCloseRequested(() => setQuitDialogOpen(true)), [])
 
+  useEffect(() => {
+    const preventFileDropNavigation = (event: DragEvent) => {
+      if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) {
+        return
+      }
+      event.preventDefault()
+    }
+    document.addEventListener('dragover', preventFileDropNavigation)
+    document.addEventListener('drop', preventFileDropNavigation)
+    return () => {
+      document.removeEventListener('dragover', preventFileDropNavigation)
+      document.removeEventListener('drop', preventFileDropNavigation)
+    }
+  }, [])
+
   useEffect(() => api.onTaskScriptError((message) => showErrorMessage(message)), [])
 
   useEffect(() => api.onRealtimeStatusError((message) => showErrorMessage(message)), [])
@@ -1145,6 +1160,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 sessionRegistry={terminalSessions.current!}
                 mode={colorScheme}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
+                onError={(error) => showError(error, setMessage)}
                 onClose={() => void closeTerminal(selectedTerminal)}
               />
             ) : (
@@ -1216,7 +1232,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				<SnapDialogHeader>
 					<SnapDialogTitle>额外信息管理</SnapDialogTitle>
 				</SnapDialogHeader>
-				<SnapScrollArea className="max-h-[55vh]">
+				<div data-testid="extra-info-manager-scroll" className="max-h-[55vh] overflow-y-auto snap-no-scrollbar">
 					<div className="grid gap-4 px-1">
 						<div data-testid="extra-info-manager-actions" className="flex flex-wrap justify-end gap-2">
 							<SnapButton variant="secondary" size="sm" onClick={() => openExtraInfoTemplateEditor()}>新增模板</SnapButton>
@@ -1231,7 +1247,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 											<span className="block text-xs text-snap-muted">分类就是可填写的信息模板，定义固定字段、默认值和动态参数。</span>
 										</span>
 									</SnapAccordionTrigger>
-									<SnapAccordionContent forceMount>
+									<SnapAccordionContent>
 										<div className="overflow-hidden rounded-snap border-2 border-snap-outline divide-y-2 divide-snap-outline">
 											{extraInfoTemplates.map((template) => (
 												<div key={template.id} className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-3">
@@ -1292,7 +1308,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 							</div>
 						)}
 					</div>
-				</SnapScrollArea>
+				</div>
 				<SnapDialogFooter>
 					<SnapButton variant="secondary" onClick={() => setExtraInfoManagerOpen(false)}>关闭</SnapButton>
 				</SnapDialogFooter>
@@ -1731,11 +1747,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         <SnapDialogContent className="max-w-sm" showClose={false}>
           <SnapDialogHeader><SnapDialogTitle>结束任务？</SnapDialogTitle></SnapDialogHeader>
           <SnapDialogDescription>
-            确认后将关闭“{finishTask?.title}”的全部终端，并删除其工作目录及所有内容。此操作无法撤销。
+            确认后将结束“{finishTask?.title}”并关闭其全部终端。结束后命令链会按该任务的配置执行。此操作无法撤销。
           </SnapDialogDescription>
           <SnapDialogFooter>
             <SnapButton variant="ghost" onClick={() => setFinishTask(undefined)}>取消</SnapButton>
-            <SnapButton variant="danger" onClick={() => void confirmFinishTask()}>结束并删除</SnapButton>
+            <SnapButton variant="danger" onClick={() => void confirmFinishTask()}>结束任务</SnapButton>
           </SnapDialogFooter>
         </SnapDialogContent>
       </SnapDialog>

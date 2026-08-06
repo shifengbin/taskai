@@ -23,10 +23,11 @@ type Manager struct {
 }
 
 type managedSession struct {
-	info    Info
-	command string
-	session Session
-	done    chan struct{}
+	info      Info
+	command   string
+	shellPath string
+	session   Session
+	done      chan struct{}
 }
 
 type TerminalEnvironmentBuilder func(terminalID string) []string
@@ -134,7 +135,7 @@ func (manager *Manager) createWithEnvironmentBuilder(request StartRequest, envir
 	if command == "" {
 		command = request.ShellPath
 	}
-	managed := &managedSession{info: info, command: command, session: session, done: make(chan struct{})}
+	managed := &managedSession{info: info, command: command, shellPath: request.ShellPath, session: session, done: make(chan struct{})}
 	if manager.sessions[request.TaskID] == nil {
 		manager.sessions[request.TaskID] = make(map[string]*managedSession)
 	}
@@ -163,6 +164,19 @@ func (manager *Manager) ListActive(taskID string) []ActiveSession {
 
 func (manager *Manager) Write(taskID, terminalID, data string) error {
 	managed, err := manager.session(taskID, terminalID)
+	if err != nil {
+		return err
+	}
+	_, err = managed.session.Write([]byte(data))
+	return err
+}
+
+func (manager *Manager) WriteFilePaths(taskID, terminalID string, paths []string) error {
+	managed, err := manager.session(taskID, terminalID)
+	if err != nil {
+		return err
+	}
+	data, err := formatDroppedFilePaths(managed.shellPath, paths)
 	if err != nil {
 		return err
 	}

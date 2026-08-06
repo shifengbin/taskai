@@ -152,6 +152,8 @@ describe('App confirmation flows', () => {
     await screen.findByText('清理临时文件')
     await user.click(screen.getByRole('button', {name: '结束'}))
     expect(screen.getByText('结束任务？')).toBeInTheDocument()
+    expect(screen.getByText('确认后将结束“清理临时文件”并关闭其全部终端。结束后命令链会按该任务的配置执行。此操作无法撤销。')).toBeInTheDocument()
+    expect(screen.queryByText(/删除其工作目录及所有内容/)).not.toBeInTheDocument()
     expect(bindings.FinishTask).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', {name: '取消'}))
@@ -159,19 +161,29 @@ describe('App confirmation flows', () => {
     await waitFor(() => expect(screen.queryByText('结束任务？')).not.toBeInTheDocument())
 
     await user.click(screen.getByRole('button', {name: '结束'}))
-    await user.click(screen.getByRole('button', {name: '结束并删除'}))
+    await user.click(screen.getByRole('button', {name: '结束任务'}))
     expect(bindings.FinishTask).toHaveBeenCalledWith('task-1')
     expect(terminalSessionRegistry.disposeTask).toHaveBeenCalledWith('task-1')
   })
 
-  it('应用卸载时释放全部终端会话', async () => {
-    const {unmount} = render(<App/>)
+	it('应用卸载时释放全部终端会话', async () => {
+		const {unmount} = render(<App/>)
 
-    await screen.findByRole('tab', {name: /执行中/})
-    unmount()
+		await screen.findByRole('tab', {name: /执行中/})
+		unmount()
 
-    expect(terminalSessionRegistry.disposeAll).toHaveBeenCalledOnce()
-  })
+		expect(terminalSessionRegistry.disposeAll).toHaveBeenCalledOnce()
+	})
+
+	it('没有活动终端时阻止文件拖放的默认导航', () => {
+		render(<App/>)
+
+		const event = new Event('drop', {bubbles: true, cancelable: true})
+		Object.defineProperty(event, 'dataTransfer', {value: {types: ['Files']}})
+		document.dispatchEvent(event)
+
+		expect(event.defaultPrevented).toBe(true)
+	})
 
 	it('已完成任务仅选择可删除记录，并在确认后批量删除', async () => {
 		const user = userEvent.setup()
@@ -385,7 +397,7 @@ describe('App confirmation flows', () => {
 
     const runningTab = await screen.findByRole('tab', {name: /执行中/})
     await user.click(screen.getByRole('button', {name: '结束'}))
-    await user.click(screen.getByRole('button', {name: '结束并删除'}))
+    await user.click(screen.getByRole('button', {name: '结束任务'}))
     await waitFor(() => expect(bindings.FinishTask).toHaveBeenCalledWith('task-1'))
     if (!resolveFinishTask) {
       throw new Error('结束任务绑定未等待返回')
@@ -1856,6 +1868,7 @@ describe('App confirmation flows', () => {
 		expect(templateSection).toHaveAttribute('aria-expanded', 'true')
 		await user.click(templateSection)
 		expect(templateSection).toHaveAttribute('aria-expanded', 'false')
+		expect(screen.queryByText('git', {selector: 'p'})).not.toBeInTheDocument()
 		expect(screen.getByRole('button', {name: /Git.*git/})).toBeInTheDocument()
 	})
 
@@ -1871,15 +1884,29 @@ describe('App confirmation flows', () => {
 			id: 'other-template', catalogue: 'other', displayName: '其他', builtIn: false,
 			fields: [{key: 'name', displayName: '名称'}], parameters: [],
 		}])
+		bindings.ListExtraInfos.mockResolvedValue([{
+			id: 'api-info', templateId: 'git-template', catalogue: 'git', fields: [{key: 'name', displayName: '项目名称', value: 'API 服务'}],
+		}, {
+			id: 'legacy-info', templateId: 'legacy-template', catalogue: 'git-legacy', fields: [{key: 'name', displayName: '项目名称', value: '遗留服务'}],
+		}, {
+			id: 'other-info', templateId: 'other-template', catalogue: 'other', fields: [{key: 'name', displayName: '名称', value: '归档条目'}],
+		}])
 		render(<App/>)
 
 		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
 		const content = screen.getByTestId('extra-info-manager-content')
+		const scrollRegion = within(content).getByTestId('extra-info-manager-scroll')
+		await user.click(within(content).getByRole('button', {name: '分类模板'}))
 		expect(getComputedStyle(content).display).toBe('flex')
 		expect(getComputedStyle(content).flexDirection).toBe('column')
-		expect(screen.getByText('git', {selector: 'p'})).toBeInTheDocument()
-		expect(screen.getByText('git-legacy', {selector: 'p'})).toBeInTheDocument()
-		expect(screen.getByText('other', {selector: 'p'})).toBeInTheDocument()
+		expect(scrollRegion).toHaveClass('max-h-[55vh]', 'overflow-y-auto')
+		expect(within(content).getByRole('button', {name: '关闭'})).toBeInTheDocument()
+		expect([...content.querySelectorAll('p')].map((item) => item.textContent)).toEqual(['git', 'git-legacy', 'other'])
+		await user.click(within(content).getByRole('button', {name: '分类模板'}))
+		expect(within(content).queryByText('git', {selector: 'p'})).not.toBeInTheDocument()
+		await user.type(within(content).getByRole('textbox', {name: '搜索信息'}), '归档')
+		await waitFor(() => expect(within(content).getByText('归档条目')).toBeInTheDocument())
+		expect(within(content).queryByText('API 服务')).not.toBeInTheDocument()
 	})
 
 	it('创建任务时按名称搜索信息，且只填写动态参数', async () => {
@@ -2457,7 +2484,7 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
     await waitFor(() => expect(bindings.CreateTerminal).toHaveBeenCalledOnce())
     await user.click(screen.getByRole('button', {name: '结束'}))
-    await user.click(screen.getByRole('button', {name: '结束并删除'}))
+    await user.click(screen.getByRole('button', {name: '结束任务'}))
     await waitFor(() => expect(bindings.FinishTask).toHaveBeenCalledWith('task-1'))
 
     await act(async () => {
@@ -2485,7 +2512,7 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
     await waitFor(() => expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledOnce())
     await user.click(screen.getByRole('button', {name: '结束'}))
-    await user.click(screen.getByRole('button', {name: '结束并删除'}))
+    await user.click(screen.getByRole('button', {name: '结束任务'}))
     await waitFor(() => expect(bindings.FinishTask).toHaveBeenCalledWith('task-1'))
 
     await act(async () => {

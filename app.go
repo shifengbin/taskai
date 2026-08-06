@@ -937,6 +937,10 @@ func (app *App) WriteTerminal(taskID, terminalID, data string) error {
 	return app.terminals.Write(taskID, terminalID, data)
 }
 
+func (app *App) WriteTerminalFilePaths(taskID, terminalID string, paths []string) error {
+	return app.terminals.WriteFilePaths(taskID, terminalID, paths)
+}
+
 func (app *App) ResizeTerminal(taskID, terminalID string, columns, rows uint16) error {
 	return app.terminals.Resize(taskID, terminalID, columns, rows)
 }
