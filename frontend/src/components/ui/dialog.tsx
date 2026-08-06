@@ -16,8 +16,6 @@ const DialogOverlay = forwardRef<
     ref={ref}
     className={cn(
       'fixed inset-0 z-50 bg-snap-ink/40',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out',
-      'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
       className,
     )}
     {...props}
@@ -42,9 +40,6 @@ const DialogContent = forwardRef<
         'fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4',
         'p-6 max-h-[calc(100vh-4rem)] overflow-y-auto',
         'border-2 border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg',
-        'data-[state=open]:animate-in data-[state=closed]:animate-out',
-        'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
-        'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
         focusRing,
         className,
       )}
