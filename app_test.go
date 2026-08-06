@@ -2604,6 +2604,172 @@ func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
 	}
 }
 
+func TestOpenTaskFolderUsesHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("打开 Home 目录", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	if _, err := os.Stat(started.WorkspacePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("空链任务工作目录状态 = %v，期望不存在", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+
+	var openedPath string
+	app.directoryOpener = func(path string) error {
+		openedPath = path
+		return nil
+	}
+	if err := app.OpenTaskFolder(started.ID); err != nil {
+		t.Fatalf("打开任务目录: %v", err)
+	}
+	if openedPath != home {
+		t.Fatalf("打开目录 = %q，期望 Home 目录 %q", openedPath, home)
+	}
+}
+
+func TestCreateTerminalUsesHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	backend := &capturingTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("Home 终端", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+
+	info, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	if got := backend.request(info.ID).Directory; got != home {
+		t.Fatalf("终端目录 = %q，期望 Home 目录 %q", got, home)
+	}
+}
+
+func TestCreateCommandTerminalUsesHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	backend := &capturingTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("Home 命令终端", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+
+	info, err := app.CreateCommandTerminal(started.ID, "codex", []string{"--help"}, 100, 32)
+	if err != nil {
+		t.Fatalf("创建命令终端: %v", err)
+	}
+	request := backend.request(info.ID)
+	if request.Directory != home || request.Command != "codex" {
+		t.Fatalf("命令终端请求 = %#v，期望目录 %q 和命令 codex", request, home)
+	}
+}
+
+func TestOpenTaskFolderRejectsUnavailableHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	app.homeDirectory = func() (string, error) {
+		return "", errors.New("Home 目录不可用")
+	}
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("不可用 Home", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	app.directoryOpener = func(string) error {
+		t.Fatal("Home 目录不可用时不应打开目录")
+		return nil
+	}
+
+	err = app.OpenTaskFolder(started.ID)
+	if err == nil || !strings.Contains(err.Error(), "获取用户 Home 目录失败") {
+		t.Fatalf("打开目录错误 = %v，期望 Home 目录错误", err)
+	}
+}
+
+func TestCreateTerminalRejectsUnavailableHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	backend := &capturingTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+	app.homeDirectory = func() (string, error) {
+		return "", errors.New("Home 目录不可用")
+	}
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("不可用 Home 终端", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+
+	if _, err := app.CreateTerminal(started.ID, 100, 32); err == nil || !strings.Contains(err.Error(), "获取用户 Home 目录失败") {
+		t.Fatalf("创建终端错误 = %v，期望 Home 目录错误", err)
+	}
+	if len(backend.requests) != 0 {
+		t.Fatalf("Home 目录不可用时启动了终端: %#v", backend.requests)
+	}
+}
+
+func TestOpenTaskFolderRejectsNonDirectoryHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	homeFile := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(homeFile, nil, 0o600); err != nil {
+		t.Fatalf("创建 Home 文件: %v", err)
+	}
+	app.homeDirectory = func() (string, error) {
+		return homeFile, nil
+	}
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("文件 Home", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	app.directoryOpener = func(string) error {
+		t.Fatal("Home 路径不是目录时不应打开目录")
+		return nil
+	}
+
+	err = app.OpenTaskFolder(started.ID)
+	if err == nil || !strings.Contains(err.Error(), "用户 Home 目录不是目录") {
+		t.Fatalf("打开目录错误 = %v，期望 Home 路径不是目录错误", err)
+	}
+}
+
+func TestOpenTaskFolderKeepsWorkspaceForRunningTaskWithLifecycleChain(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("已选链目录", "", task.DefaultColor, nil, map[task.LifecycleHook]string{
+		task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID,
+	})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	homeQueried := false
+	app.homeDirectory = func() (string, error) {
+		homeQueried = true
+		return t.TempDir(), nil
+	}
+
+	err = app.OpenTaskFolder(started.ID)
+	if err == nil || !strings.Contains(err.Error(), "检查任务工作目录") {
+		t.Fatalf("打开目录错误 = %v，期望任务工作目录错误", err)
+	}
+	if homeQueried {
+		t.Fatal("已选链任务不应查询 Home 目录")
+	}
+}
+
 func TestRunTaskCommandUsesRunningTaskWorkspace(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("运行命令", "", task.DefaultColor)
@@ -2629,6 +2795,31 @@ func TestRunTaskCommandUsesRunningTaskWorkspace(t *testing.T) {
 		t.Fatalf("运行任务命令参数 = directory:%q shell:%q command:%q arguments:%#v", directory, shellPath, command, arguments)
 	}
 	assertTaskOnlyEnvironment(t, environment, started.ID)
+}
+
+func TestRunTaskCommandUsesHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("Home 后台命令", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+
+	var directory string
+	app.commandRunner = func(nextDirectory, _ string, _ string, _ []string, _ []string) error {
+		directory = nextDirectory
+		return nil
+	}
+	if err := app.RunTaskCommand(started.ID, "code", []string{"."}); err != nil {
+		t.Fatalf("运行任务命令: %v", err)
+	}
+	if directory != home {
+		t.Fatalf("任务命令目录 = %q，期望 Home 目录 %q", directory, home)
+	}
 }
 
 func TestExecuteTaskMenuCommandRunsScriptsAroundBackgroundCommand(t *testing.T) {
@@ -2688,6 +2879,73 @@ func TestExecuteTaskMenuCommandRunsScriptsAroundBackgroundCommand(t *testing.T) 
 	waiter.done <- nil
 	if event := receiveCommandEvent(t, events); event != "script:cleanup" {
 		t.Fatalf("主命令退出后的事件 = %q，期望后置脚本", event)
+	}
+}
+
+func TestExecuteTaskMenuCommandUsesHomeForRunningTaskWithoutLifecycleChains(t *testing.T) {
+	item := settings.TaskMenuItem{
+		ID:           "home-command",
+		Kind:         settings.TaskMenuItemKindCommand,
+		Name:         "Home 命令",
+		Command:      "main-command",
+		BeforeScript: &settings.TaskScript{Script: "prepare"},
+		AfterScript:  &settings.TaskScript{Script: "cleanup"},
+	}
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot: t.TempDir(), TaskTreeWidth: settings.DefaultTaskTreeWidth, TaskMenuItems: []settings.TaskMenuItem{item},
+	}); err != nil {
+		t.Fatalf("保存菜单设置: %v", err)
+	}
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("Home 菜单命令", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+
+	var beforeDirectory, commandDirectory string
+	afterDirectories := make(chan string, 1)
+	waiter := &controlledCommandWaiter{done: make(chan error, 1)}
+	app.scriptRunner = func(directory, _ string, script string, _ []string, _ []byte, _ []string) error {
+		if script != "prepare" {
+			t.Fatalf("前置脚本 = %q，期望 prepare", script)
+		}
+		beforeDirectory = directory
+		return nil
+	}
+	app.commandStarter = func(directory, _ string, command string, _ []string, _ []string) (commandWaiter, error) {
+		if command != "main-command" {
+			t.Fatalf("菜单命令 = %q，期望 main-command", command)
+		}
+		commandDirectory = directory
+		return waiter, nil
+	}
+	app.scriptStarter = func(directory, _ string, script string, _ []string, _ []byte, _ []string) (commandWaiter, error) {
+		if script != "cleanup" {
+			t.Fatalf("后置脚本 = %q，期望 cleanup", script)
+		}
+		afterDirectories <- directory
+		return commandWaiterFunc(func() error { return nil }), nil
+	}
+
+	if _, err := app.ExecuteTaskMenuCommand(started.ID, item.ID, 100, 32); err != nil {
+		t.Fatalf("执行菜单命令: %v", err)
+	}
+	if beforeDirectory != home || commandDirectory != home {
+		t.Fatalf("前置脚本目录 = %q，菜单命令目录 = %q，期望 Home 目录 %q", beforeDirectory, commandDirectory, home)
+	}
+	waiter.done <- nil
+	select {
+	case afterDirectory := <-afterDirectories:
+		if afterDirectory != home {
+			t.Fatalf("后置脚本目录 = %q，期望 Home 目录 %q", afterDirectory, home)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("后置脚本未启动")
 	}
 }
 

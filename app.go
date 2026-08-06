@@ -38,6 +38,7 @@ type App struct {
 	realtime               *realtime.Service
 	statusHTTP             *realtime.HTTPServer
 	directoryOpener        func(string) error
+	homeDirectory          func() (string, error)
 	commandRunner          func(string, string, string, []string, []string) error
 	commandStarter         func(string, string, string, []string, []string) (commandWaiter, error)
 	scriptRunner           func(string, string, string, []string, []byte, []string) error
@@ -76,6 +77,7 @@ func newApp(dataDirectory string) *App {
 	app := &App{
 		repository:       repository,
 		directoryOpener:  openDirectory,
+		homeDirectory:    os.UserHomeDir,
 		commandRunner:    runTaskCommand,
 		commandStarter:   startTaskCommand,
 		scriptRunner:     runTaskScript,
@@ -849,12 +851,12 @@ func (app *App) DetectShells() []string {
 }
 
 func (app *App) CreateTerminal(taskID string, columns, rows uint16) (terminal.Info, error) {
-	running, shellPath, err := app.runningTask(taskID)
+	_, directory, shellPath, err := app.taskOperationContext(taskID)
 	if err != nil {
 		return terminal.Info{}, err
 	}
 	environment, unregister := app.terminalStatusEnvironmentBuilder(taskID)
-	created, err := app.terminals.CreateWithEnvironmentBuilder(taskID, running.WorkspacePath, shellPath, environment, columns, rows)
+	created, err := app.terminals.CreateWithEnvironmentBuilder(taskID, directory, shellPath, environment, columns, rows)
 	if err != nil {
 		unregister()
 		return terminal.Info{}, err
@@ -863,7 +865,7 @@ func (app *App) CreateTerminal(taskID string, columns, rows uint16) (terminal.In
 }
 
 func (app *App) CreateCommandTerminal(taskID, command string, arguments []string, columns, rows uint16) (terminal.Info, error) {
-	running, shellPath, err := app.runningTask(taskID)
+	_, directory, shellPath, err := app.taskOperationContext(taskID)
 	if err != nil {
 		return terminal.Info{}, err
 	}
@@ -872,7 +874,7 @@ func (app *App) CreateCommandTerminal(taskID, command string, arguments []string
 		return terminal.Info{}, fmt.Errorf("任务命令不能为空")
 	}
 	environment, unregister := app.terminalStatusEnvironmentBuilder(taskID)
-	created, err := app.terminals.CreateCommandWithEnvironmentBuilder(taskID, running.WorkspacePath, shellPath, command, arguments, environment, columns, rows)
+	created, err := app.terminals.CreateCommandWithEnvironmentBuilder(taskID, directory, shellPath, command, arguments, environment, columns, rows)
 	if err != nil {
 		unregister()
 		return terminal.Info{}, err
@@ -881,7 +883,7 @@ func (app *App) CreateCommandTerminal(taskID, command string, arguments []string
 }
 
 func (app *App) RunTaskCommand(taskID, command string, arguments []string) error {
-	running, shellPath, err := app.runningTask(taskID)
+	_, directory, shellPath, err := app.taskOperationContext(taskID)
 	if err != nil {
 		return err
 	}
@@ -889,7 +891,7 @@ func (app *App) RunTaskCommand(taskID, command string, arguments []string) error
 	if command == "" {
 		return fmt.Errorf("任务命令不能为空")
 	}
-	return app.commandRunner(running.WorkspacePath, shellPath, command, append([]string(nil), arguments...), app.taskCommandEnvironment(taskID))
+	return app.commandRunner(directory, shellPath, command, append([]string(nil), arguments...), app.taskCommandEnvironment(taskID))
 }
 
 func (app *App) ExecuteTaskMenuCommand(taskID, itemID string, columns, rows uint16) (application.TaskMenuCommandResult, error) {
@@ -924,11 +926,11 @@ func (app *App) ExecuteTaskMenuCommand(taskID, itemID string, columns, rows uint
 }
 
 func (app *App) OpenTaskFolder(taskID string) error {
-	running, _, err := app.runningTask(taskID)
+	_, directory, _, err := app.taskOperationContext(taskID)
 	if err != nil {
 		return err
 	}
-	return app.directoryOpener(running.WorkspacePath)
+	return app.directoryOpener(directory)
 }
 
 func (app *App) WriteTerminal(taskID, terminalID, data string) error {
@@ -1002,8 +1004,42 @@ func (app *App) runningTask(taskID string) (task.Task, string, error) {
 	return task.Task{}, "", fmt.Errorf("任务不存在")
 }
 
-func (app *App) taskMenuCommand(taskID, itemID string) (taskCommandInvocation, settings.TaskMenuItem, error) {
+func (app *App) taskOperationDirectory(current task.Task) (string, error) {
+	if len(current.LifecycleChains) != 0 {
+		return current.WorkspacePath, nil
+	}
+	homeDirectory := app.homeDirectory
+	if homeDirectory == nil {
+		homeDirectory = os.UserHomeDir
+	}
+	home, err := homeDirectory()
+	if err != nil {
+		return "", fmt.Errorf("获取用户 Home 目录失败: %w", err)
+	}
+	info, err := os.Stat(home)
+	if err != nil {
+		return "", fmt.Errorf("检查用户 Home 目录: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("用户 Home 目录不是目录")
+	}
+	return home, nil
+}
+
+func (app *App) taskOperationContext(taskID string) (task.Task, string, string, error) {
 	running, shellPath, err := app.runningTask(taskID)
+	if err != nil {
+		return task.Task{}, "", "", err
+	}
+	directory, err := app.taskOperationDirectory(running)
+	if err != nil {
+		return task.Task{}, "", "", err
+	}
+	return running, directory, shellPath, nil
+}
+
+func (app *App) taskMenuCommand(taskID, itemID string) (taskCommandInvocation, settings.TaskMenuItem, error) {
+	_, directory, shellPath, err := app.taskOperationContext(taskID)
 	if err != nil {
 		return taskCommandInvocation{}, settings.TaskMenuItem{}, err
 	}
@@ -1019,7 +1055,7 @@ func (app *App) taskMenuCommand(taskID, itemID string) (taskCommandInvocation, s
 			return taskCommandInvocation{}, settings.TaskMenuItem{}, fmt.Errorf("任务菜单项不是自定义命令")
 		}
 		return taskCommandInvocation{
-			taskID: taskID, directory: running.WorkspacePath, shellPath: shellPath, command: item.Command, arguments: append([]string(nil), item.Arguments...),
+			taskID: taskID, directory: directory, shellPath: shellPath, command: item.Command, arguments: append([]string(nil), item.Arguments...),
 		}, item, nil
 	}
 	return taskCommandInvocation{}, settings.TaskMenuItem{}, fmt.Errorf("任务菜单项不存在")
