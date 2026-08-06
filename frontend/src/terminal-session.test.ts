@@ -15,6 +15,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   open: ReturnType<typeof vi.fn>
   options: {scrollback?: number, theme?: unknown}
   refresh: ReturnType<typeof vi.fn>
+  triggerSelectionChange(): void
   write: ReturnType<typeof vi.fn>
 }>)
 const fitAddonInstances = vi.hoisted(() => [] as Array<{fit: ReturnType<typeof vi.fn>}>)
@@ -35,7 +36,9 @@ vi.mock('@xterm/xterm', () => ({
       return this.onDataDisposable
     })
     onSelectionDisposable = {dispose: vi.fn()}
-    onSelectionChange = vi.fn(() => {
+    selectionChangeListener: (() => void) | undefined
+    onSelectionChange = vi.fn((listener: () => void) => {
+      this.selectionChangeListener = listener
       this.onSelectionDisposable = {dispose: vi.fn()}
       return this.onSelectionDisposable
     })
@@ -46,6 +49,10 @@ vi.mock('@xterm/xterm', () => ({
     options: {scrollback?: number, theme?: unknown}
     refresh = vi.fn()
     write = vi.fn()
+
+    triggerSelectionChange() {
+      this.selectionChangeListener?.()
+    }
 
     constructor(options: {scrollback?: number, theme?: unknown}) {
       this.options = options
@@ -75,6 +82,7 @@ describe('TerminalSessionRegistry', () => {
     terminalInstances.length = 0
     fitAddonInstances.length = 0
     runtime.ClipboardSetText.mockReset()
+    runtime.ClipboardSetText.mockResolvedValue(true)
   })
 
   it('直接写入按终端键持有的会话，并将滚屏限制为 1000 行', () => {
@@ -102,6 +110,17 @@ describe('TerminalSessionRegistry', () => {
     expect(secondContainer.contains(terminalInstances[0].element!)).toBe(true)
     expect(fitAddonInstances[0].fit).toHaveBeenCalledTimes(2)
     expect(onResize).toHaveBeenCalledWith(100, 30)
+  })
+
+  it('挂载禁用策略的终端时不自动复制选区', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+
+    registry.attach({...terminal, disableTaskAIMouseClipboard: true}, container, terminalVisualTheme('light'), vi.fn())
+    terminalInstances[0].getSelection.mockReturnValue('selected terminal output')
+    terminalInstances[0].triggerSelectionChange()
+
+    expect(runtime.ClipboardSetText).not.toHaveBeenCalled()
   })
 
   it('按 A、B、A 顺序切换时复用两个已有终端根节点', () => {

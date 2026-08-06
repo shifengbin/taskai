@@ -196,6 +196,30 @@ describe('TerminalView', () => {
     await waitFor(() => expect(onWrite).toHaveBeenCalledWith('task-1', 'terminal-1', 'paste from system clipboard'))
   })
 
+  it('禁用 TaskAI 鼠标剪贴板后不接管选区或右键', () => {
+    const onWrite = vi.fn()
+    runtime.ClipboardGetText.mockResolvedValue('stale system clipboard')
+    render(
+      <TerminalView
+        terminal={{...terminal, disableTaskAIMouseClipboard: true}}
+        sessionRegistry={new TerminalSessionRegistry(onWrite)}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    terminalInstances[0].getSelection.mockReturnValue('selected terminal output')
+    terminalInstances[0].triggerSelectionChange()
+
+    expect(runtime.ClipboardSetText).not.toHaveBeenCalled()
+
+    const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
+    fireEvent(screen.getByTestId('terminal-content'), event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(runtime.ClipboardGetText).not.toHaveBeenCalled()
+    expect(onWrite).not.toHaveBeenCalled()
+  })
+
   it('仅将投放到终端内容区的原生文件路径交给后端写入', async () => {
     let onFileDrop: ((x: number, y: number, paths: string[]) => void) | undefined
     runtime.OnFileDrop.mockImplementation((listener: (x: number, y: number, paths: string[]) => void) => {

@@ -16,6 +16,7 @@ interface TerminalSession {
   terminalID: string
   terminal: Terminal
   fitAddon: FitAddon
+  selectionClipboard: {enabled: boolean}
   onData: {dispose(): void}
   onSelectionChange: {dispose(): void}
 }
@@ -49,6 +50,7 @@ export class TerminalSessionRegistry {
     if (!session) {
       return false
     }
+    session.selectionClipboard.enabled = terminal.disableTaskAIMouseClipboard !== true
     session.terminal.options.theme = theme
     if (session.terminal.element) {
       container.append(session.terminal.element)
@@ -124,13 +126,17 @@ export class TerminalSessionRegistry {
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     const onData = terminal.onData((data) => this.onWrite(taskID, terminalID, data))
+    const selectionClipboard = {enabled: true}
     const onSelectionChange = terminal.onSelectionChange(() => {
+      if (!selectionClipboard.enabled) {
+        return
+      }
       const selection = terminal.getSelection()
       if (selection) {
         void ClipboardSetText(selection).catch(() => {})
       }
     })
-    const session = {taskID, terminalID, terminal, fitAddon, onData, onSelectionChange}
+    const session = {taskID, terminalID, terminal, fitAddon, selectionClipboard, onData, onSelectionChange}
     this.sessions.set(key, session)
     return session
   }

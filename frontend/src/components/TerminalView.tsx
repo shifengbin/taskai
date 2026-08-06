@@ -24,6 +24,7 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
   const onResizeRef = useRef(onResize)
   const onErrorRef = useRef(onError)
   const terminalTheme = useMemo(() => terminalVisualTheme(mode), [mode])
+  const taskAIMouseClipboardEnabled = terminal.disableTaskAIMouseClipboard !== true
 
   useEffect(() => {
     let active = true
@@ -51,7 +52,7 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
       cancelAnimationFrame(animationFrame)
       observer.disconnect()
     }
-  }, [sessionRegistry, terminal.id, terminal.taskId, terminalTheme])
+  }, [sessionRegistry, terminal.disableTaskAIMouseClipboard, terminal.id, terminal.taskId, terminalTheme])
 
   useEffect(() => {
     onResizeRef.current = onResize
@@ -109,14 +110,14 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
         ref={containerRef}
         className="taskai-terminal__content relative min-h-0 overflow-hidden p-1"
         data-testid="terminal-content"
-        onContextMenu={(event) => {
+        onContextMenu={taskAIMouseClipboardEnabled ? (event) => {
           event.preventDefault()
           void ClipboardGetText().then((clipboard) => {
             if (clipboard) {
               sessionRegistry.writeInput(terminal.taskId, terminal.id, clipboard)
             }
           }).catch(() => {})
-        }}
+        } : undefined}
         style={{backgroundColor: terminalTheme.background, '--wails-drop-target': 'drop'} as CSSProperties}
       >
         <div

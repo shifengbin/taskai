@@ -160,6 +160,7 @@ export interface TerminalRecord {
   id: string
   taskId: string
   state: TerminalState
+  disableTaskAIMouseClipboard?: boolean
   title?: string
   realtimeStatus?: RealtimeStatus
 }
