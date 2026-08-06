@@ -395,17 +395,18 @@ export function TaskTree({
               {dropPosition === 'before' && <TaskDropIndicator taskTitle={task.title} position={dropPosition}/>}
               <div
                 className={cn(
-                  'taskai-task-row relative flex min-h-[48px] items-center gap-1.5 border-l-4 border-solid py-2 pl-2 pr-1.5 shadow-snap-sm',
+                  'taskai-task-row taskai-contextual-container relative flex h-[60px] items-center gap-1.5 py-2 pl-3 pr-1.5',
                   'cursor-default touch-none select-none',
                   isTaskRowSelected && 'taskai-task-row--selected',
                 )}
                 data-task-id={task.id}
 						data-task-selected={isTaskRowSelected || undefined}
 						data-task-start-feedback={startFeedbackMode}
+						data-task-actions-active={taskMenu?.taskID === task.id || undefined}
                 onContextMenu={(event) => requestContextMenu(event, task)}
                 onMouseEnter={(event) => {
                   const bounds = event.currentTarget.getBoundingClientRect()
-                  setDescTooltip({top: bounds.top, left: bounds.right + 8, text: task.description || '暂无任务描述'})
+                  setDescTooltip({top: bounds.top, left: bounds.right + 8, text: task.description || '暂无描述'})
                 }}
                 onMouseLeave={() => setDescTooltip(null)}
 						onClick={(event) => {
@@ -436,10 +437,7 @@ export function TaskTree({
                   onPointerUp={completeTaskPointerDrag}
                   onPointerCancel={cancelTaskPointerDrag}
                   style={{
-                    borderRadius: '7px',
                     ['--task-color' as string]: taskColor,
-                    borderLeftColor: taskColor,
-                    backgroundColor: isTaskRowSelected ? `${taskColor}1a` : `${taskColor}0a`,
                     opacity: draggedTaskID === task.id ? 0.5 : 1,
                     outline: draggedTaskID === task.id ? '2px solid var(--snap-cobalt)' : '2px solid transparent',
                     outlineOffset: -2,
@@ -457,21 +455,23 @@ export function TaskTree({
 							/>
 						)}
 						{task.status === 'running' && (
-                  <IconButton
-                    aria-label={isExpanded ? '收起终端' : '展开终端'}
-                    title={isExpanded ? '收起终端' : '展开终端'}
-                    className="h-7 w-7"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      toggleExpanded(task.id)
-                    }}
-                  >
-                    {isExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
-                  </IconButton>
-                )}
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-display text-sm font-bold text-snap-ink">{task.title}</span>
-                  {task.description && <span className="truncate text-xs text-snap-muted">{task.description}</span>}
+						  <div className="taskai-contextual-actions flex shrink-0 items-center" data-testid={`task-row-leading-actions-${task.id}`}>
+						    <IconButton
+						      aria-label={isExpanded ? '收起终端' : '展开终端'}
+						      title={isExpanded ? '收起终端' : '展开终端'}
+						      className="h-7 w-7"
+						      onClick={(event) => {
+						        event.stopPropagation()
+						        toggleExpanded(task.id)
+						      }}
+						    >
+						      {isExpanded ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}
+						    </IconButton>
+						  </div>
+						)}
+                <div className="flex min-w-0 flex-1 flex-col justify-center">
+                  <span className="truncate font-display text-[13.5px] font-extrabold text-snap-ink">{task.title}</span>
+                  <span className="mt-px truncate font-sans text-[11.5px] font-medium text-snap-muted">{task.description || '暂无描述'}</span>
                 </div>
 						{execution && (
 							<span
@@ -485,64 +485,68 @@ export function TaskTree({
                 </span>
 						)}
                 {task.status === 'running' && !isExpanded && <TerminalStatusDot status={task.realtimeStatus ?? 'idle'}/>}
-                {task.status === 'pending' && (
-                  <IconButton
-                    aria-label="执行"
-                    title="执行"
-                    disabled={locked}
-                    className="h-7 w-7"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onStartTask(task.id)
-                    }}
-                  >
-                    <Play className="h-4 w-4"/>
-                  </IconButton>
-                )}
-                {task.status === 'running' && (
-                  <IconButton
-                    aria-label="结束"
-                    title="结束"
-                    disabled={locked}
-                    className="h-7 w-7"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onFinishTask(task.id)
-                    }}
-                  >
-                    <CircleStop className="h-4 w-4"/>
-                  </IconButton>
-                )}
-						{execution?.state === 'failed' && onRetryLifecycle && (
-							<IconButton
-                  aria-label="重试命令链"
-                  title="从命令链首条命令重新执行"
-                  className="h-7 w-7 text-snap-error"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onRetryLifecycle(task.id)
-                  }}
-                >
-                  <RotateCcw className="h-4 w-4"/>
-                </IconButton>
+						{(task.status === 'pending' || task.status === 'running' || (execution?.state === 'failed' && onRetryLifecycle) || !selectingCompletedTasks) && (
+						  <div className="taskai-contextual-actions flex shrink-0 items-center gap-1.5" data-testid={`task-row-trailing-actions-${task.id}`}>
+						    {task.status === 'pending' && (
+						      <IconButton
+						        aria-label="执行"
+						        title="执行"
+						        disabled={locked}
+						        className="h-7 w-7"
+						        onClick={(event) => {
+						          event.stopPropagation()
+						          onStartTask(task.id)
+						        }}
+						      >
+						        <Play className="h-4 w-4"/>
+						      </IconButton>
+						    )}
+						    {task.status === 'running' && (
+						      <IconButton
+						        aria-label="结束"
+						        title="结束"
+						        disabled={locked}
+						        className="h-7 w-7"
+						        onClick={(event) => {
+						          event.stopPropagation()
+						          onFinishTask(task.id)
+						        }}
+						      >
+						        <CircleStop className="h-4 w-4"/>
+						      </IconButton>
+						    )}
+						    {execution?.state === 'failed' && onRetryLifecycle && (
+						      <IconButton
+						        aria-label="重试命令链"
+						        title="从命令链首条命令重新执行"
+						        className="h-7 w-7 text-snap-error"
+						        onClick={(event) => {
+						          event.stopPropagation()
+						          onRetryLifecycle(task.id)
+						        }}
+						      >
+						        <RotateCcw className="h-4 w-4"/>
+						      </IconButton>
+						    )}
+						    {!selectingCompletedTasks && (
+						      <IconButton
+						        aria-label="任务操作"
+						        title="任务操作"
+						        disabled={locked}
+						        className="h-7 w-7"
+						        onClick={(event) => {
+						          event.stopPropagation()
+						          setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
+						        }}
+						      >
+						        <MoreVertical className="h-4 w-4"/>
+						      </IconButton>
+						    )}
+						  </div>
 						)}
-					{!selectingCompletedTasks && (
-            <IconButton
-              aria-label="任务操作"
-              title="任务操作"
-              disabled={locked}
-              className="h-7 w-7"
-              onClick={(event) => {
-                event.stopPropagation()
-                setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
-              }}
-            >
-              <MoreVertical className="h-4 w-4"/>
-            </IconButton>
-          )}
               </div>
               {isExpanded && (childTerminals.length > 0 || task.status === 'running') && (
-                <ul className="snap-no-scrollbar m-0 list-none p-0 pl-3 pr-2 flex flex-col gap-1 mb-3">
+                <ul className="snap-no-scrollbar m-0 mb-3 flex list-none flex-col p-0 pl-3 pr-2">
                   {childTerminals.map((terminal) => (
                     <li key={terminal.id}>
                       <div
@@ -556,11 +560,8 @@ export function TaskTree({
                             onSelectTerminal(terminal)
                           }
                         }}
-                        className={cn(
-                          'flex min-h-[38px] cursor-default items-center gap-2 rounded-snap-sm border-2 px-2 py-1 text-sm shadow-snap-sm transition-colors',
-                          terminal.id === selectedTerminalId
-                            ? 'border-snap-cobalt bg-snap-cobalt/15 text-snap-ink'
-                            : 'border-snap-outline/30 bg-snap-surface text-snap-ink hover:border-snap-outline/60',
+						className={cn(
+						  'taskai-terminal-row taskai-contextual-container flex min-h-[38px] cursor-default items-center gap-2 px-2 py-1 text-sm text-snap-ink',
                         )}
                       >
                         <Terminal className={cn('h-4 w-4 shrink-0', terminal.state === 'active' ? 'text-snap-cobalt' : 'text-snap-muted')}/>
@@ -574,19 +575,21 @@ export function TaskTree({
                           </span>
                         </div>
                         <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
-                        {onCloseTerminal && (
-                          <IconButton
-                            aria-label="关闭终端"
-                            title="关闭终端"
-                            className="h-7 w-7"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onCloseTerminal(terminal)
-                            }}
-                          >
-                            <X className="h-4 w-4"/>
-                          </IconButton>
-                        )}
+						{onCloseTerminal && (
+						  <div className="taskai-contextual-actions flex shrink-0 items-center" data-testid={`task-terminal-actions-${terminal.id}`}>
+						    <IconButton
+						      aria-label="关闭终端"
+						      title="关闭终端"
+						      className="h-7 w-7"
+						      onClick={(event) => {
+						        event.stopPropagation()
+						        onCloseTerminal(terminal)
+						      }}
+						    >
+						      <X className="h-4 w-4"/>
+						    </IconButton>
+						  </div>
+						)}
                       </div>
                     </li>
                   ))}

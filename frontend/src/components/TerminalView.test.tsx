@@ -1,4 +1,4 @@
-import {cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react'
+import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const terminalInstances = vi.hoisted(() => [] as Array<{
@@ -120,6 +120,17 @@ describe('TerminalView', () => {
 
     expect(screen.getByTestId('terminal-view-title')).toHaveStyle({whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'})
     expect(screen.getByTestId('terminal-view-title-container')).toHaveStyle({flex: '1', minWidth: '0'})
+  })
+
+  it('将关闭按钮限定在终端标题栏的上下文操作容器内', () => {
+    render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={vi.fn()} onClose={vi.fn()} />)
+
+    const header = screen.getByTestId('terminal-view-header')
+    const actions = screen.getByTestId('terminal-view-actions')
+    expect(header).toHaveClass('taskai-contextual-container')
+    expect(actions).toHaveClass('taskai-contextual-actions')
+    expect(actions).toContainElement(within(actions).getByRole('button', {name: '关闭终端'}))
+    expect(actions).not.toContainElement(within(header).getByRole('status', {name: '终端状态：空闲'}))
   })
 
   it('暗色模式注入快门波普深表面终端底色', () => {

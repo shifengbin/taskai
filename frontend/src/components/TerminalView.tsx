@@ -56,7 +56,7 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
 
   return (
     <div className="taskai-terminal grid h-full min-w-0" style={{gridTemplateRows: '44px minmax(0, 1fr)'}}>
-      <div className="taskai-terminal__header flex items-center gap-2 border-b-2 border-snap-outline bg-snap-surface px-2">
+      <div className="taskai-terminal__header taskai-contextual-container flex items-center gap-2 border-b-2 border-snap-outline bg-snap-surface px-2" data-testid="terminal-view-header">
         <TerminalIcon className="h-4 w-4 shrink-0 text-snap-cobalt"/>
         <div data-testid="terminal-view-title-container" style={{flex: 1, minWidth: 0}}>
           <span
@@ -69,9 +69,11 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
         </div>
         <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
         {terminal.state === 'active' && (
-          <IconButton aria-label="关闭终端" title="关闭终端" className="h-7 w-7" onClick={onClose}>
-            <X className="h-4 w-4"/>
-          </IconButton>
+          <div className="taskai-contextual-actions flex shrink-0 items-center" data-testid="terminal-view-actions">
+            <IconButton aria-label="关闭终端" title="关闭终端" className="h-7 w-7" onClick={onClose}>
+              <X className="h-4 w-4"/>
+            </IconButton>
+          </div>
         )}
       </div>
       <div

@@ -33,11 +33,73 @@ html, body, #root {
 .taskai-panel-resizer::after { display: none; }
 .taskai-content-pane { background-color: var(--snap-canvas); }
 
-/* 任务行分隔线与悬停过渡（颜色由快门波普墨色描边低透明派生）。 */
+/* 任务与终端卡片沿用 Snap 参考的完整描边、错位阴影与内嵌任务色条。 */
 .taskai-task-row {
-  margin: 0 4px 6px;
+  margin: 0 8px 7px;
+  isolation: isolate;
   overflow: hidden;
-  transition: background-color 160ms ease, box-shadow 160ms ease;
+  border: 2.5px solid var(--snap-outline);
+  border-radius: 9px;
+  box-shadow: 3px 3px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);
+  background-color: color-mix(in srgb, var(--task-color) 4%, var(--snap-surface));
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.taskai-task-row[data-task-selected="true"] {
+  border-color: var(--snap-cobalt);
+  box-shadow: 3px 3px 0 var(--snap-cobalt), inset 5px 0 0 var(--task-color);
+  background-color: color-mix(in srgb, var(--snap-cobalt) 10%, var(--snap-surface));
+}
+
+.taskai-terminal-row {
+  margin: 4px 10px;
+  border: 2px solid var(--snap-outline);
+  border-radius: 7px;
+  box-shadow: 2px 2px 0 var(--snap-outline);
+  background-color: var(--snap-surface-2);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.taskai-terminal-row[aria-pressed="true"] {
+  border-color: var(--snap-cobalt);
+  box-shadow: 2px 2px 0 var(--snap-cobalt);
+  background-color: color-mix(in srgb, var(--snap-cobalt) 10%, var(--snap-surface-2));
+}
+
+.taskai-contextual-actions {
+  transition: opacity 160ms ease;
+}
+
+@media (hover: hover) {
+  .taskai-task-row:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);
+  }
+
+  .taskai-task-row[data-task-selected="true"]:hover {
+    box-shadow: 4px 4px 0 var(--snap-cobalt), inset 5px 0 0 var(--task-color);
+  }
+
+  .taskai-terminal-row:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 var(--snap-outline);
+  }
+
+  .taskai-terminal-row[aria-pressed="true"]:hover {
+    box-shadow: 3px 3px 0 var(--snap-cobalt);
+  }
+
+  .taskai-contextual-container .taskai-contextual-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .taskai-contextual-container:hover .taskai-contextual-actions,
+  .taskai-contextual-container:focus-within .taskai-contextual-actions,
+  .taskai-contextual-container[data-task-actions-active="true"] .taskai-contextual-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .taskai-task-detail { position: relative; }
@@ -49,6 +111,11 @@ html, body, #root {
 .taskai-terminal { background: var(--snap-detail); }
 
 @media (prefers-reduced-motion: reduce) {
+  .taskai-task-row:hover,
+  .taskai-terminal-row:hover {
+    transform: none;
+  }
+
   *, *::before, *::after {
     scroll-behavior: auto !important;
     animation-duration: .01ms !important;

@@ -1,9 +1,13 @@
 import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {readFileSync} from 'node:fs'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {TaskTree} from './TaskTree'
 import type {TaskMenuItem, TaskRecord, TerminalRecord} from '../types'
+
+const appStyles = readFileSync('src/App.css', 'utf8')
+const motionStyles = readFileSync('src/style.css', 'utf8')
 
 const runningTask: TaskRecord = {
   id: 'task-1',
@@ -36,6 +40,80 @@ function dispatchPointerEvent(target: Element, type: string, pointerId: number, 
 
 describe('TaskTree', () => {
   afterEach(cleanup)
+
+  it('将任务和终端子项的操作按钮限定在上下文操作容器内', () => {
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[terminal]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        onCloseTerminal={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const taskRow = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!(taskRow instanceof HTMLElement)) {
+      throw new Error('未找到任务行')
+    }
+    const leadingTaskActions = screen.getByTestId('task-row-leading-actions-task-1')
+    const trailingTaskActions = screen.getByTestId('task-row-trailing-actions-task-1')
+    expect(leadingTaskActions).toContainElement(within(leadingTaskActions).getByRole('button', {name: '收起终端'}))
+    expect(trailingTaskActions).toContainElement(within(trailingTaskActions).getByRole('button', {name: '结束'}))
+    expect(trailingTaskActions).toContainElement(within(trailingTaskActions).getByRole('button', {name: '任务操作'}))
+
+    const terminalItem = screen.getByText('终端').closest('[role="button"]')
+    if (!(terminalItem instanceof HTMLElement)) {
+      throw new Error('未找到终端条目')
+    }
+    const terminalActions = screen.getByTestId('task-terminal-actions-terminal-1')
+    expect(terminalActions).toContainElement(within(terminalActions).getByRole('button', {name: '关闭终端'}))
+    expect(terminalActions).not.toContainElement(within(terminalItem).getByRole('status', {name: '终端状态：空闲'}))
+  })
+
+  it('打开任务操作菜单时标记所属任务的操作区域为活动', async () => {
+    const user = userEvent.setup()
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const taskRow = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!(taskRow instanceof HTMLElement)) {
+      throw new Error('未找到任务行')
+    }
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+
+    expect(taskRow).toHaveAttribute('data-task-actions-active', 'true')
+  })
+
+  it('仅在可悬停设备中以悬停、焦点或任务菜单状态显示上下文操作', () => {
+    expect(appStyles).toContain('@media (hover: hover)')
+    expect(appStyles).toContain('.taskai-contextual-actions')
+    expect(appStyles).toContain('.taskai-contextual-container:hover .taskai-contextual-actions')
+    expect(appStyles).toContain('.taskai-contextual-container:focus-within .taskai-contextual-actions')
+    expect(appStyles).toContain('[data-task-actions-active="true"] .taskai-contextual-actions')
+  })
 
   it('在执行中列表末尾以默认收起的同级区域展示搁置任务', async () => {
     const user = userEvent.setup()
@@ -260,7 +338,7 @@ describe('TaskTree', () => {
     expect(row).toHaveClass('taskai-task-row--selected')
   })
 
-  it('任务行为快门波普圆角卡片', () => {
+  it('任务行为带内嵌色条的 Snap 完整卡片', () => {
     render(
       <TaskTree
         {...({
@@ -284,7 +362,139 @@ describe('TaskTree', () => {
     if (!(row instanceof HTMLElement)) {
       throw new Error('未找到任务行')
     }
-    expect(getComputedStyle(row).borderRadius).toBe('7px')
+    expect(row).toHaveStyle({'--task-color': '#2563eb'})
+    expect(appStyles).toContain('.taskai-task-row {')
+    expect(appStyles).toContain('border: 2.5px solid var(--snap-outline);')
+    expect(appStyles).toContain('border-radius: 9px;')
+    expect(appStyles).toContain('box-shadow: 3px 3px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);')
+    expect(appStyles).toContain('background-color: color-mix(in srgb, var(--task-color) 4%, var(--snap-surface));')
+    expect(appStyles).not.toContain('.taskai-task-row::before')
+    expect(appStyles).toContain('.taskai-task-row:hover')
+    expect(appStyles).toContain('transform: translate(-1px, -1px);')
+    expect(appStyles).toContain('box-shadow: 4px 4px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);')
+  })
+
+  it('将顶层任务项固定为 60px 高的两行 Snap 排版', () => {
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const row = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!(row instanceof HTMLElement)) {
+      throw new Error('未找到任务行')
+    }
+    const title = within(row).getByText('整理发布说明', {exact: true})
+    const description = within(row).getByText('完成发布说明', {exact: true})
+
+    expect(row).toHaveClass('h-[60px]')
+    expect(title).toHaveClass('font-display', 'text-[13.5px]', 'font-extrabold')
+    expect(description).toHaveClass('font-sans', 'text-[11.5px]', 'font-medium', 'mt-px')
+    expect(title.parentElement).toBe(description.parentElement)
+    expect(title).toBe(title.parentElement?.firstElementChild)
+    expect(description).toBe(title.parentElement?.lastElementChild)
+  })
+
+  it('缺少描述时仍在任务项的第二行显示暂无描述', () => {
+    render(
+      <TaskTree
+        tasks={[{...runningTask, description: ''}]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const row = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!(row instanceof HTMLElement)) {
+      throw new Error('未找到任务行')
+    }
+    const title = within(row).getByText('整理发布说明', {exact: true})
+    const description = within(row).getByText('暂无描述', {exact: true})
+
+    expect(description).toHaveClass('font-sans', 'text-[11.5px]', 'font-medium', 'mt-px')
+    expect(title).toBe(title.parentElement?.firstElementChild)
+    expect(description).toBe(title.parentElement?.lastElementChild)
+  })
+
+  it('选中任务以钴蓝描边和硬投影保持 Snap 卡片层级', () => {
+    render(
+      <TaskTree
+        {...({
+          tasks: [runningTask],
+          terminals: [],
+          selectedTerminalId: undefined,
+          selectedTaskID: 'task-1',
+          onSelectTask: vi.fn(),
+          onSelectTerminal: vi.fn(),
+          onCreateTerminal: vi.fn(),
+          onEditTask: vi.fn(),
+          onOpenTaskFolder: vi.fn(),
+          onStartTask: vi.fn(),
+          onFinishTask: vi.fn(),
+          activeStatus: 'running',
+          onChangeStatus: vi.fn(),
+        } as any)}
+      />,
+    )
+
+    expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-selected', 'true')
+    expect(appStyles).toContain('.taskai-task-row[data-task-selected="true"]')
+    expect(appStyles).toContain('border-color: var(--snap-cobalt);')
+    expect(appStyles).toContain('box-shadow: 3px 3px 0 var(--snap-cobalt), inset 5px 0 0 var(--task-color);')
+  })
+
+  it('终端子项使用次级 Snap 卡片，并让启动反馈独立于卡片投影', () => {
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[terminal]}
+        selectedTerminalId="terminal-1"
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    const terminalItem = screen.getByText('终端').closest('[role="button"]')
+    expect(terminalItem).toHaveClass('taskai-terminal-row')
+    expect(terminalItem).toHaveAttribute('aria-pressed', 'true')
+    expect(appStyles).toContain('.taskai-terminal-row {')
+    expect(appStyles).toContain('background-color: var(--snap-surface-2);')
+    expect(appStyles).toContain('box-shadow: 2px 2px 0 var(--snap-outline);')
+    expect(appStyles).toContain('.taskai-terminal-row:hover')
+    expect(appStyles).toContain('box-shadow: 3px 3px 0 var(--snap-outline);')
+    expect(appStyles).toContain('.taskai-terminal-row[aria-pressed="true"]')
+    expect(appStyles).toContain('box-shadow: 2px 2px 0 var(--snap-cobalt);')
+    expect(motionStyles).toContain('.taskai-task-row[data-task-start-feedback="flash"]::after')
+    expect(motionStyles).toContain('.taskai-task-row[data-task-start-feedback="static"]::after { opacity: 1; }')
+    expect(motionStyles).not.toMatch(/@keyframes taskai-task-start-feedback\s*\{[^}]*box-shadow/)
   })
 
   it('任务收起时显示聚合状态点，展开后仅展示终端状态点', () => {
@@ -440,10 +650,8 @@ describe('TaskTree', () => {
       />,
     )
 
-    expect(screen.getByText('待处理任务').closest('[data-task-id]')).toHaveStyle({
-      borderLeftColor: 'rgb(249, 115, 22)',
-      backgroundColor: '#f973160a',
-    })
+    expect(screen.getByText('待处理任务').closest('[data-task-id]')).toHaveStyle({'--task-color': '#f97316'})
+    expect(appStyles).toContain('background-color: color-mix(in srgb, var(--task-color) 4%, var(--snap-surface));')
     expect(screen.queryByText('整理发布说明')).not.toBeInTheDocument()
     expect(screen.queryByText('已完成任务')).not.toBeInTheDocument()
 
@@ -543,6 +751,29 @@ describe('TaskTree', () => {
 
     await user.hover(screen.getByText('整理发布说明'))
     expect(await screen.findByRole('tooltip')).toHaveTextContent(description)
+  })
+
+  it('悬浮缺少描述的任务时使用暂无描述作为提示回退', async () => {
+    const user = userEvent.setup()
+    render(
+      <TaskTree
+        tasks={[{...runningTask, description: ''}]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    await user.hover(screen.getByText('整理发布说明'))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/^暂无描述$/)
   })
 
   it('双击任务条目的非按钮区域可展开或收起终端', async () => {

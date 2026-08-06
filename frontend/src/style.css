@@ -56,15 +56,25 @@ body {
   .snap-status-pulse-ring { animation: none; opacity: 0; }
 }
 
-/* 任务行：开始反馈闪烁（每行内联 --task-color 决定色相） */
+/* 任务行：开始反馈闪烁（每行内联 --task-color 决定色相）。 */
 @keyframes taskai-task-start-feedback {
-  0%, 100% { box-shadow: inset 0 0 0 0 var(--task-color); background-color: color-mix(in srgb, var(--task-color) 8%, transparent); }
-  50% { box-shadow: inset 0 0 0 2px var(--task-color); background-color: color-mix(in srgb, var(--task-color) 18%, transparent); }
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
-[data-task-start-feedback="flash"] { animation: taskai-task-start-feedback 350ms ease-in-out 2; }
-[data-task-start-feedback="static"] { box-shadow: inset 0 0 0 2px var(--task-color); }
+.taskai-task-row[data-task-start-feedback]::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border: 2px solid var(--task-color);
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+  opacity: 0;
+}
+.taskai-task-row[data-task-start-feedback="flash"]::after { animation: taskai-task-start-feedback 350ms ease-in-out 2; }
+.taskai-task-row[data-task-start-feedback="static"]::after { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
-  [data-task-start-feedback="flash"] { animation: none; box-shadow: inset 0 0 0 2px var(--task-color); }
+  .taskai-task-row[data-task-start-feedback="flash"]::after { animation: none; opacity: 1; }
 }
 
 /* 隐藏滚动条（任务列表等可滚动容器） */
