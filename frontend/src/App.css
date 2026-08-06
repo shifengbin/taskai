@@ -40,7 +40,7 @@ html, body, #root {
   overflow: hidden;
   border: 2.5px solid var(--snap-outline);
   border-radius: 9px;
-  box-shadow: 3px 3px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);
+  box-shadow: inset 5px 0 0 var(--task-color);
   background-color: color-mix(in srgb, var(--task-color) 4%, var(--snap-surface));
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
