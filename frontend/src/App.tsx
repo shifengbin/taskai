@@ -912,6 +912,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       name: taskMenuItemDraft.name.trim(),
       command: taskMenuItemDraft.command?.trim(),
       arguments: taskMenuItemDraft.arguments?.filter((argument) => argument.trim()),
+      disableTaskAIMouseClipboard: taskMenuItemDraft.showTerminal && taskMenuItemDraft.disableTaskAIMouseClipboard === true,
       beforeScript: normalizeTaskScript(taskMenuItemDraft.beforeScript),
       afterScript: normalizeTaskScript(taskMenuItemDraft.afterScript),
     }
@@ -1682,9 +1683,23 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 <Field label="启动命令"><Input required value={taskMenuItemDraft.command ?? ''} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, command: event.target.value} : current)}/></Field>
                 <Field label="启动参数（每行一个）" hint="每行代表一个启动参数。"><Textarea rows={2} value={(taskMenuItemDraft.arguments ?? []).join('\n')} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, arguments: event.target.value.split('\n')} : current)}/></Field>
                 <label className="flex items-center gap-2 text-sm text-snap-ink">
-                  <SnapSwitch checked={taskMenuItemDraft.showTerminal} onCheckedChange={(checked) => setTaskMenuItemDraft((current) => current ? {...current, showTerminal: checked === true} : current)}/>
+                  <SnapSwitch checked={taskMenuItemDraft.showTerminal} onCheckedChange={(checked) => setTaskMenuItemDraft((current) => {
+                    if (!current) {
+                      return current
+                    }
+                    const showTerminal = checked === true
+                    return {
+                      ...current,
+                      showTerminal,
+                      disableTaskAIMouseClipboard: showTerminal ? current.disableTaskAIMouseClipboard === true : false,
+                    }
+                  })}/>
                   <span>显示终端</span>
                 </label>
+                {taskMenuItemDraft.showTerminal && <label className="flex items-center gap-2 text-sm text-snap-ink">
+                  <SnapSwitch checked={taskMenuItemDraft.disableTaskAIMouseClipboard === true} onCheckedChange={(checked) => setTaskMenuItemDraft((current) => current ? {...current, disableTaskAIMouseClipboard: checked === true} : current)}/>
+                  <span>禁用 TaskAI 鼠标复制与右键粘贴</span>
+                </label>}
               </>}
 
               {taskMenuItemEditorTab === 'scripts' && <>
@@ -2839,6 +2854,7 @@ function createCustomTaskMenuItem(): TaskMenuItem {
     command: '',
     arguments: [],
     showTerminal: true,
+    disableTaskAIMouseClipboard: false,
   }
 }
 
