@@ -29,6 +29,8 @@ wails generate module
 git diff -- frontend/wailsjs/
 ```
 
+每次开发完成后需要进行编译
+
 ## 变更边界
 
 - 在所属层内完成变更，并保留 API 边界现有的校验和错误处理。

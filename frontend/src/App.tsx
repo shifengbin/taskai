@@ -49,7 +49,7 @@ import {
 } from './components/ui'
 import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalView} from './components/TerminalView'
-import {TerminalSessionRegistry} from './terminal-session'
+import {TerminalSessionRegistry, resolveTerminalCreateDimensions} from './terminal-session'
 import {
 	applyRealtimeStatusToTasks,
 	applyRealtimeStatusToTerminals,
@@ -703,7 +703,8 @@ export default function App() {
 
   const createTerminal = async (taskID: string) => {
     try {
-      const created = await api.createTerminal(taskID, 100, 32)
+      const dimensions = resolveTerminalCreateDimensions(terminalSessions.current?.lastDimensions?.())
+      const created = await api.createTerminal(taskID, dimensions.columns, dimensions.rows)
       if (addTerminal(created)) {
         setSelectedTaskID(taskID)
         setSelectedTerminalID(created.id)
@@ -715,7 +716,8 @@ export default function App() {
 
   const runTaskMenuCommand = async (taskID: string, itemID: string) => {
     try {
-      const result = await api.executeTaskMenuCommand(taskID, itemID, 100, 32)
+      const dimensions = resolveTerminalCreateDimensions(terminalSessions.current?.lastDimensions?.())
+      const result = await api.executeTaskMenuCommand(taskID, itemID, dimensions.columns, dimensions.rows)
       if (result.terminal && addTerminal(result.terminal)) {
         setSelectedTaskID(taskID)
         setSelectedTerminalID(result.terminal.id)
@@ -1139,7 +1141,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 terminal={selectedTerminal}
                 sessionRegistry={terminalSessions.current!}
                 mode={colorScheme}
-                onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
+                onResize={(columns, rows) => api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onClose={() => void closeTerminal(selectedTerminal)}
               />
             ) : (

@@ -8,12 +8,16 @@ import {ClipboardGetText} from '../../wailsjs/runtime/runtime'
 import {TerminalStatusDot} from './TerminalStatusDot'
 import {IconButton} from './ui'
 
+// 容器尺寸变化的 trailing 防抖间隔：等待尺寸稳定后再一次性适配网格 + 同步 PTY + 重绘，
+// 避免拖拽过程中把抖动的中间列数逐帧灌给 ConPTY（Windows 显示缩放下尤为明显）。
+export const TERMINAL_RESIZE_DEBOUNCE_MILLIS = 120
+
 interface TerminalViewProps {
   terminal: TerminalRecord
   sessionRegistry: TerminalSessionRegistry
   /** 当前色彩模式，用于注入 xterm 主题；默认亮色。 */
   mode?: 'light' | 'dark'
-  onResize(columns: number, rows: number): void
+  onResize(columns: number, rows: number): void | Promise<void>
   onClose(): void
 }
 
@@ -24,15 +28,22 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
 
   useEffect(() => {
     let active = true
+    let resizeTimeout: ReturnType<typeof setTimeout> | undefined
     const fitAndRefresh = () => {
       if (active) {
         sessionRegistry.fitAndRefresh(terminal.taskId, terminal.id, onResizeRef.current)
       }
     }
+    // 合并连续的容器尺寸变化：仅在尺寸稳定后一次性适配网格 + 同步 PTY + 重绘。挂载/切换路径
+    // 仍由下方 attach 与 requestAnimationFrame 立即执行，不被此防抖延迟。
+    const scheduleFitAndRefresh = () => {
+      clearTimeout(resizeTimeout)
+      resizeTimeout = setTimeout(fitAndRefresh, TERMINAL_RESIZE_DEBOUNCE_MILLIS)
+    }
     if (containerRef.current) {
       sessionRegistry.attach(terminal, containerRef.current, terminalTheme, onResizeRef.current)
     }
-    const observer = new ResizeObserver(fitAndRefresh)
+    const observer = new ResizeObserver(scheduleFitAndRefresh)
     if (containerRef.current) {
       observer.observe(containerRef.current)
     }
@@ -45,6 +56,7 @@ export function TerminalView({terminal, sessionRegistry, mode = 'light', onResiz
 
     return () => {
       active = false
+      clearTimeout(resizeTimeout)
       cancelAnimationFrame(animationFrame)
       observer.disconnect()
     }

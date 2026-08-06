@@ -70,16 +70,20 @@ const terminalSessionRegistry = vi.hoisted(() => ({
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
 vi.mock('../wailsjs/runtime/runtime', () => runtime)
-vi.mock('./terminal-session', () => ({
-  TerminalSessionRegistry: class {
-    handleTerminalEvent = terminalSessionRegistry.handleTerminalEvent
-    disposeAll = terminalSessionRegistry.disposeAll
-    disposeTask = terminalSessionRegistry.disposeTask
-    dispose = terminalSessionRegistry.dispose
+vi.mock('./terminal-session', async (importActual) => {
+  const actual = await importActual<typeof import('./terminal-session')>()
+  return {
+    ...actual,
+    TerminalSessionRegistry: class {
+      handleTerminalEvent = terminalSessionRegistry.handleTerminalEvent
+      disposeAll = terminalSessionRegistry.disposeAll
+      disposeTask = terminalSessionRegistry.disposeTask
+      dispose = terminalSessionRegistry.dispose
 
-    constructor(_onWrite: unknown) {}
-  },
-}))
+      constructor(_onWrite: unknown) {}
+    },
+  }
+})
 vi.mock('./components/TerminalView', async () => {
   const {terminalDisplayName} = await vi.importActual<typeof import('./types')>('./types')
   return {

@@ -65,7 +65,7 @@ vi.mock('@xterm/addon-fit', () => ({
 }))
 vi.mock('../../wailsjs/runtime/runtime', () => runtime)
 
-import {TerminalView} from './TerminalView'
+import {TerminalView, TERMINAL_RESIZE_DEBOUNCE_MILLIS} from './TerminalView'
 import {TerminalSessionRegistry} from '../terminal-session'
 
 const terminal = {id: 'terminal-1', taskId: 'task-1', state: 'active' as const}
@@ -105,6 +105,7 @@ describe('TerminalView', () => {
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -148,16 +149,54 @@ describe('TerminalView', () => {
     expect(terminalInstances).toHaveLength(1)
   })
 
-  it('在终端容器调整尺寸后重新适配并重绘全部可见行', () => {
+  it('在终端容器尺寸稳定后重新适配并重绘全部可见行', () => {
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']})
     const onResize = vi.fn()
     render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={onResize} onClose={vi.fn()} />)
+    runAnimationFrame()
     terminalInstances[0].refresh.mockClear()
     onResize.mockClear()
 
+    // 模拟真实容器尺寸变化（列/行从 100×30 变为 124×34）
+    terminalInstances[0].cols = 124
+    terminalInstances[0].rows = 34
+    notifyResizeObservers()
+    vi.advanceTimersByTime(TERMINAL_RESIZE_DEBOUNCE_MILLIS)
+
+    expect(onResize).toHaveBeenCalledWith(124, 34)
+    expect(terminalInstances[0].refresh).toHaveBeenCalledWith(0, 33)
+  })
+
+  it('连续的容器尺寸变化被合并为稳定后的单次同步', () => {
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']})
+    const onResize = vi.fn()
+    render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={onResize} onClose={vi.fn()} />)
+    runAnimationFrame()
+    onResize.mockClear()
+
+    terminalInstances[0].cols = 120
+    notifyResizeObservers()
+    terminalInstances[0].cols = 130
     notifyResizeObservers()
 
-    expect(onResize).toHaveBeenCalledWith(100, 30)
+    // 防抖窗口内尚未同步 PTY
+    expect(onResize).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(TERMINAL_RESIZE_DEBOUNCE_MILLIS)
+
+    // 稳定后仅以最终列数同步一次
+    expect(onResize).toHaveBeenCalledTimes(1)
+    expect(onResize).toHaveBeenCalledWith(130, 30)
+  })
+
+  it('挂载终端时立即适配并重绘，不被防抖延迟', () => {
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']})
+    const onResize = vi.fn()
+    render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={onResize} onClose={vi.fn()} />)
+
+    // 不推进任何定时器，仅驱动挂载 rAF：挂载/切换路径应已立即 fit + refresh
+    runAnimationFrame()
     expect(terminalInstances[0].refresh).toHaveBeenCalledWith(0, 29)
+    expect(onResize).toHaveBeenCalledWith(100, 30)
   })
 
   it('选中终端文本后自动写入系统剪贴板', () => {
