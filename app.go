@@ -1091,6 +1091,9 @@ func cloneTaskScript(script *settings.TaskScript) *settings.TaskScript {
 }
 
 func (app *App) publishTerminalEvent(event terminal.Event) {
+	if event.Type == "output" && event.Data != "" {
+		app.realtime.ReportOutputActivity(event.TaskID, event.TerminalID)
+	}
 	if event.Type == "exited" {
 		if event.ExitReason == terminal.ExitReasonUnexpected {
 			app.realtime.RegisterTerminal(event.TaskID, event.TerminalID)
@@ -1140,6 +1143,8 @@ func (app *App) applyStatusSettings(current settings.Settings) error {
 		app.realtime.SetMode(realtime.ModeHTTP)
 	case settings.StatusManagementModeTitleChange:
 		app.realtime.SetMode(realtime.ModeTitleChange)
+	case settings.StatusManagementModeOutputChange:
+		app.realtime.SetMode(realtime.ModeOutputChange)
 	default:
 		return fmt.Errorf("不支持的状态管理方式: %q", current.StatusManagementMode)
 	}

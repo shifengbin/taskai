@@ -986,6 +986,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   const statusManagementMode = settingsDraft?.statusManagementMode ?? 'title-change'
   const httpServiceEnabled = settingsDraft?.httpServiceEnabled ?? false
   const httpServiceActive = statusManagementMode === 'http' || httpServiceEnabled
+	const statusManagementDescription = statusManagementMode === 'output-change'
+		? '任意非空终端输出会在 1.5 秒内显示为工作中，未选中的终端静默后显示为未读。'
+		: statusManagementMode === 'http'
+			? '状态由 HTTP 接口更新；终端输出不会自动改变状态。'
+			: '终端标题变化会在 1.5 秒内显示为工作中，未选中的终端随后显示为未读。'
 	const extraInfoDraftTemplate = extraInfoDraft ? extraInfoTemplates.find((template) => template.id === extraInfoDraft.templateId) : undefined
 
   return (
@@ -1494,11 +1499,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               {settingsTab === 'status' && <div className="grid gap-4">
                 <div className="grid gap-1">
                   <span className="font-display text-sm font-bold text-snap-ink">状态判定</span>
-                  <span className="text-sm text-snap-muted">状态仅保存在本次应用会话中：终端标题变化会在 1.5 秒内显示为工作中，未选中的终端随后显示为未读。</span>
+                  <span className="text-sm text-snap-muted">状态仅保存在本次应用会话中：<span>{statusManagementDescription}</span></span>
                 </div>
                 <Field label="状态管理方式">
                   <select className={selectClass} value={statusManagementMode} onChange={(event) => updateSettingsDraft({statusManagementMode: event.target.value as SettingsRecord['statusManagementMode']})}>
                     <option value="title-change">根据终端标题变化</option>
+                    <option value="output-change">根据终端输出变化</option>
                     <option value="http">通过 HTTP 接口</option>
                   </select>
                 </Field>

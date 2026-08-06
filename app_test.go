@@ -1777,6 +1777,44 @@ func TestAppMapsTerminalExitReasonsToRealtimeStatus(t *testing.T) {
 	}
 }
 
+func TestAppReportsTerminalOutputActivityOnlyInOutputChangeMode(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	app.realtime.RegisterTerminal("task-1", "terminal-1")
+
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output", Data: "标题方式下的普通输出"})
+	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusIdle {
+		t.Fatalf("标题方式普通输出后的状态 = %q，期望 %q", got, realtime.StatusIdle)
+	}
+
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.StatusManagementMode = settings.StatusManagementModeOutputChange
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("保存输出状态管理设置: %v", err)
+	}
+
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output"})
+	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusIdle {
+		t.Fatalf("空输出后的状态 = %q，期望 %q", got, realtime.StatusIdle)
+	}
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output", Data: "输出方式下的活动"})
+	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusWorking {
+		t.Fatalf("输出方式非空输出后的状态 = %q，期望 %q", got, realtime.StatusWorking)
+	}
+
+	current.StatusManagementMode = settings.StatusManagementModeHTTP
+	current.StatusManagementHTTPPort = availableLoopbackPort(t)
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("保存 HTTP 状态管理设置: %v", err)
+	}
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output", Data: "HTTP 方式下的输出"})
+	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusIdle {
+		t.Fatalf("HTTP 方式普通输出后的状态 = %q，期望 %q", got, realtime.StatusIdle)
+	}
+}
+
 func TestAppConfiguresHTTPStatusServiceAtomically(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
@@ -2343,6 +2381,18 @@ func TestAppBuildsTerminalEnvironmentWhenHTTPServiceIsListening(t *testing.T) {
 	}
 	independentHTTPEnvironment := app.terminalStatusEnvironment(started.ID, "terminal-independent-http")
 	assertStatusEnvironment(t, independentHTTPEnvironment, app.statusHTTP.APIURL(), started.ID, "terminal-independent-http")
+
+	if _, err := app.SaveSettings(settings.Settings{
+		WorkspaceRoot:            started.WorkspaceRoot,
+		TaskTreeWidth:            settings.DefaultTaskTreeWidth,
+		StatusManagementMode:     settings.StatusManagementModeOutputChange,
+		HTTPServiceEnabled:       true,
+		StatusManagementHTTPPort: port,
+	}); err != nil {
+		t.Fatalf("保存输出方式独立 HTTP 服务设置: %v", err)
+	}
+	outputChangeEnvironment := app.terminalStatusEnvironment(started.ID, "terminal-output-change")
+	assertStatusEnvironment(t, outputChangeEnvironment, app.statusHTTP.APIURL(), started.ID, "terminal-output-change")
 
 	if _, err := app.SaveSettings(settings.Settings{
 		WorkspaceRoot:            started.WorkspaceRoot,

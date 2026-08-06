@@ -1,7 +1,7 @@
 export type TaskStatus = 'pending' | 'running' | 'completed'
 export type TerminalState = 'active' | 'exited'
 export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
-export type StatusManagementMode = 'title-change' | 'http'
+export type StatusManagementMode = 'title-change' | 'output-change' | 'http'
 export type ColorScheme = 'light' | 'dark'
 export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'command'
 export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'

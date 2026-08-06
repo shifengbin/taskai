@@ -43,8 +43,9 @@ const DefaultActiveTaskStatus = TaskStatusPending
 type StatusManagementMode string
 
 const (
-	StatusManagementModeTitleChange StatusManagementMode = "title-change"
-	StatusManagementModeHTTP        StatusManagementMode = "http"
+	StatusManagementModeTitleChange  StatusManagementMode = "title-change"
+	StatusManagementModeOutputChange StatusManagementMode = "output-change"
+	StatusManagementModeHTTP         StatusManagementMode = "http"
 )
 
 const DefaultStatusManagementMode = StatusManagementModeTitleChange
@@ -518,7 +519,7 @@ func Validate(next Settings) (Settings, error) {
 	if next.StatusManagementMode == "" {
 		next.StatusManagementMode = DefaultStatusManagementMode
 	}
-	if next.StatusManagementMode != StatusManagementModeTitleChange && next.StatusManagementMode != StatusManagementModeHTTP {
+	if next.StatusManagementMode != StatusManagementModeTitleChange && next.StatusManagementMode != StatusManagementModeOutputChange && next.StatusManagementMode != StatusManagementModeHTTP {
 		return Settings{}, fmt.Errorf("不支持的状态管理方式: %q", next.StatusManagementMode)
 	}
 	if next.StatusManagementHTTPPort < 0 || next.StatusManagementHTTPPort > 65535 {

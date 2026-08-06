@@ -2356,6 +2356,24 @@ describe('App confirmation flows', () => {
     })))
   })
 
+  it('在设置中配置终端输出状态管理并说明静默规则', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '实时状态'}))
+    await user.click(screen.getByLabelText('状态管理方式'))
+    await user.click(screen.getByRole('option', {name: '根据终端输出变化'}))
+
+    expect(screen.getByText('任意非空终端输出会在 1.5 秒内显示为工作中，未选中的终端静默后显示为未读。')).toBeInTheDocument()
+    expect(screen.getByRole('switch', {name: '启用本机 HTTP 服务'})).not.toBeDisabled()
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      statusManagementMode: 'output-change', httpServiceEnabled: false,
+    })))
+  })
+
   it('保存无效 HTTP 状态配置时显示后端错误', async () => {
     const user = userEvent.setup()
     bindings.SaveSettings.mockRejectedValue(new Error('HTTP 状态管理需要配置端口'))

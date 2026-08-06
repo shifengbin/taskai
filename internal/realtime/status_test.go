@@ -64,6 +64,96 @@ func TestServiceMarksSelectedTerminalIdleAfterTitleSilence(t *testing.T) {
 	}
 }
 
+func TestServiceMarksOutputActivityUnreadAfterSilence(t *testing.T) {
+	clock := &fakeClock{}
+	service := New(Options{Clock: clock, Mode: ModeOutputChange})
+	service.RegisterTerminal("task-1", "terminal-1")
+
+	if !service.ReportOutputActivity("task-1", "terminal-1") {
+		t.Fatal("ReportOutputActivity() = false，期望接受输出活动")
+	}
+	if got := service.TerminalStatus("task-1", "terminal-1"); got != StatusWorking {
+		t.Fatalf("输出活动后终端状态 = %q，期望 %q", got, StatusWorking)
+	}
+
+	clock.Advance(TitleActivityTimeout)
+	if got := service.TerminalStatus("task-1", "terminal-1"); got != StatusUnread {
+		t.Fatalf("输出静默后的终端状态 = %q，期望 %q", got, StatusUnread)
+	}
+}
+
+func TestServiceKeepsOutputActivityWorkingUntilLatestOutputIsSilent(t *testing.T) {
+	clock := &fakeClock{}
+	service := New(Options{Clock: clock, Mode: ModeOutputChange})
+	service.RegisterTerminal("task-1", "terminal-1")
+
+	service.ReportOutputActivity("task-1", "terminal-1")
+	clock.Advance(time.Second)
+	service.ReportOutputActivity("task-1", "terminal-1")
+	if got := clock.afterFuncCalls; got != 1 {
+		t.Fatalf("连续输出前创建计时器次数 = %d，期望 1", got)
+	}
+
+	clock.Advance(500 * time.Millisecond)
+	if got := service.TerminalStatus("task-1", "terminal-1"); got != StatusWorking {
+		t.Fatalf("首次计时器到期后的终端状态 = %q，期望 %q", got, StatusWorking)
+	}
+	clock.Advance(time.Second)
+	if got := service.TerminalStatus("task-1", "terminal-1"); got != StatusUnread {
+		t.Fatalf("最新输出静默后的终端状态 = %q，期望 %q", got, StatusUnread)
+	}
+}
+
+func TestServiceMarksSelectedOutputTerminalIdleAfterSilence(t *testing.T) {
+	clock := &fakeClock{}
+	service := New(Options{Clock: clock, Mode: ModeOutputChange})
+	service.RegisterTerminal("task-1", "terminal-1")
+	service.SelectTerminal("task-1", "terminal-1")
+
+	service.ReportOutputActivity("task-1", "terminal-1")
+	clock.Advance(TitleActivityTimeout)
+
+	if got := service.TerminalStatus("task-1", "terminal-1"); got != StatusIdle {
+		t.Fatalf("选中终端输出静默后的状态 = %q，期望 %q", got, StatusIdle)
+	}
+}
+
+func TestServiceAcceptsOnlyMatchingAutomaticActivitySource(t *testing.T) {
+	titleService := New(Options{Mode: ModeTitleChange})
+	titleService.RegisterTerminal("task-1", "terminal-1")
+	if titleService.ReportOutputActivity("task-1", "terminal-1") {
+		t.Fatal("标题方式错误接受输出活动")
+	}
+
+	outputService := New(Options{Mode: ModeOutputChange})
+	outputService.RegisterTerminal("task-1", "terminal-1")
+	if outputService.ReportTitleActivity("task-1", "terminal-1") {
+		t.Fatal("输出方式错误接受标题活动")
+	}
+
+	httpService := New(Options{Mode: ModeHTTP})
+	httpService.RegisterTerminal("task-1", "terminal-1")
+	if httpService.ReportOutputActivity("task-1", "terminal-1") {
+		t.Fatal("HTTP 方式错误接受输出活动")
+	}
+}
+
+func TestServiceDoesNotRepublishWorkingOutputStatus(t *testing.T) {
+	clock := &fakeClock{}
+	events := make([]Event, 0)
+	service := New(Options{Clock: clock, Mode: ModeOutputChange, Publish: func(event Event) {
+		events = append(events, event)
+	}})
+	service.RegisterTerminal("task-1", "terminal-1")
+
+	service.ReportOutputActivity("task-1", "terminal-1")
+	service.ReportOutputActivity("task-1", "terminal-1")
+
+	if got := len(events); got != 2 {
+		t.Fatalf("连续输出后的状态事件数量 = %d，期望 2", got)
+	}
+}
+
 func TestServiceIgnoresStaleTitleActivityTimers(t *testing.T) {
 	clock := &fakeClock{}
 	service := New(Options{Clock: clock})
@@ -116,14 +206,20 @@ func TestServicePublishesIncreasingVersions(t *testing.T) {
 }
 
 type fakeClock struct {
-	now    time.Duration
-	timers []*fakeTimer
+	now            time.Duration
+	timers         []*fakeTimer
+	afterFuncCalls int
 }
 
 func (clock *fakeClock) AfterFunc(delay time.Duration, callback func()) Timer {
+	clock.afterFuncCalls++
 	timer := &fakeTimer{at: clock.now + delay, callback: callback}
 	clock.timers = append(clock.timers, timer)
 	return timer
+}
+
+func (clock *fakeClock) Now() time.Time {
+	return time.Unix(0, 0).Add(clock.now)
 }
 
 func (clock *fakeClock) Advance(duration time.Duration) {

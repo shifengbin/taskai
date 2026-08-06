@@ -20,8 +20,9 @@ const TitleActivityTimeout = 1500 * time.Millisecond
 type Mode string
 
 const (
-	ModeTitleChange Mode = "title-change"
-	ModeHTTP        Mode = "http"
+	ModeTitleChange  Mode = "title-change"
+	ModeOutputChange Mode = "output-change"
+	ModeHTTP         Mode = "http"
 )
 
 type Timer interface {
@@ -29,6 +30,7 @@ type Timer interface {
 }
 
 type Clock interface {
+	Now() time.Time
 	AfterFunc(time.Duration, func()) Timer
 }
 
@@ -89,9 +91,10 @@ type taskState struct {
 }
 
 type terminalState struct {
-	status     Status
-	generation uint64
-	timer      Timer
+	status       Status
+	generation   uint64
+	lastActivity time.Time
+	timer        Timer
 }
 
 type terminalKey struct {
@@ -100,6 +103,10 @@ type terminalKey struct {
 }
 
 type systemClock struct{}
+
+func (systemClock) Now() time.Time {
+	return time.Now()
+}
 
 func (systemClock) AfterFunc(delay time.Duration, callback func()) Timer {
 	return time.AfterFunc(delay, callback)
@@ -161,6 +168,7 @@ func (service *Service) SetMode(mode Mode) {
 				terminal.timer.Stop()
 				terminal.timer = nil
 			}
+			terminal.lastActivity = time.Time{}
 			terminal.status = StatusIdle
 		}
 		events = append(events, service.eventLocked(taskID, "", false))
@@ -200,6 +208,7 @@ func (service *Service) SetTerminalStatus(taskID, terminalID string, status Stat
 		terminal.timer.Stop()
 		terminal.timer = nil
 	}
+	terminal.lastActivity = time.Time{}
 	terminal.status = status
 	task.override = nil
 	event := service.eventLocked(taskID, terminalID, false)
@@ -209,8 +218,16 @@ func (service *Service) SetTerminalStatus(taskID, terminalID string, status Stat
 }
 
 func (service *Service) ReportTitleActivity(taskID, terminalID string) bool {
+	return service.reportActivity(taskID, terminalID, ModeTitleChange)
+}
+
+func (service *Service) ReportOutputActivity(taskID, terminalID string) bool {
+	return service.reportActivity(taskID, terminalID, ModeOutputChange)
+}
+
+func (service *Service) reportActivity(taskID, terminalID string, source Mode) bool {
 	service.mu.Lock()
-	if service.mode != ModeTitleChange {
+	if service.mode != source {
 		service.mu.Unlock()
 		return false
 	}
@@ -220,19 +237,27 @@ func (service *Service) ReportTitleActivity(taskID, terminalID string) bool {
 		return false
 	}
 	terminal := task.terminals[terminalID]
-	terminal.generation++
-	generation := terminal.generation
-	if terminal.timer != nil {
-		terminal.timer.Stop()
-	}
-	terminal.status = StatusWorking
+	changed := terminal.status != StatusWorking || task.override != nil
+	terminal.lastActivity = service.clock.Now()
 	task.override = nil
-	terminal.timer = service.clock.AfterFunc(TitleActivityTimeout, func() {
-		service.handleTitleTimeout(taskID, terminalID, generation)
-	})
-	event := service.eventLocked(taskID, terminalID, false)
+	if terminal.status != StatusWorking {
+		terminal.status = StatusWorking
+	}
+	if terminal.timer == nil {
+		terminal.generation++
+		generation := terminal.generation
+		terminal.timer = service.clock.AfterFunc(TitleActivityTimeout, func() {
+			service.handleActivityTimeout(taskID, terminalID, source, generation)
+		})
+	}
+	var event Event
+	if changed {
+		event = service.eventLocked(taskID, terminalID, false)
+	}
 	service.mu.Unlock()
-	service.emit(event)
+	if changed {
+		service.emit(event)
+	}
 	return true
 }
 
@@ -268,6 +293,7 @@ func (service *Service) RemoveTerminal(taskID, terminalID string) bool {
 	terminal.generation++
 	if terminal.timer != nil {
 		terminal.timer.Stop()
+		terminal.timer = nil
 	}
 	delete(task.terminals, terminalID)
 	task.removed[terminalID] = true
@@ -291,6 +317,7 @@ func (service *Service) RemoveTask(taskID string) {
 		terminal.generation++
 		if terminal.timer != nil {
 			terminal.timer.Stop()
+			terminal.timer = nil
 		}
 	}
 	delete(service.tasks, taskID)
@@ -358,9 +385,9 @@ func (service *Service) Snapshot() StatusSnapshot {
 	return snapshot
 }
 
-func (service *Service) handleTitleTimeout(taskID, terminalID string, generation uint64) {
+func (service *Service) handleActivityTimeout(taskID, terminalID string, source Mode, generation uint64) {
 	service.mu.Lock()
-	if service.mode != ModeTitleChange {
+	if service.mode != source {
 		service.mu.Unlock()
 		return
 	}
@@ -371,6 +398,14 @@ func (service *Service) handleTitleTimeout(taskID, terminalID string, generation
 	}
 	terminal := task.terminals[terminalID]
 	if terminal.generation != generation {
+		service.mu.Unlock()
+		return
+	}
+	remaining := TitleActivityTimeout - service.clock.Now().Sub(terminal.lastActivity)
+	if remaining > 0 {
+		terminal.timer = service.clock.AfterFunc(remaining, func() {
+			service.handleActivityTimeout(taskID, terminalID, source, generation)
+		})
 		service.mu.Unlock()
 		return
 	}

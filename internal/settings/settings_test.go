@@ -926,6 +926,20 @@ func TestValidateDefaultsStatusManagementModeForExistingSettings(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsOutputChangeStatusManagementMode(t *testing.T) {
+	validated, err := Validate(Settings{
+		WorkspaceRoot:        t.TempDir(),
+		TaskTreeWidth:        DefaultTaskTreeWidth,
+		StatusManagementMode: StatusManagementModeOutputChange,
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if validated.StatusManagementMode != StatusManagementModeOutputChange {
+		t.Errorf("Validate() StatusManagementMode = %q，期望 %q", validated.StatusManagementMode, StatusManagementModeOutputChange)
+	}
+}
+
 func TestValidateRequiresHTTPPortWhenIndependentHTTPServiceEnabled(t *testing.T) {
 	base := Settings{WorkspaceRoot: t.TempDir(), TaskTreeWidth: DefaultTaskTreeWidth, StatusManagementMode: StatusManagementModeTitleChange}
 
