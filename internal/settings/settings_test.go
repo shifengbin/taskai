@@ -1046,6 +1046,67 @@ func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 	}
 }
 
+func TestValidateNormalizesTaskMenuMouseClipboardPolicy(t *testing.T) {
+	validated, err := Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		TaskMenuItems: []TaskMenuItem{
+			{
+				ID:                          "custom-terminal",
+				Kind:                        TaskMenuItemKindCommand,
+				Name:                        "Claude",
+				Command:                     "claude",
+				ShowTerminal:                true,
+				DisableTaskAIMouseClipboard: true,
+			},
+			{
+				ID:                          "custom-background",
+				Kind:                        TaskMenuItemKindCommand,
+				Name:                        "后台命令",
+				Command:                     "echo",
+				DisableTaskAIMouseClipboard: true,
+			},
+			{
+				ID:                          TaskMenuItemEditTaskID,
+				DisableTaskAIMouseClipboard: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	if !validated.TaskMenuItems[0].DisableTaskAIMouseClipboard {
+		t.Fatalf("终端命令策略 = false，期望 true")
+	}
+	if validated.TaskMenuItems[1].DisableTaskAIMouseClipboard {
+		t.Fatalf("非终端命令策略 = true，期望 false")
+	}
+	if validated.TaskMenuItems[2].DisableTaskAIMouseClipboard {
+		t.Fatalf("固定菜单项策略 = true，期望 false")
+	}
+
+	contents, err := json.Marshal(validated.TaskMenuItems[0])
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var persisted map[string]any
+	if err := json.Unmarshal(contents, &persisted); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if persisted["disableTaskAIMouseClipboard"] != true {
+		t.Fatalf("持久化鼠标剪贴板策略 = %#v，期望 true", persisted["disableTaskAIMouseClipboard"])
+	}
+
+	var legacy TaskMenuItem
+	if err := json.Unmarshal([]byte(`{"id":"custom-legacy","kind":"command","name":"Legacy","command":"legacy","showTerminal":true}`), &legacy); err != nil {
+		t.Fatalf("Unmarshal() 旧菜单项 error = %v", err)
+	}
+	if legacy.DisableTaskAIMouseClipboard {
+		t.Fatal("旧菜单项缺失配置时不应禁用 TaskAI 鼠标剪贴板")
+	}
+}
+
 func TestValidateRejectsInvalidCustomTaskMenuItem(t *testing.T) {
 	_, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),

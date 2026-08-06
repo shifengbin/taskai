@@ -209,6 +209,7 @@ export interface TaskMenuItem {
   command?: string
   arguments?: string[]
   showTerminal: boolean
+  disableTaskAIMouseClipboard?: boolean
   beforeScript?: TaskScript
   afterScript?: TaskScript
 }
