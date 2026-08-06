@@ -28,7 +28,7 @@
 - **THEN** 系统展示 `TASKAI_TASK_ID` 和 `TASKAI_TERMINAL_ID` 的适用范围，并说明 `TASKAI_STATUS_API` 仅在本机 HTTP 服务正在监听时注入到之后新建的终端
 
 #### Scenario: 独立 HTTP 服务为新终端注入状态 API
-- **WHEN** 用户保持标题变化状态管理、启用独立本机 HTTP 服务并在服务监听后新建终端
+- **WHEN** 用户保持标题变化或终端输出变化状态管理、启用独立本机 HTTP 服务并在服务监听后新建终端
 - **THEN** 该终端环境包含值等于当前状态 API 基址的 `TASKAI_STATUS_API`
 
 #### Scenario: HTTP 状态管理为新终端注入状态 API
