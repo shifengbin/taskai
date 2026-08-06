@@ -904,7 +904,17 @@ func (app *App) ExecuteTaskMenuCommand(taskID, itemID string, columns, rows uint
 	}
 	if item.ShowTerminal {
 		environment, unregister := app.terminalStatusEnvironmentBuilder(taskID)
-		created, err := app.terminals.CreateCommandWithEnvironmentBuilder(taskID, invocation.directory, invocation.shellPath, invocation.command, invocation.arguments, environment, columns, rows)
+		created, err := app.terminals.CreateCommandWithOptionsAndEnvironmentBuilder(
+			taskID,
+			invocation.directory,
+			invocation.shellPath,
+			invocation.command,
+			invocation.arguments,
+			terminal.CommandOptions{DisableTaskAIMouseClipboard: item.DisableTaskAIMouseClipboard},
+			environment,
+			columns,
+			rows,
+		)
 		if err != nil {
 			unregister()
 			return application.TaskMenuCommandResult{}, err

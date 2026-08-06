@@ -2542,6 +2542,34 @@ func TestAppInjectsStatusAPIIntoEveryTerminalEntryWhenHTTPServiceIsListening(t *
 	}
 }
 
+func TestExecuteTaskMenuCommandSnapshotsMouseClipboardPolicy(t *testing.T) {
+	item := settings.TaskMenuItem{
+		ID:                          "claude-terminal",
+		Kind:                        settings.TaskMenuItemKindCommand,
+		Name:                        "Claude",
+		Command:                     "claude",
+		ShowTerminal:                true,
+		DisableTaskAIMouseClipboard: true,
+	}
+	app, started := runningAppWithTaskMenuItem(t, item)
+	backend := &capturingTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+
+	result, err := app.ExecuteTaskMenuCommand(started.ID, item.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("执行菜单命令: %v", err)
+	}
+	if result.Terminal == nil {
+		t.Fatal("显示终端的菜单命令未返回终端")
+	}
+	if !result.Terminal.DisableTaskAIMouseClipboard {
+		t.Fatal("菜单命令未将鼠标剪贴板策略快照到终端")
+	}
+	if !backend.request(result.Terminal.ID).DisableTaskAIMouseClipboard {
+		t.Fatal("菜单命令启动请求未传递鼠标剪贴板策略")
+	}
+}
+
 func TestAppRegistersRealtimeTerminalBeforeStartingProcess(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	backend := &capturingTerminalBackend{}

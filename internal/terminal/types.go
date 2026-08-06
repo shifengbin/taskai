@@ -10,15 +10,20 @@ const (
 )
 
 type StartRequest struct {
-	ID          string
-	TaskID      string
-	Directory   string
-	ShellPath   string
-	Command     string
-	Arguments   []string
-	Environment []string
-	Columns     uint16
-	Rows        uint16
+	ID                          string
+	TaskID                      string
+	Directory                   string
+	ShellPath                   string
+	Command                     string
+	Arguments                   []string
+	Environment                 []string
+	DisableTaskAIMouseClipboard bool
+	Columns                     uint16
+	Rows                        uint16
+}
+
+type CommandOptions struct {
+	DisableTaskAIMouseClipboard bool
 }
 
 type Session interface {
@@ -51,9 +56,10 @@ const (
 )
 
 type Info struct {
-	ID     string `json:"id"`
-	TaskID string `json:"taskId"`
-	State  State  `json:"state"`
+	ID                          string `json:"id"`
+	TaskID                      string `json:"taskId"`
+	State                       State  `json:"state"`
+	DisableTaskAIMouseClipboard bool   `json:"disableTaskAIMouseClipboard"`
 }
 
 type ActiveSession struct {
