@@ -33,6 +33,55 @@ func TestDefaultUsesApplicationDataWorkspaces(t *testing.T) {
 	}
 }
 
+func TestValidateNormalizesTerminalFontFamilyWithoutRequiringInstalledFont(t *testing.T) {
+	current := Default(t.TempDir())
+	current.TerminalFontFamily = "  已移除的终端字体  "
+
+	validated, err := Validate(current)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if got, want := validated.TerminalFontFamily, "已移除的终端字体"; got != want {
+		t.Fatalf("Validate() TerminalFontFamily = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultUsesTerminalFontSize(t *testing.T) {
+	settings := Default(t.TempDir())
+
+	if got, want := settings.TerminalFontSize, DefaultTerminalFontSize; got != want {
+		t.Fatalf("Default() TerminalFontSize = %d, want %d", got, want)
+	}
+}
+
+func TestValidateNormalizesTerminalFontSize(t *testing.T) {
+	tests := []struct {
+		name string
+		size int
+		want int
+	}{
+		{name: "旧设置缺少字段", size: 0, want: DefaultTerminalFontSize},
+		{name: "小于最小值", size: MinimumTerminalFontSize - 1, want: MinimumTerminalFontSize},
+		{name: "大于最大值", size: MaximumTerminalFontSize + 1, want: MaximumTerminalFontSize},
+		{name: "范围内字号", size: 16, want: 16},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			current := Default(t.TempDir())
+			current.TerminalFontSize = test.size
+
+			validated, err := Validate(current)
+			if err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if got := validated.TerminalFontSize; got != test.want {
+				t.Fatalf("Validate() TerminalFontSize = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
 func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 	settings := Default(t.TempDir())
 

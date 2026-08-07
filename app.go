@@ -17,6 +17,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"taskai/internal/application"
+	"taskai/internal/fonts"
 	"taskai/internal/lifecycle"
 	"taskai/internal/quickinput"
 	"taskai/internal/realtime"
@@ -865,6 +866,10 @@ func statusHTTPSettingsChanged(previous, current settings.Settings) bool {
 
 func (app *App) DetectShells() []string {
 	return settings.DetectShells()
+}
+
+func (app *App) ListTerminalFonts() []fonts.Candidate {
+	return fonts.ListTerminalFonts()
 }
 
 func (app *App) CreateTerminal(taskID string, columns, rows uint16) (terminal.Info, error) {

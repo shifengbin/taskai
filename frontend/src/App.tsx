@@ -1,6 +1,6 @@
 import {type Dispatch, type FormEvent, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState} from 'react'
 
-import {ArrowDown, ArrowUp, CheckCheck, CheckCircle2, FolderOpen, HelpCircle, LogOut, Maximize, Minimize, Plus, Settings as SettingsIcon, Trash2} from 'lucide-react'
+import {ArrowDown, ArrowUp, CheckCheck, CheckCircle2, FolderOpen, HelpCircle, LogOut, Maximize, Minimize, Plus, RotateCcw, Settings as SettingsIcon, Trash2} from 'lucide-react'
 
 import {api} from './api'
 import taskAiMark from './assets/task-ai-mark.svg'
@@ -50,6 +50,8 @@ import {
 import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalView} from './components/TerminalView'
 import {TerminalSessionRegistry} from './terminal-session'
+import {resolveTerminalFontFamily} from './terminal-font'
+import {defaultTerminalFontSize, maximumTerminalFontSize, minimumTerminalFontSize, normalizeTerminalFontSize, terminalFontSizePercent} from './terminal-font-size'
 import {
 	applyRealtimeStatusToTasks,
 	applyRealtimeStatusToTerminals,
@@ -93,6 +95,7 @@ import {
 	type TaskMenuItem,
   type TaskStatus,
   type TerminalRecord,
+	type TerminalFontCandidate,
 } from './types'
 import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import './App.css'
@@ -105,6 +108,7 @@ type Notification = {
 const customLifecyclePresetID = '__custom__'
 
 const selectClass = 'w-full border-2 border-snap-outline rounded-snap bg-snap-surface px-3 py-2 text-sm text-snap-ink shadow-snap-sm outline-none transition-[box-shadow,border-color] focus-visible:border-snap-cobalt focus-visible:ring-[3px] focus-visible:ring-snap-cobalt disabled:cursor-not-allowed disabled:opacity-60'
+const defaultTerminalFontCandidate: TerminalFontCandidate = {family: '', spacing: 'mono'}
 
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
@@ -150,6 +154,17 @@ export default function App() {
   const [draftDescription, setDraftDescription] = useState('')
   const [draftColor, setDraftColor] = useState(defaultTaskColor)
   const [settingsDraft, setSettingsDraft] = useState<SettingsRecord>()
+	const [terminalFontCandidates, setTerminalFontCandidates] = useState<TerminalFontCandidate[]>([defaultTerminalFontCandidate])
+	const [terminalFontsLoading, setTerminalFontsLoading] = useState(false)
+	const [terminalFontsError, setTerminalFontsError] = useState(false)
+	const fontOptions = useMemo(() => {
+		const selectedFamily = settingsDraft?.terminalFontFamily?.trim() ?? ''
+		if (!selectedFamily || terminalFontCandidates.some((candidate) => candidate.family === selectedFamily)) {
+			return terminalFontCandidates
+		}
+		return [...terminalFontCandidates, {family: selectedFamily, spacing: 'unavailable' as const}]
+	}, [settingsDraft?.terminalFontFamily, terminalFontCandidates])
+	const terminalFontSizeDraft = normalizeTerminalFontSize(settingsDraft?.terminalFontSize)
 	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
   const [statusHelpOpen, setStatusHelpOpen] = useState(false)
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
@@ -166,11 +181,13 @@ export default function App() {
   const registeredTerminalKeys = useRef(new Set<string>())
   const finishedTerminalTaskIDs = useRef(new Set<string>())
   const terminalTitleValues = useRef(new Map<string, string>())
+	const terminalFontFamily = useRef('')
+	const terminalFontSize = useRef(defaultTerminalFontSize)
 	const terminalSessions = useRef<TerminalSessionRegistry>()
 	if (!terminalSessions.current) {
 		terminalSessions.current = new TerminalSessionRegistry((taskID, terminalID, data) => {
 			void api.writeTerminal(taskID, terminalID, data).catch((error) => showError(error, setMessage))
-		})
+		}, () => terminalFontFamily.current, () => terminalFontSize.current)
 	}
 	const latestRealtimeStatusVersion = useRef(0)
 	const lifecycleStatusTargets = useRef(new Map<string, TaskStatus>())
@@ -204,6 +221,8 @@ export default function App() {
 		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoTemplates, loadedExtraInfos, loadedQuickInputs] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoTemplates(), api.listExtraInfos(), api.listQuickInputs()])
         setTasks(loadedTasks)
 		setSettings(loadedSettings)
+		terminalFontFamily.current = loadedSettings.terminalFontFamily ?? ''
+		terminalFontSize.current = normalizeTerminalFontSize(loadedSettings.terminalFontSize)
         setActiveTaskStatus(loadedSettings.activeTaskStatus ?? 'pending')
         setDetectedShells(loadedShells)
 		setExtraInfoTemplates(loadedExtraInfoTemplates)
@@ -897,6 +916,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
     try {
 		const saved = await api.saveSettings(settingsDraft)
 		setSettings(saved)
+		terminalFontFamily.current = saved.terminalFontFamily ?? ''
+		terminalFontSize.current = normalizeTerminalFontSize(saved.terminalFontSize)
+		terminalSessions.current?.setFontSize(terminalFontSize.current)
       setSettingsDialogOpen(false)
       closeTaskMenuItemEditor()
     } catch (error) {
@@ -1022,6 +1044,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       workspaceRoot: current?.workspaceRoot ?? settings?.workspaceRoot ?? '',
       taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
 		colorScheme: current?.colorScheme ?? colorScheme,
+		terminalFontFamily: current?.terminalFontFamily ?? settings?.terminalFontFamily ?? '',
+		terminalFontSize: normalizeTerminalFontSize(current?.terminalFontSize ?? settings?.terminalFontSize),
       shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
       taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
 		activeTaskStatus: current?.activeTaskStatus ?? settings?.activeTaskStatus ?? activeTaskStatus,
@@ -1033,6 +1057,19 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       ...update,
     }))
   }
+
+	const loadTerminalFonts = async () => {
+		setTerminalFontsLoading(true)
+		setTerminalFontsError(false)
+		try {
+			setTerminalFontCandidates(normalizeTerminalFontCandidates(await api.listTerminalFonts()))
+		} catch {
+			setTerminalFontCandidates([defaultTerminalFontCandidate])
+			setTerminalFontsError(true)
+		} finally {
+			setTerminalFontsLoading(false)
+		}
+	}
 
   const setPanelWidth = (nextWidth: number) => {
     const clamped = clampTaskTreeWidth(nextWidth)
@@ -1115,6 +1152,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				  setSettingsDraft(settings ? {
 				    ...settings,
                     colorScheme,
+					terminalFontFamily: settings.terminalFontFamily ?? '',
+						terminalFontSize: normalizeTerminalFontSize(settings.terminalFontSize),
                     shellPath: settings.shellPath || detectedShells[0] || '',
 						taskMenuItems: draftMenuItems,
 						statusManagementMode: settings.statusManagementMode ?? 'title-change',
@@ -1128,6 +1167,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				  setTaskMenuItemEditorTab('basic')
 				  setScriptHelpAnchor(undefined)
                   setSettingsDialogOpen(true)
+					void loadTerminalFonts()
                 }}
               >
                 <SettingsIcon className="h-[18px] w-[18px]" strokeWidth={2.25}/>
@@ -1241,6 +1281,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 terminal={selectedTerminal}
                 sessionRegistry={terminalSessions.current!}
                 quickInputs={quickInputs}
+                fontSize={normalizeTerminalFontSize(settings?.terminalFontSize)}
                 mode={colorScheme}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onError={(error) => showError(error, setMessage)}
@@ -1631,6 +1672,63 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                     <option value="dark">暗色</option>
                   </select>
                 </Field>
+				<Field label="终端字体">
+					<div className="grid gap-2">
+						{terminalFontsLoading && <span role="status" className="text-sm text-snap-muted">正在读取系统字体…</span>}
+						{terminalFontsError && <span role="status" className="text-sm text-snap-muted">系统字体不可用，已保留默认终端字体。</span>}
+						<div role="radiogroup" aria-label="终端字体" className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+							{fontOptions.map((candidate) => {
+								const selected = (settingsDraft?.terminalFontFamily?.trim() ?? '') === candidate.family
+								const name = terminalFontCandidateName(candidate)
+								return <button
+									key={`${candidate.family}-${candidate.spacing}`}
+									type="button"
+									role="radio"
+									aria-label={`选择终端字体 ${name}`}
+									aria-checked={selected}
+									onClick={() => updateSettingsDraft({terminalFontFamily: candidate.family})}
+									className={cn('grid w-full gap-2 rounded-snap border-2 p-3 text-left shadow-snap-sm outline-none transition-[border-color,box-shadow,transform] focus-visible:border-snap-cobalt focus-visible:ring-[3px] focus-visible:ring-snap-cobalt', selected ? 'border-snap-cobalt bg-snap-cobalt/10' : 'border-snap-outline bg-snap-surface hover:-translate-x-px hover:-translate-y-px hover:shadow-snap')}
+								>
+									<div className="flex items-center justify-between gap-3">
+										<span className="min-w-0 truncate text-sm font-bold text-snap-ink">{name}</span>
+										<SnapChip variant={candidate.spacing === 'unavailable' ? 'amber' : 'muted'}>{terminalFontSpacingLabel(candidate.spacing)}</SnapChip>
+									</div>
+									<div className="grid gap-0.5 text-sm leading-5 text-snap-ink" style={{fontFamily: resolveTerminalFontFamily(candidate.family), fontSize: `${terminalFontSizeDraft}px`}}>
+										<span>中文：终端字体预览</span>
+										<span>English: TaskAI $ git status</span>
+										<span>┌─ ~/taskai $ █</span>
+									</div>
+								</button>
+							})}
+						</div>
+					</div>
+				</Field>
+				<Field label="终端字号">
+					<div className="grid gap-2">
+						<div className="flex items-center justify-between gap-3">
+							<span className="text-sm font-bold tabular-nums text-snap-ink" aria-live="polite">{`${terminalFontSizeDraft} px（${terminalFontSizePercent(terminalFontSizeDraft)}%）`}</span>
+							<SnapTooltip>
+								<SnapTooltipTrigger asChild>
+									<SnapIconButton title="恢复默认字号（13 px）" aria-label="恢复默认字号（13 px）" size="sm" onClick={() => updateSettingsDraft({terminalFontSize: defaultTerminalFontSize})}>
+										<RotateCcw className="h-4 w-4" strokeWidth={2.25}/>
+									</SnapIconButton>
+								</SnapTooltipTrigger>
+								<SnapTooltipContent>恢复默认字号（13 px）</SnapTooltipContent>
+							</SnapTooltip>
+						</div>
+						<input
+							type="range"
+							aria-label="终端字号"
+							min={minimumTerminalFontSize}
+							max={maximumTerminalFontSize}
+							step={1}
+							value={terminalFontSizeDraft}
+							onChange={(event) => updateSettingsDraft({terminalFontSize: Number(event.target.value)})}
+							className="w-full accent-snap-cobalt"
+						/>
+						<div className="flex justify-between text-xs tabular-nums text-snap-muted"><span>{minimumTerminalFontSize} px</span><span>{maximumTerminalFontSize} px</span></div>
+					</div>
+				</Field>
               </div>}
 
               {settingsTab === 'shell' && <div className="grid gap-3">
@@ -3018,3 +3116,33 @@ function showError(error: unknown, setMessage: Dispatch<SetStateAction<Notificat
 	setMessage({text: error instanceof Error ? error.message : String(error), severity: 'error'})
 }
 
+function normalizeTerminalFontCandidates(candidates: TerminalFontCandidate[]): TerminalFontCandidate[] {
+	const normalized = new Map<string, TerminalFontCandidate>()
+	for (const candidate of candidates) {
+		const family = candidate.family?.trim() ?? ''
+		if (family && candidate.spacing !== 'mono' && candidate.spacing !== 'dual') {
+			continue
+		}
+		const key = family.toLocaleLowerCase()
+		if (!normalized.has(key)) {
+			normalized.set(key, {family, spacing: family ? candidate.spacing : 'mono'})
+		}
+	}
+	const listed = [...normalized.values()].filter((candidate) => candidate.family)
+	listed.sort((left, right) => left.family.localeCompare(right.family))
+	return [defaultTerminalFontCandidate, ...listed]
+}
+
+function terminalFontCandidateName(candidate: TerminalFontCandidate): string {
+	return candidate.family || '默认终端字体'
+}
+
+function terminalFontSpacingLabel(spacing: TerminalFontCandidate['spacing']): string {
+	if (spacing === 'dual') {
+		return '双宽'
+	}
+	if (spacing === 'unavailable') {
+		return '当前字体不可用'
+	}
+	return '等宽'
+}

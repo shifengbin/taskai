@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css'
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
 import {terminalDisplayName, terminalRealtimeStatus, type QuickInput, type TerminalRecord} from '../types'
 import {api} from '../api'
+import {defaultTerminalFontSize} from '../terminal-font-size'
 import {ClipboardGetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
 import {TerminalStatusDot} from './TerminalStatusDot'
 import {IconButton, Input, Popover, PopoverContent, PopoverTrigger} from './ui'
@@ -13,6 +14,7 @@ interface TerminalViewProps {
   terminal: TerminalRecord
   sessionRegistry: TerminalSessionRegistry
   quickInputs?: QuickInput[]
+  fontSize?: number
   /** 当前色彩模式，用于注入 xterm 主题；默认亮色。 */
   mode?: 'light' | 'dark'
   onResize(columns: number, rows: number): void
@@ -20,7 +22,7 @@ interface TerminalViewProps {
   onError?(error: unknown): void
 }
 
-export function TerminalView({terminal, sessionRegistry, quickInputs = [], mode = 'light', onResize, onClose, onError}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontSize = defaultTerminalFontSize, mode = 'light', onResize, onClose, onError}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const quickInputSearchRef = useRef<HTMLInputElement>(null)
   const onResizeRef = useRef(onResize)
@@ -95,6 +97,10 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], mode 
   useEffect(() => {
     onResizeRef.current = onResize
   }, [onResize])
+
+  useEffect(() => {
+    sessionRegistry.fitAndRefresh(terminal.taskId, terminal.id, onResizeRef.current)
+  }, [fontSize, sessionRegistry, terminal.id, terminal.taskId])
 
   useEffect(() => {
     onErrorRef.current = onError

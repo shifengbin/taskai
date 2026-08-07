@@ -13,6 +13,12 @@ const DefaultTaskTreeWidth = 360
 const MinimumTaskTreeWidth = 280
 
 const (
+	DefaultTerminalFontSize = 13
+	MinimumTerminalFontSize = 10
+	MaximumTerminalFontSize = 24
+)
+
+const (
 	CurrentPresetVersion               = 5
 	DefaultBranchTaskTemplateID        = "preset.task-template.default-branch"
 	DefaultLifecyclePresetID           = "preset.lifecycle-preset.default"
@@ -154,6 +160,8 @@ type Settings struct {
 	WorkspaceRoot                string                   `json:"workspaceRoot"`
 	TaskTreeWidth                int                      `json:"taskTreeWidth"`
 	ColorScheme                  ColorScheme              `json:"colorScheme"`
+	TerminalFontFamily           string                   `json:"terminalFontFamily"`
+	TerminalFontSize             int                      `json:"terminalFontSize"`
 	ShellPath                    string                   `json:"shellPath"`
 	TaskMenuItems                []TaskMenuItem           `json:"taskMenuItems"`
 	ActiveTaskStatus             TaskStatus               `json:"activeTaskStatus"`
@@ -175,6 +183,7 @@ func Default(applicationDataDirectory string) Settings {
 		WorkspaceRoot:            filepath.Join(applicationDataDirectory, "workspaces"),
 		TaskTreeWidth:            DefaultTaskTreeWidth,
 		ColorScheme:              DefaultColorScheme,
+		TerminalFontSize:         DefaultTerminalFontSize,
 		ShellPath:                DefaultShellPath(),
 		TaskMenuItems:            DefaultTaskMenuItems(),
 		ActiveTaskStatus:         DefaultActiveTaskStatus,
@@ -511,6 +520,8 @@ func Validate(next Settings) (Settings, error) {
 	if next.ColorScheme != ColorSchemeLight && next.ColorScheme != ColorSchemeDark {
 		return Settings{}, fmt.Errorf("不支持的颜色模式: %q", next.ColorScheme)
 	}
+	next.TerminalFontFamily = strings.TrimSpace(next.TerminalFontFamily)
+	next.TerminalFontSize = NormalizeTerminalFontSize(next.TerminalFontSize)
 	if next.ActiveTaskStatus == "" {
 		next.ActiveTaskStatus = DefaultActiveTaskStatus
 	}
@@ -579,6 +590,19 @@ func Validate(next Settings) (Settings, error) {
 	}
 
 	return next, nil
+}
+
+func NormalizeTerminalFontSize(size int) int {
+	if size == 0 {
+		return DefaultTerminalFontSize
+	}
+	if size < MinimumTerminalFontSize {
+		return MinimumTerminalFontSize
+	}
+	if size > MaximumTerminalFontSize {
+		return MaximumTerminalFontSize
+	}
+	return size
 }
 
 func NormalizeTaskTemplates(next Settings) (Settings, error) {

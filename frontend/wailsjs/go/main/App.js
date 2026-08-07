@@ -134,6 +134,10 @@ export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
 
+export function ListTerminalFonts() {
+  return window['go']['main']['App']['ListTerminalFonts']();
+}
+
 export function OpenTaskFolder(arg1) {
   return window['go']['main']['App']['OpenTaskFolder'](arg1);
 }

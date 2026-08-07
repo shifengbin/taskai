@@ -3,6 +3,8 @@ import {Terminal, type ITheme} from '@xterm/xterm'
 
 import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import {type TerminalEvent, type TerminalRecord} from './types'
+import {resolveTerminalFontFamily} from './terminal-font'
+import {defaultTerminalFontSize, normalizeTerminalFontSize} from './terminal-font-size'
 
 export const terminalScrollback = 1000
 
@@ -25,7 +27,18 @@ export class TerminalSessionRegistry {
   private readonly sessions = new Map<string, TerminalSession>()
   private readonly closedTerminalKeys = new Set<string>()
 
-  constructor(private readonly onWrite: (taskID: string, terminalID: string, data: string) => void) {}
+  constructor(
+    private readonly onWrite: (taskID: string, terminalID: string, data: string) => void,
+    private readonly terminalFontFamily: () => string = () => '',
+    private readonly terminalFontSize: () => number = () => defaultTerminalFontSize,
+  ) {}
+
+  setFontSize(fontSize: number): void {
+    const normalizedFontSize = normalizeTerminalFontSize(fontSize)
+    for (const session of this.sessions.values()) {
+      session.terminal.options.fontSize = normalizedFontSize
+    }
+  }
 
   handleTerminalEvent(event: TerminalEvent): void {
     if (event.type === 'output') {
@@ -137,8 +150,8 @@ export class TerminalSessionRegistry {
     }
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: 13,
+      fontFamily: resolveTerminalFontFamily(this.terminalFontFamily()),
+      fontSize: normalizeTerminalFontSize(this.terminalFontSize()),
       lineHeight: 1.35,
       scrollback: terminalScrollback,
     })

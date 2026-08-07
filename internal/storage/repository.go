@@ -106,6 +106,11 @@ func normalizeQuickInputs(inputs []quickinput.QuickInput) ([]quickinput.QuickInp
 
 func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, error) {
 	changed := false
+	normalizedTerminalFontSize := settings.NormalizeTerminalFontSize(data.Settings.TerminalFontSize)
+	if data.Settings.TerminalFontSize != normalizedTerminalFontSize {
+		data.Settings.TerminalFontSize = normalizedTerminalFontSize
+		changed = true
+	}
 	templateSettings, err := settings.NormalizeTaskTemplates(data.Settings)
 	if err != nil {
 		return Data{}, false, fmt.Errorf("normalize task template settings: %w", err)

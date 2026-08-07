@@ -13,7 +13,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   onSelectionChange: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   paste: ReturnType<typeof vi.fn>
-  options: {scrollback?: number, theme?: {background?: string}}
+  options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}
   dispose: ReturnType<typeof vi.fn>
   refresh: ReturnType<typeof vi.fn>
   triggerCustomKeyEvent(event: KeyboardEvent): boolean | undefined
@@ -46,7 +46,7 @@ vi.mock('@xterm/xterm', () => ({
       container.append(this.element)
     })
     paste = vi.fn()
-    options: {scrollback?: number, theme?: {background?: string}}
+    options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}
     dispose = vi.fn()
     refresh = vi.fn()
     customKeyEventHandler: ((event: KeyboardEvent) => boolean) | undefined
@@ -60,7 +60,7 @@ vi.mock('@xterm/xterm', () => ({
       this.selectionChangeListener?.()
     }
 
-    constructor(options: {scrollback?: number, theme?: {background?: string}}) {
+    constructor(options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}) {
       this.options = options
       terminalInstances.push(this)
     }
@@ -263,6 +263,22 @@ describe('TerminalView', () => {
 
     notifyResizeObservers()
 
+    expect(onResize).toHaveBeenCalledWith(100, 30)
+    expect(terminalInstances[0].refresh).toHaveBeenCalledWith(0, 29)
+  })
+
+  it('保存全局字号后立即重新适配当前终端并同步 PTY 尺寸', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const onResize = vi.fn()
+    const view = render(<TerminalView terminal={terminal} sessionRegistry={registry} fontSize={13} onResize={onResize} onClose={vi.fn()} />)
+    runAnimationFrame()
+    onResize.mockClear()
+    terminalInstances[0].refresh.mockClear()
+
+    registry.setFontSize(16)
+    view.rerender(<TerminalView terminal={terminal} sessionRegistry={registry} fontSize={16} onResize={onResize} onClose={vi.fn()} />)
+
+    expect(terminalInstances[0].options.fontSize).toBe(16)
     expect(onResize).toHaveBeenCalledWith(100, 30)
     expect(terminalInstances[0].refresh).toHaveBeenCalledWith(0, 29)
   })

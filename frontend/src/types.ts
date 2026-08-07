@@ -195,6 +195,8 @@ export interface SettingsRecord {
 	workspaceRoot: string
 	taskTreeWidth: number
 	colorScheme: ColorScheme
+	terminalFontFamily?: string
+	terminalFontSize?: number
 	shellPath: string
 	taskMenuItems: TaskMenuItem[]
 	activeTaskStatus: TaskStatus
@@ -207,6 +209,11 @@ export interface SettingsRecord {
   defaultLifecyclePresetId?: string
 	taskTemplates?: TaskTemplate[]
 	activeTaskTemplateId?: string
+}
+
+export interface TerminalFontCandidate {
+	family: string
+	spacing: 'mono' | 'dual' | 'unavailable'
 }
 
 export interface TaskMenuItem {

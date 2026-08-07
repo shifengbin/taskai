@@ -33,6 +33,25 @@ export namespace application {
 
 }
 
+export namespace fonts {
+	
+	export class Candidate {
+	    family: string;
+	    spacing: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Candidate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.family = source["family"];
+	        this.spacing = source["spacing"];
+	    }
+	}
+
+}
+
 export namespace quickinput {
 	
 	export class QuickInput {
@@ -215,6 +234,8 @@ export namespace settings {
 	    workspaceRoot: string;
 	    taskTreeWidth: number;
 	    colorScheme: string;
+	    terminalFontFamily: string;
+	    terminalFontSize: number;
 	    shellPath: string;
 	    taskMenuItems: TaskMenuItem[];
 	    activeTaskStatus: string;
@@ -239,6 +260,8 @@ export namespace settings {
 	        this.workspaceRoot = source["workspaceRoot"];
 	        this.taskTreeWidth = source["taskTreeWidth"];
 	        this.colorScheme = source["colorScheme"];
+	        this.terminalFontFamily = source["terminalFontFamily"];
+	        this.terminalFontSize = source["terminalFontSize"];
 	        this.shellPath = source["shellPath"];
 	        this.taskMenuItems = this.convertValues(source["taskMenuItems"], TaskMenuItem);
 	        this.activeTaskStatus = source["activeTaskStatus"];

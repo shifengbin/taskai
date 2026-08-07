@@ -5,6 +5,7 @@ import {terminal} from '../models';
 import {task} from '../models';
 import {application} from '../models';
 import {quickinput} from '../models';
+import {fonts} from '../models';
 
 export function ClearSelectedTerminal():Promise<void>;
 
@@ -71,6 +72,8 @@ export function ListLifecyclePresets():Promise<Array<settings.LifecyclePreset>>;
 export function ListQuickInputs():Promise<Array<quickinput.QuickInput>>;
 
 export function ListTasks():Promise<Array<task.Task>>;
+
+export function ListTerminalFonts():Promise<Array<fonts.Candidate>>;
 
 export function OpenTaskFolder(arg1:string):Promise<void>;
 

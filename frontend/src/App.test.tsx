@@ -41,6 +41,7 @@ const bindings = vi.hoisted(() => ({
 	DeleteLifecycleCommandChain: vi.fn(),
 	DeleteLifecyclePreset: vi.fn(),
 	ListLifecyclePresets: vi.fn(),
+	ListTerminalFonts: vi.fn(),
 	SaveLifecyclePreset: vi.fn(),
 	SaveDefaultLifecyclePreset: vi.fn(),
   ReorderTasks: vi.fn(),
@@ -70,6 +71,7 @@ const terminalSessionRegistry = vi.hoisted(() => ({
   disposeAll: vi.fn(),
   disposeTask: vi.fn(),
   dispose: vi.fn(),
+  setFontSize: vi.fn(),
 }))
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
@@ -80,6 +82,7 @@ vi.mock('./terminal-session', () => ({
     disposeAll = terminalSessionRegistry.disposeAll
     disposeTask = terminalSessionRegistry.disposeTask
     dispose = terminalSessionRegistry.dispose
+    setFontSize = terminalSessionRegistry.setFontSize
 
     constructor(_onWrite: unknown) {}
   },
@@ -132,6 +135,7 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommands.mockResolvedValue([])
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.ListLifecyclePresets.mockResolvedValue([])
+		bindings.ListTerminalFonts.mockResolvedValue([{family: '', spacing: 'mono'}])
 		bindings.SaveLifecyclePreset.mockImplementation(async (preset) => preset)
 		bindings.CopyLifecyclePreset.mockResolvedValue(undefined)
 		bindings.DeleteLifecyclePreset.mockResolvedValue(undefined)
@@ -755,6 +759,8 @@ describe('App confirmation flows', () => {
       workspaceRoot: '/tmp/workspaces',
       taskTreeWidth: 360,
 		colorScheme: 'dark',
+		terminalFontFamily: '',
+		terminalFontSize: 13,
 		shellPath: '/bin/sh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
@@ -766,6 +772,79 @@ describe('App confirmation flows', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
     await user.click(await screen.findByRole('button', {name: '设置'}))
     expect(screen.getByLabelText('颜色模式')).toHaveTextContent('暗色')
+  })
+
+  it('在设置中预览终端字体，取消不保存，确认后持久化选择', async () => {
+    const user = userEvent.setup()
+    bindings.ListTerminalFonts.mockResolvedValue([
+      {family: '', spacing: 'mono'},
+      {family: 'Fira Code', spacing: 'mono'},
+      {family: 'Noto Sans Mono CJK SC', spacing: 'dual'},
+    ])
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    expect(await screen.findByRole('radiogroup', {name: '终端字体'})).toBeInTheDocument()
+		expect(screen.getAllByText('中文：终端字体预览').length).toBeGreaterThan(0)
+		expect(screen.getAllByText('English: TaskAI $ git status').length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('radio', {name: '选择终端字体 Fira Code'}))
+    await user.click(screen.getByRole('button', {name: '取消'}))
+    expect(bindings.SaveSettings).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('radio', {name: '选择终端字体 Fira Code'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({terminalFontFamily: 'Fira Code'})))
+  })
+
+  it('在设置中显示终端字号，恢复默认并在保存后应用到会话', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    const fontSize = await screen.findByRole('slider', {name: '终端字号'})
+    fireEvent.change(fontSize, {target: {value: '16'}})
+    expect(screen.getByText('16 px（123%）')).toBeInTheDocument()
+    expect(screen.getByText('中文：终端字体预览').parentElement).toHaveStyle({fontSize: '16px'})
+
+    await user.click(screen.getByRole('button', {name: '恢复默认字号（13 px）'}))
+    expect(screen.getByText('13 px（100%）')).toBeInTheDocument()
+
+    fireEvent.change(fontSize, {target: {value: '16'}})
+    await user.click(screen.getByRole('button', {name: '取消'}))
+    expect(bindings.SaveSettings).not.toHaveBeenCalled()
+    expect(terminalSessionRegistry.setFontSize).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    fireEvent.change(await screen.findByRole('slider', {name: '终端字号'}), {target: {value: '16'}})
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({terminalFontSize: 16})))
+    expect(terminalSessionRegistry.setFontSize).toHaveBeenCalledWith(16)
+  })
+
+	it('字体发现失败时仍保留可选择的默认终端字体', async () => {
+		const user = userEvent.setup()
+		bindings.ListTerminalFonts.mockRejectedValue(new Error('font discovery unavailable'))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		expect(await screen.findByText('系统字体不可用，已保留默认终端字体。')).toBeInTheDocument()
+		expect(screen.getByRole('radio', {name: '选择终端字体 默认终端字体'})).toBeChecked()
+	})
+
+  it('保存的字体不再可用时保留当前字体选项', async () => {
+    const user = userEvent.setup()
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', terminalFontFamily: 'Removed Mono', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+    })
+    bindings.ListTerminalFonts.mockResolvedValue([{family: '', spacing: 'mono'}])
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    expect(await screen.findByText('当前字体不可用')).toBeInTheDocument()
+    expect(screen.getByRole('radio', {name: '选择终端字体 Removed Mono'})).toBeChecked()
   })
 
   it('选择探测到的 Shell 并保存', async () => {
@@ -784,6 +863,8 @@ describe('App confirmation flows', () => {
       workspaceRoot: '/tmp/workspaces',
       taskTreeWidth: 360,
 		colorScheme: 'light',
+		terminalFontFamily: '',
+		terminalFontSize: 13,
 		shellPath: '/bin/zsh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
@@ -810,6 +891,8 @@ describe('App confirmation flows', () => {
       workspaceRoot: '/tmp/workspaces',
       taskTreeWidth: 360,
 		colorScheme: 'light',
+		terminalFontFamily: '',
+		terminalFontSize: 13,
 		shellPath: '/custom/shell',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',

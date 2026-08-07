@@ -32,6 +32,7 @@ import {
 	ListLifecycleCommands,
 	ListLifecyclePresets,
 	ListQuickInputs,
+	ListTerminalFonts,
 	OpenTaskFolder,
   PrepareQuit,
 	ReorderTasks,
@@ -65,7 +66,7 @@ import {task as taskModel} from '../wailsjs/go/models'
 import {quickinput as quickInputModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
@@ -132,6 +133,10 @@ export const api = {
 	retryTaskLifecycleCommandChain: (taskID: string) => RetryTaskLifecycleCommandChain(taskID) as Promise<TaskRecord>,
   finishTask: (taskID: string) => FinishTask(taskID) as Promise<TaskRecord>,
 	getSettings: () => GetSettings() as Promise<SettingsRecord>,
+	listTerminalFonts: async () => {
+		const candidates = await ListTerminalFonts()
+		return Array.isArray(candidates) ? candidates as unknown as TerminalFontCandidate[] : []
+	},
 	getLifecycleCommandInput: (taskID: string) => GetLifecycleCommandInput(taskID),
 	saveSettings: (settings: SettingsRecord) => {
 		const payload = settingsModel.Settings.createFrom(settings)

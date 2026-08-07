@@ -15,7 +15,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   onSelectionDisposable: {dispose: ReturnType<typeof vi.fn>}
   open: ReturnType<typeof vi.fn>
   paste: ReturnType<typeof vi.fn>
-  options: {scrollback?: number, theme?: unknown}
+  options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
   refresh: ReturnType<typeof vi.fn>
   triggerSelectionChange(): void
   write: ReturnType<typeof vi.fn>
@@ -50,7 +50,7 @@ vi.mock('@xterm/xterm', () => ({
       container.append(this.element)
     })
     paste = vi.fn()
-    options: {scrollback?: number, theme?: unknown}
+    options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
     refresh = vi.fn()
     write = vi.fn()
 
@@ -87,6 +87,40 @@ describe('TerminalSessionRegistry', () => {
     fitAddonInstances.length = 0
     runtime.ClipboardSetText.mockReset()
     runtime.ClipboardSetText.mockResolvedValue(true)
+  })
+
+  it('在创建会话时使用当前已保存的字体，并保持已有会话字体不变', () => {
+    let savedFontFamily = 'Fira Code'
+    const registry = new TerminalSessionRegistry(vi.fn(), () => savedFontFamily)
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'first'})
+    savedFontFamily = 'Cascadia Mono'
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'again'})
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-2', data: 'second'})
+
+    expect(terminalInstances[0].options.fontFamily).toBe('"Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace')
+    expect(terminalInstances[1].options.fontFamily).toBe('"Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace')
+  })
+
+  it('创建和批量更新会话时使用已保存字号，保留视图挂载前的输出', () => {
+    let savedFontSize = 16
+    const registry = new TerminalSessionRegistry(vi.fn(), () => '', () => savedFontSize)
+    const container = document.createElement('div')
+    const onResize = vi.fn()
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'before attach'})
+    expect(terminalInstances[0].options.fontSize).toBe(16)
+
+    savedFontSize = 20
+    registry.setFontSize(savedFontSize)
+    registry.attach(terminal, container, terminalVisualTheme('light'), onResize)
+
+    expect(terminalInstances).toHaveLength(1)
+    expect(terminalInstances[0].options.fontSize).toBe(20)
+    expect(terminalInstances[0].write).toHaveBeenCalledTimes(1)
+    expect(terminalInstances[0].dispose).not.toHaveBeenCalled()
+    expect(terminalInstances[0].onDataDisposable.dispose).not.toHaveBeenCalled()
+    expect(onResize).toHaveBeenCalledWith(100, 30)
   })
 
   it('直接写入按终端键持有的会话，并将滚屏限制为 1000 行', () => {
