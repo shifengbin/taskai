@@ -658,7 +658,7 @@ export function TaskTree({
       {descTooltip && createPortal(
         <div
           role="tooltip"
-          className="pointer-events-none fixed z-50 max-w-[480px] break-words rounded-snap-sm border-2 border-snap-outline bg-snap-surface px-2 py-1 text-xs font-bold text-snap-ink shadow-snap"
+          className="pointer-events-none fixed z-50 max-w-[480px] break-words rounded-snap-sm border border-snap-outline bg-snap-overlay px-2 py-1 text-xs font-bold text-snap-ink shadow-snap"
           style={{top: descTooltip.top, left: descTooltip.left}}
         >
           {descTooltip.text}
@@ -669,7 +669,7 @@ export function TaskTree({
         <div
           ref={taskMenuRef}
           role="menu"
-          className="z-50 min-w-[12rem] border-2 border-snap-outline rounded-snap bg-snap-surface py-1 text-snap-ink shadow-snap-lg"
+          className="z-50 min-w-[12rem] border border-snap-outline rounded-snap bg-snap-overlay py-1 text-snap-ink shadow-snap-lg"
           style={taskMenuStyle}
         >
           {activeMenuItems.map((item) => (

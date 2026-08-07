@@ -32,7 +32,7 @@ describe('Dialog', () => {
     }
   })
 
-  it('使用 Nebula 的细边框、玻璃表面和柔和阴影', () => {
+  it('使用不透明 Nebula 弹窗表面、细边框和柔和阴影', () => {
     render(
       <Dialog open>
         <DialogContent>
@@ -43,7 +43,8 @@ describe('Dialog', () => {
 
     const content = screen.getByRole('dialog', {name: '新建任务'})
 
-    expect(content).toHaveClass('border', 'rounded-snap', 'bg-snap-surface', 'shadow-snap-lg')
+    expect(content).toHaveClass('border', 'rounded-snap', 'bg-snap-overlay', 'shadow-snap-lg')
+    expect(content).not.toHaveClass('bg-snap-surface')
     expect(content).not.toHaveClass('border-2')
   })
 })
