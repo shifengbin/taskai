@@ -49,15 +49,19 @@ test('the gallery links every theme page and no longer describes only 24 themes'
       `${number}-${slug} 缺少总览链接`,
     );
   }
+  assert.equal((gallery.match(/class="theme-card-palette"/g) ?? []).length, 36);
+  assert.match(gallery, /class="theme-card-palette" aria-label="主题代表色"><i style="background:/);
 });
 
 test('each detail page is self-contained through shared assets and documents its design system', () => {
   const requiredDocumentSections = [
     '## 主题定位',
     '## 色彩令牌',
-    '## 字体与文字',
-    '## 布局与组件',
-    '## 状态与交互',
+    '## 字体与字重',
+    '## 布局与间距',
+    '## 主要组件规则',
+    '## 状态表现',
+    '## 交互反馈',
     '## 可读性与无障碍',
     '## React + MUI 实现映射',
   ];
@@ -74,6 +78,7 @@ test('each detail page is self-contained through shared assets and documents its
     assert.match(page, new RegExp(`mockup d-${cssSlug} light`));
     assert.match(page, new RegExp(`mockup d-${cssSlug} dark`));
     assert.doesNotMatch(inlineStyle, new RegExp(`\\.d-(?!${cssSlug}(?:[.\\s:{]))`));
+    assert.doesNotMatch(page, /class="theme-choice"/);
     assert.match(document, /\| 亮色 \|/);
     assert.match(document, /\| 暗色 \|/);
     const tokenBlocks = [...inlineStyle.matchAll(new RegExp(`\\.d-${cssSlug}\\.(light|dark)\\{([^}]*)\\}`, 'gi'))];
@@ -89,4 +94,12 @@ test('each detail page is self-contained through shared assets and documents its
     }
     for (const section of requiredDocumentSections) assert.ok(document.includes(section));
   }
+});
+
+test('shared styles define a self-contained gallery and mobile page navigation', () => {
+  const sharedCss = readFileSync(path.join(previewRoot, '_shared', 'preview.css'), 'utf8');
+
+  assert.match(sharedCss, /\.theme-card-palette i\{/);
+  assert.match(sharedCss, /@media \(max-width:700px\)\{\.theme-page-head/);
+  assert.doesNotMatch(sharedCss, /var\(--(?:paper|line|accent|mono|muted|ink)\)/);
 });
