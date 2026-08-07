@@ -9,7 +9,7 @@ export const ToastProvider = ToastPrimitive.Provider
 const toastVariants = cva(
   cn(
     'group pointer-events-auto relative flex w-full items-start gap-3 p-3 pr-9',
-    'border-2 border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg',
+    'border border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg backdrop-blur-md',
     'data-[state=open]:animate-in data-[state=closed]:animate-out',
     'data-[state=open]:slide-in-from-bottom-3 data-[state=closed]:fade-out-80',
     'data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)]',

@@ -39,7 +39,7 @@ const DialogContent = forwardRef<
       className={cn(
         'fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4',
         'p-6 max-h-[calc(100vh-4rem)] overflow-y-auto',
-        'border-2 border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg',
+        'border border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg backdrop-blur-md',
         focusRing,
         className,
       )}
@@ -50,7 +50,7 @@ const DialogContent = forwardRef<
         <DialogPrimitive.Close
           className={cn(
             'absolute right-4 top-4 inline-grid place-items-center h-7 w-7',
-            'border-2 border-snap-outline rounded-snap bg-snap-surface shadow-snap-sm',
+            'border border-snap-outline rounded-snap bg-snap-surface shadow-snap-sm',
             'transition-[transform,box-shadow] hover:-translate-x-px hover:-translate-y-px hover:shadow-snap',
             'motion-reduce:transition-none motion-reduce:translate-x-0 motion-reduce:translate-y-0',
             focusRing,

@@ -10,7 +10,7 @@ const Checkbox = forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      'peer h-5 w-5 shrink-0 border-2 border-snap-outline rounded-snap-sm bg-snap-surface',
+      'peer h-5 w-5 shrink-0 border border-snap-outline rounded-snap-sm bg-snap-surface',
       'outline-none transition-colors',
       'data-[state=checked]:bg-snap-cobalt data-[state=checked]:text-white',
       'data-[state=indeterminate]:bg-snap-cobalt data-[state=indeterminate]:text-white',

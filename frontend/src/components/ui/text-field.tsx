@@ -2,7 +2,7 @@ import {cloneElement, forwardRef, isValidElement, useId, type InputHTMLAttribute
 import {cn, focusRing} from '../../lib/utils'
 
 const fieldBase = cn(
-  'w-full border-2 border-snap-outline rounded-snap bg-snap-surface px-3 py-2',
+  'w-full border border-snap-outline rounded-snap bg-snap-surface px-3 py-2',
   'text-sm text-snap-ink placeholder:text-snap-muted shadow-snap-sm',
   'transition-[box-shadow,border-color] focus-visible:border-snap-cobalt',
   focusRing,

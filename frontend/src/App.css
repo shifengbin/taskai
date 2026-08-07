@@ -1,11 +1,3 @@
-@font-face {
-  font-family: "Nunito";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
-}
-
 html, body, #root {
   min-width: 720px;
   min-height: 100%;
@@ -16,53 +8,79 @@ html, body, #root {
 
 * { box-sizing: border-box; }
 
-/* 应用根容器：快门波普画布底色 + 墨色正文（令牌定义见 style.css 的 :root/.dark）。 */
-.taskai-app { color: var(--snap-ink); background: var(--snap-canvas); }
+/* Nebula 工作台：玻璃表面、冷蓝画布和低干扰层次。 */
+.taskai-app {
+  color: var(--snap-ink);
+  background-color: var(--snap-canvas);
+  background-image: linear-gradient(135deg, color-mix(in srgb, var(--snap-cobalt) 7%, transparent), transparent 42%),
+    linear-gradient(315deg, color-mix(in srgb, var(--snap-violet) 6%, transparent), transparent 48%);
+}
+
+.taskai-app > header {
+  border-bottom-width: 1px;
+  border-color: var(--snap-outline);
+  background-color: var(--snap-surface);
+  backdrop-filter: blur(14px);
+}
 
 .taskai-brand-mark {
   display: block;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   object-fit: contain;
 }
 
-/* 侧栏用次级表面以与主画布区分；内容区沿用画布底色。 */
-.taskai-sidebar-shell { background-color: var(--snap-surface-2); }
-.taskai-sidebar-header { background: var(--snap-surface-2); }
-.taskai-panel-resizer::after { display: none; }
-.taskai-content-pane { background-color: var(--snap-canvas); }
+/* 侧栏和内容区共享 Nebula 玻璃层，但保持清晰的分割线。 */
+.taskai-sidebar-shell,
+.taskai-sidebar-header {
+  background-color: var(--snap-surface);
+  backdrop-filter: blur(12px);
+}
+.taskai-sidebar-header { border-bottom-width: 1px; border-color: var(--snap-outline); }
+.taskai-panel-resizer {
+  background-color: color-mix(in srgb, var(--snap-outline) 70%, transparent) !important;
+  transition: background-color 160ms ease;
+}
+.taskai-panel-resizer:hover { background-color: var(--snap-cobalt) !important; }
+.taskai-content-pane {
+  position: relative;
+  background-color: var(--snap-canvas);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--snap-outline) 30%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--snap-outline) 30%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
 
-/* 任务与终端卡片沿用 Snap 参考的完整描边、错位阴影与内嵌任务色条。 */
+/* 任务卡：Nebula 的细边框、任务色内嵌标记和透明表面。 */
 .taskai-task-row {
-  margin: 0 8px 7px;
+  margin: 4px 8px 6px;
   isolation: isolate;
   overflow: hidden;
-  border: 2.5px solid var(--snap-outline);
-  border-radius: 9px;
-  box-shadow: inset 5px 0 0 var(--task-color);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-shadow: inset 3px 0 0 var(--task-color);
   background-color: color-mix(in srgb, var(--task-color) 4%, var(--snap-surface));
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
 .taskai-task-row[data-task-selected="true"] {
   border-color: var(--snap-cobalt);
-  box-shadow: 3px 3px 0 var(--snap-cobalt), inset 5px 0 0 var(--task-color);
+  box-shadow: inset 3px 0 0 var(--task-color), 0 0 20px -14px var(--snap-cobalt);
   background-color: color-mix(in srgb, var(--snap-cobalt) 10%, var(--snap-surface));
 }
 
 .taskai-terminal-row {
   margin: 4px 10px;
-  border: 2px solid var(--snap-outline);
-  border-radius: 7px;
-  box-shadow: 2px 2px 0 var(--snap-outline);
+  border: 1px solid var(--snap-outline);
+  border-radius: 8px;
+  box-shadow: none;
   background-color: var(--snap-surface-2);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
 .taskai-terminal-row[aria-pressed="true"] {
   border-color: var(--snap-cobalt);
-  box-shadow: 2px 2px 0 var(--snap-cobalt);
+  box-shadow: 0 0 18px -14px var(--snap-cobalt);
   background-color: color-mix(in srgb, var(--snap-cobalt) 10%, var(--snap-surface-2));
 }
 
@@ -73,20 +91,22 @@ html, body, #root {
 @media (hover: hover) {
   .taskai-task-row:hover {
     transform: translate(-1px, -1px);
-    box-shadow: 4px 4px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);
+    border-color: var(--snap-outline);
+    box-shadow: inset 3px 0 0 var(--task-color), 0 0 18px -14px var(--task-color);
   }
 
   .taskai-task-row[data-task-selected="true"]:hover {
-    box-shadow: 4px 4px 0 var(--snap-cobalt), inset 5px 0 0 var(--task-color);
+    box-shadow: inset 3px 0 0 var(--task-color), 0 0 22px -13px var(--snap-cobalt);
   }
 
   .taskai-terminal-row:hover {
     transform: translate(-1px, -1px);
-    box-shadow: 3px 3px 0 var(--snap-outline);
+    border-color: var(--snap-outline);
+    box-shadow: 0 0 18px -14px var(--snap-cobalt);
   }
 
   .taskai-terminal-row[aria-pressed="true"]:hover {
-    box-shadow: 3px 3px 0 var(--snap-cobalt);
+    box-shadow: 0 0 22px -13px var(--snap-cobalt);
   }
 
   .taskai-contextual-container .taskai-contextual-actions {
@@ -107,8 +127,34 @@ html, body, #root {
   padding-bottom: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--snap-outline) 14%, transparent);
 }
-.taskai-detail-card { background: var(--snap-surface); }
-.taskai-terminal { background: var(--snap-detail); }
+.taskai-detail-card,
+.taskai-terminal {
+  background: var(--snap-detail);
+  backdrop-filter: blur(8px);
+}
+
+.taskai-terminal__header {
+  border-bottom-width: 1px !important;
+  border-color: var(--snap-outline) !important;
+  background: var(--snap-surface) !important;
+  backdrop-filter: blur(12px);
+}
+
+.taskai-terminal__content {
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--snap-outline) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--snap-outline) 24%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.taskai-app button,
+.taskai-app [role="button"],
+.taskai-app input,
+.taskai-app textarea,
+.taskai-app select {
+  border-color: var(--snap-outline);
+}
+
+.taskai-app svg { stroke-width: 1.8; }
 
 @media (prefers-reduced-motion: reduce) {
   .taskai-task-row:hover,

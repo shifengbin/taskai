@@ -31,4 +31,19 @@ describe('Dialog', () => {
       expect(overlay).not.toHaveClass(animationClass)
     }
   })
+
+  it('使用 Nebula 的细边框、玻璃表面和柔和阴影', () => {
+    render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>新建任务</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    )
+
+    const content = screen.getByRole('dialog', {name: '新建任务'})
+
+    expect(content).toHaveClass('border', 'rounded-snap', 'bg-snap-surface', 'shadow-snap-lg')
+    expect(content).not.toHaveClass('border-2')
+  })
 })

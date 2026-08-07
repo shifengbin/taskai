@@ -559,7 +559,7 @@ describe('TaskTree', () => {
     expect(within(terminalItem).queryByText('空闲', {exact: true})).not.toBeInTheDocument()
   })
 
-  it('为当前选中的任务提供庭院选择态标记', () => {
+  it('为当前选中的任务提供 Nebula 选择态标记而不改变卡片结构', () => {
     render(
       <TaskTree
         {...({
@@ -581,11 +581,18 @@ describe('TaskTree', () => {
     )
 
     const row = screen.getByText('整理发布说明').closest('[data-task-id]')
+    if (!(row instanceof HTMLElement)) {
+      throw new Error('未找到任务行')
+    }
     expect(row).toHaveAttribute('data-task-selected', 'true')
     expect(row).toHaveClass('taskai-task-row--selected')
+    expect(within(row).getByText('整理发布说明', {exact: true})).toBeInTheDocument()
+    expect(within(row).getByText('完成发布说明', {exact: true})).toBeInTheDocument()
+    expect(within(row).getByRole('button', {name: '结束'})).toBeInTheDocument()
+    expect(within(row).getByRole('button', {name: '任务操作'})).toBeInTheDocument()
   })
 
-  it('任务行为带内嵌色条的 Snap 完整卡片', () => {
+  it('任务卡使用 Nebula 细边框、10px 圆角和内嵌色条', () => {
     render(
       <TaskTree
         {...({
@@ -611,18 +618,16 @@ describe('TaskTree', () => {
     }
     expect(row).toHaveStyle({'--task-color': '#2563eb'})
     expect(appStyles).toContain('.taskai-task-row {')
-    expect(appStyles).toContain('border: 2.5px solid var(--snap-outline);')
-    expect(appStyles).toContain('border-radius: 9px;')
-    expect(appStyles).toContain('box-shadow: inset 5px 0 0 var(--task-color);')
-    expect(appStyles).not.toContain('box-shadow: 3px 3px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);')
-    expect(appStyles).toContain('background-color: color-mix(in srgb, var(--task-color) 4%, var(--snap-surface));')
-    expect(appStyles).not.toContain('.taskai-task-row::before')
+    expect(appStyles).toContain('border: 1px solid transparent;')
+    expect(appStyles).toContain('border-radius: 10px;')
+    expect(appStyles).toContain('box-shadow: inset 3px 0 0 var(--task-color);')
+    expect(appStyles).not.toContain('2.5px solid var(--snap-outline)')
+    expect(appStyles).not.toContain('box-shadow: 3px 3px 0 var(--snap-outline)')
     expect(appStyles).toContain('.taskai-task-row:hover')
-    expect(appStyles).toContain('transform: translate(-1px, -1px);')
-    expect(appStyles).toContain('box-shadow: 4px 4px 0 var(--snap-outline), inset 5px 0 0 var(--task-color);')
+    expect(appStyles).toContain('border-color: var(--snap-outline);')
   })
 
-  it('将顶层任务项固定为 60px 高的两行 Snap 排版', () => {
+  it('将顶层任务项固定为 60px 高的两行 Nebula 排版', () => {
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -685,7 +690,7 @@ describe('TaskTree', () => {
     expect(description).toBe(title.parentElement?.lastElementChild)
   })
 
-  it('选中任务以钴蓝描边和硬投影保持 Snap 卡片层级', () => {
+  it('选中任务以青色描边和玻璃层保持 Nebula 卡片层级', () => {
     render(
       <TaskTree
         {...({
@@ -709,10 +714,10 @@ describe('TaskTree', () => {
     expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-selected', 'true')
     expect(appStyles).toContain('.taskai-task-row[data-task-selected="true"]')
     expect(appStyles).toContain('border-color: var(--snap-cobalt);')
-    expect(appStyles).toContain('box-shadow: 3px 3px 0 var(--snap-cobalt), inset 5px 0 0 var(--task-color);')
+    expect(appStyles).not.toContain('box-shadow: 3px 3px 0 var(--snap-cobalt)')
   })
 
-  it('终端子项使用次级 Snap 卡片，并让启动反馈独立于卡片投影', () => {
+  it('终端子项使用 8px Nebula 次级玻璃行，并让启动反馈独立于卡片表面', () => {
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -734,12 +739,12 @@ describe('TaskTree', () => {
     expect(terminalItem).toHaveClass('taskai-terminal-row')
     expect(terminalItem).toHaveAttribute('aria-pressed', 'true')
     expect(appStyles).toContain('.taskai-terminal-row {')
+    expect(appStyles).toContain('border-radius: 8px;')
     expect(appStyles).toContain('background-color: var(--snap-surface-2);')
-    expect(appStyles).toContain('box-shadow: 2px 2px 0 var(--snap-outline);')
     expect(appStyles).toContain('.taskai-terminal-row:hover')
-    expect(appStyles).toContain('box-shadow: 3px 3px 0 var(--snap-outline);')
     expect(appStyles).toContain('.taskai-terminal-row[aria-pressed="true"]')
-    expect(appStyles).toContain('box-shadow: 2px 2px 0 var(--snap-cobalt);')
+    expect(appStyles).toContain('border-color: var(--snap-cobalt);')
+    expect(appStyles).not.toContain('box-shadow: 2px 2px 0 var(--snap-outline)')
     expect(motionStyles).toContain('.taskai-task-row[data-task-start-feedback="flash"]::after')
     expect(motionStyles).toContain('.taskai-task-row[data-task-start-feedback="static"]::after { opacity: 1; }')
     expect(motionStyles).not.toMatch(/@keyframes taskai-task-start-feedback\s*\{[^}]*box-shadow/)

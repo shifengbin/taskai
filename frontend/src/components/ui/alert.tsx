@@ -3,7 +3,7 @@ import {cva, type VariantProps} from 'class-variance-authority'
 import {cn} from '../../lib/utils'
 
 const alertVariants = cva(
-  'relative flex w-full gap-3 p-3 border-2 border-snap-outline rounded-snap bg-snap-surface shadow-snap-sm text-sm text-snap-ink',
+  'relative flex w-full gap-3 p-3 border border-snap-outline rounded-snap bg-snap-surface shadow-snap-sm text-sm text-snap-ink',
   {
     variants: {
       severity: {

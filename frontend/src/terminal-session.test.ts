@@ -81,6 +81,35 @@ import {TerminalSessionRegistry, terminalVisualTheme} from './terminal-session'
 
 const terminal = {id: 'terminal-1', taskId: 'task-1', state: 'active' as const}
 
+describe('terminalVisualTheme', () => {
+  it.each([
+    ['light', {
+      background: '#EDF1FB',
+      foreground: '#0E1730',
+      cursor: '#0BA5BE',
+      cursorAccent: '#EDF1FB',
+      red: '#E0413E',
+      green: '#0E9F6E',
+      blue: '#0BA5BE',
+      magenta: '#7C3AED',
+      cyan: '#0BA5BE',
+    }],
+    ['dark', {
+      background: '#070A16',
+      foreground: '#E8ECFF',
+      cursor: '#2DE2E6',
+      cursorAccent: '#070A16',
+      red: '#FF5D73',
+      green: '#34F5C5',
+      blue: '#2DE2E6',
+      magenta: '#B06BFF',
+      cyan: '#2DE2E6',
+    }],
+  ] as const)('uses Nebula %s terminal surfaces and ANSI semantic colors', (mode, expected) => {
+    expect(terminalVisualTheme(mode)).toMatchObject(expected)
+  })
+})
+
 describe('TerminalSessionRegistry', () => {
   beforeEach(() => {
     terminalInstances.length = 0

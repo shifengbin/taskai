@@ -1186,8 +1186,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           </header>
 
         <div style={{display: 'grid', gridTemplateColumns: `${treeWidth}px 6px minmax(0, 1fr)`, minHeight: 0}}>
-          <div className="taskai-sidebar-shell" style={{minWidth: 0, minHeight: 0, display: 'grid', gridTemplateRows: '42px minmax(0, 1fr)'}}>
-            <div className="taskai-sidebar-header flex h-[42px] items-center gap-2 border-b-2 border-snap-outline px-[10px]">
+          <div className="taskai-sidebar-shell" style={{minWidth: 0, minHeight: 0, display: 'grid', gridTemplateRows: '40px minmax(0, 1fr)'}}>
+            <div className="taskai-sidebar-header flex h-[40px] items-center gap-2 border-b-2 border-snap-outline px-[10px]">
               <span className="font-display text-xs font-extrabold uppercase tracking-wide text-snap-muted">任务与终端</span>
               <span className="flex-1"/>
               {activeTaskStatus === 'completed' && completedTaskSelectionMode ? <>
