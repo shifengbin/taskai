@@ -30,6 +30,13 @@ interface TaskMenuState {
   }
 }
 
+interface TaskMenuPlacement {
+  top: number
+  left: number
+  maxHeight: number
+  maxWidth: number
+}
+
 type TaskDropPosition = 'before' | 'after'
 
 interface TaskDropTarget {
@@ -114,6 +121,7 @@ export function TaskTree({
   const [localExpandedTasks, setLocalExpandedTasks] = useState<Record<string, boolean>>({})
   const [shelvedExpanded, setShelvedExpanded] = useState(false)
   const [taskMenu, setTaskMenu] = useState<TaskMenuState | null>(null)
+  const [taskMenuPlacement, setTaskMenuPlacement] = useState<TaskMenuPlacement | null>(null)
   const [draggedTaskID, setDraggedTaskID] = useState<string>()
   const [dragPreviewPosition, setDragPreviewPosition] = useState<TaskDragPreviewPosition>()
   const [dropTarget, setDropTarget] = useState<TaskDropTarget>()
@@ -313,7 +321,8 @@ export function TaskTree({
 		if (task.lifecycleExecution) {
 			return
 		}
-    setTaskMenu({taskID: task.id, position: {top: event.clientY - 6, left: event.clientX + 2}})
+		setTaskMenuPlacement(null)
+		setTaskMenu({taskID: task.id, position: {top: event.clientY - 6, left: event.clientX + 2}})
   }
 
   const runTaskMenuItem = (item: TaskMenuItem) => {
@@ -334,16 +343,52 @@ export function TaskTree({
 
   const activeMenuItems = taskMenuTask && !taskMenuTask.lifecycleExecution ? menuItems.filter((item) => taskMenuTask.status === 'running' || item.kind === 'edit-task') : []
 
+  useLayoutEffect(() => {
+    if (!taskMenu || !taskMenuRef.current) {
+      return
+    }
+    const updatePlacement = () => {
+      const menu = taskMenuRef.current
+      if (!menu) {
+        return
+      }
+      const origin = taskMenu.anchorEl
+        ? (() => {
+            const bounds = taskMenu.anchorEl?.getBoundingClientRect()
+            return bounds ? {top: bounds.top, bottom: bounds.bottom, left: bounds.left} : undefined
+          })()
+        : taskMenu.position && {top: taskMenu.position.top, bottom: taskMenu.position.top + 6, left: taskMenu.position.left}
+      if (!origin) {
+        return
+      }
+      const bounds = menu.getBoundingClientRect()
+      setTaskMenuPlacement(calculateTaskMenuPlacement(origin, bounds, window.innerWidth, window.innerHeight))
+    }
+    updatePlacement()
+    window.addEventListener('resize', updatePlacement)
+    window.addEventListener('scroll', updatePlacement, true)
+    return () => {
+      window.removeEventListener('resize', updatePlacement)
+      window.removeEventListener('scroll', updatePlacement, true)
+    }
+  }, [taskMenu, activeMenuItems.length])
+
   const taskMenuStyle = useMemo<CSSProperties>(() => {
     if (!taskMenu) {
       return {display: 'none'}
     }
-    if (taskMenu.anchorEl) {
-      const bounds = taskMenu.anchorEl.getBoundingClientRect()
-      return {position: 'fixed', top: bounds.bottom + 4, left: bounds.left}
+    if (!taskMenuPlacement) {
+      return {position: 'fixed', top: 0, left: 0, visibility: 'hidden'}
     }
-    return {position: 'fixed', top: taskMenu.position?.top ?? 0, left: taskMenu.position?.left ?? 0}
-  }, [taskMenu])
+    return {
+      position: 'fixed',
+      top: taskMenuPlacement.top,
+      left: taskMenuPlacement.left,
+      maxHeight: taskMenuPlacement.maxHeight,
+      maxWidth: taskMenuPlacement.maxWidth,
+      overflowY: 'auto',
+    }
+  }, [taskMenu, taskMenuPlacement])
 
   return (
     <nav aria-label="任务和终端" className="grid h-full min-h-0" style={{gridTemplateRows: 'auto minmax(0, 1fr)'}}>
@@ -534,10 +579,11 @@ export function TaskTree({
 						        title="任务操作"
 						        disabled={locked}
 						        className="h-7 w-7"
-						        onClick={(event) => {
-						          event.stopPropagation()
-						          setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
-						        }}
+							        onClick={(event) => {
+							          event.stopPropagation()
+							          setTaskMenuPlacement(null)
+							          setTaskMenu({taskID: task.id, anchorEl: event.currentTarget})
+							        }}
 						      >
 						        <MoreVertical className="h-4 w-4"/>
 						      </IconButton>
@@ -659,6 +705,28 @@ export function TaskTree({
       )}
     </nav>
   )
+}
+
+function calculateTaskMenuPlacement(
+  origin: {top: number; bottom: number; left: number},
+  menu: Pick<DOMRect, 'width' | 'height'>,
+  viewportWidth: number,
+  viewportHeight: number,
+): TaskMenuPlacement {
+  const viewportPadding = 8
+  const menuOffset = 4
+  const availableBelow = Math.max(0, viewportHeight - viewportPadding - origin.bottom - menuOffset)
+  const availableAbove = Math.max(0, origin.top - viewportPadding - menuOffset)
+  const placeBelow = menu.height <= availableBelow || (menu.height > availableAbove && availableBelow >= availableAbove)
+  const maxLeft = Math.max(viewportPadding, viewportWidth - viewportPadding - menu.width)
+  const maxHeight = placeBelow ? availableBelow : availableAbove
+  const displayedHeight = Math.min(menu.height, maxHeight)
+  return {
+    top: placeBelow ? origin.bottom + menuOffset : origin.top - menuOffset - displayedHeight,
+    left: Math.min(Math.max(origin.left, viewportPadding), maxLeft),
+    maxHeight,
+    maxWidth: Math.max(0, viewportWidth - viewportPadding * 2),
+  }
 }
 
 function lifecycleHookLabel(hook: NonNullable<TaskRecord['lifecycleExecution']>['hook']): string {

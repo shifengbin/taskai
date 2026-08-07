@@ -107,6 +107,253 @@ describe('TaskTree', () => {
     expect(taskRow).toHaveAttribute('data-task-actions-active', 'true')
   })
 
+  it('在窗口底部打开任务操作下拉菜单时，将菜单翻转到按钮上方', async () => {
+    const user = userEvent.setup()
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    Object.defineProperty(window, 'innerHeight', {configurable: true, value: 720})
+    const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('aria-label') === '任务操作') {
+        return {top: 672, bottom: 700, left: 250, right: 278, width: 28, height: 28} as DOMRect
+      }
+      if (this.getAttribute('role') === 'menu') {
+        return {top: 0, bottom: 160, left: 0, right: 192, width: 192, height: 160} as DOMRect
+      }
+      return {top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0} as DOMRect
+    })
+    try {
+      render(
+        <TaskTree
+          tasks={[runningTask]}
+          terminals={[]}
+          selectedTerminalId={undefined}
+          onSelectTask={vi.fn()}
+          onSelectTerminal={vi.fn()}
+          onCreateTerminal={vi.fn()}
+          onEditTask={vi.fn()}
+          onOpenTaskFolder={vi.fn()}
+          onStartTask={vi.fn()}
+          onFinishTask={vi.fn()}
+          activeStatus="running"
+          onChangeStatus={vi.fn()}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', {name: '任务操作'}))
+
+      expect(screen.getByRole('menu')).toHaveStyle({top: '508px'})
+    } finally {
+      getBoundingClientRect.mockRestore()
+      if (originalInnerHeight) {
+        Object.defineProperty(window, 'innerHeight', originalInnerHeight)
+      }
+    }
+  })
+
+  it('在视口右下角打开任务右键菜单时，将菜单移动到视口内', () => {
+    const onOpenTaskFolder = vi.fn()
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    Object.defineProperty(window, 'innerHeight', {configurable: true, value: 720})
+    Object.defineProperty(window, 'innerWidth', {configurable: true, value: 1024})
+    const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('role') === 'menu') {
+        return {top: 0, bottom: 160, left: 0, right: 192, width: 192, height: 160} as DOMRect
+      }
+      return {top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0} as DOMRect
+    })
+    try {
+      render(
+        <TaskTree
+          tasks={[runningTask]}
+          terminals={[]}
+          selectedTerminalId={undefined}
+          onSelectTask={vi.fn()}
+          onSelectTerminal={vi.fn()}
+          onCreateTerminal={vi.fn()}
+          onEditTask={vi.fn()}
+          onOpenTaskFolder={onOpenTaskFolder}
+          onStartTask={vi.fn()}
+          onFinishTask={vi.fn()}
+          activeStatus="running"
+          onChangeStatus={vi.fn()}
+        />,
+      )
+
+      fireEvent.contextMenu(screen.getByText('整理发布说明'), {clientX: 1000, clientY: 700})
+
+      expect(screen.getByRole('menu')).toHaveStyle({top: '530px', left: '824px'})
+      fireEvent.click(screen.getByRole('menuitem', {name: '打开任务文件夹'}))
+      expect(onOpenTaskFolder).toHaveBeenCalledWith('task-1')
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+      fireEvent.contextMenu(screen.getByText('整理发布说明'), {clientX: 1000, clientY: 700})
+      fireEvent.keyDown(document, {key: 'Escape'})
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+      fireEvent.contextMenu(screen.getByText('整理发布说明'), {clientX: 1000, clientY: 700})
+      fireEvent.pointerDown(document.body)
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    } finally {
+      getBoundingClientRect.mockRestore()
+      if (originalInnerHeight) {
+        Object.defineProperty(window, 'innerHeight', originalInnerHeight)
+      }
+      if (originalInnerWidth) {
+        Object.defineProperty(window, 'innerWidth', originalInnerWidth)
+      }
+    }
+  })
+
+  it('菜单高于可用视口时，限制菜单高度并保留内部滚动', async () => {
+    const user = userEvent.setup()
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    Object.defineProperty(window, 'innerHeight', {configurable: true, value: 720})
+    Object.defineProperty(window, 'innerWidth', {configurable: true, value: 1024})
+    const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('aria-label') === '任务操作') {
+        return {top: 400, bottom: 428, left: 250, right: 278, width: 28, height: 28} as DOMRect
+      }
+      if (this.getAttribute('role') === 'menu') {
+        return {top: 0, bottom: 800, left: 0, right: 192, width: 192, height: 800} as DOMRect
+      }
+      return {top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0} as DOMRect
+    })
+    try {
+      render(
+        <TaskTree
+          tasks={[runningTask]}
+          terminals={[]}
+          selectedTerminalId={undefined}
+          onSelectTask={vi.fn()}
+          onSelectTerminal={vi.fn()}
+          onCreateTerminal={vi.fn()}
+          onEditTask={vi.fn()}
+          onOpenTaskFolder={vi.fn()}
+          onStartTask={vi.fn()}
+          onFinishTask={vi.fn()}
+          activeStatus="running"
+          onChangeStatus={vi.fn()}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', {name: '任务操作'}))
+
+      expect(screen.getByRole('menu')).toHaveStyle({top: '8px', maxHeight: '388px', maxWidth: '1008px', overflowY: 'auto'})
+    } finally {
+      getBoundingClientRect.mockRestore()
+      if (originalInnerHeight) {
+        Object.defineProperty(window, 'innerHeight', originalInnerHeight)
+      }
+      if (originalInnerWidth) {
+        Object.defineProperty(window, 'innerWidth', originalInnerWidth)
+      }
+    }
+  })
+
+  it('任务列表滚动后重新计算打开菜单的位置', async () => {
+    const user = userEvent.setup()
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    Object.defineProperty(window, 'innerHeight', {configurable: true, value: 720})
+    Object.defineProperty(window, 'innerWidth', {configurable: true, value: 1024})
+    let buttonBounds = {top: 200, bottom: 228, left: 250, right: 278, width: 28, height: 28}
+    const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('aria-label') === '任务操作') {
+        return buttonBounds as DOMRect
+      }
+      if (this.getAttribute('role') === 'menu') {
+        return {top: 0, bottom: 160, left: 0, right: 192, width: 192, height: 160} as DOMRect
+      }
+      return {top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0} as DOMRect
+    })
+    try {
+      render(
+        <TaskTree
+          tasks={[runningTask]}
+          terminals={[]}
+          selectedTerminalId={undefined}
+          onSelectTask={vi.fn()}
+          onSelectTerminal={vi.fn()}
+          onCreateTerminal={vi.fn()}
+          onEditTask={vi.fn()}
+          onOpenTaskFolder={vi.fn()}
+          onStartTask={vi.fn()}
+          onFinishTask={vi.fn()}
+          activeStatus="running"
+          onChangeStatus={vi.fn()}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', {name: '任务操作'}))
+      expect(screen.getByRole('menu')).toHaveStyle({top: '232px'})
+
+      buttonBounds = {top: 672, bottom: 700, left: 250, right: 278, width: 28, height: 28}
+      fireEvent.scroll(window)
+
+      expect(screen.getByRole('menu')).toHaveStyle({top: '508px'})
+    } finally {
+      getBoundingClientRect.mockRestore()
+      if (originalInnerHeight) {
+        Object.defineProperty(window, 'innerHeight', originalInnerHeight)
+      }
+      if (originalInnerWidth) {
+        Object.defineProperty(window, 'innerWidth', originalInnerWidth)
+      }
+    }
+  })
+
+  it('窗口尺寸变化后重新计算打开菜单的位置', async () => {
+    const user = userEvent.setup()
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')
+    const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+    Object.defineProperty(window, 'innerHeight', {configurable: true, value: 720})
+    Object.defineProperty(window, 'innerWidth', {configurable: true, value: 1024})
+    const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('aria-label') === '任务操作') {
+        return {top: 672, bottom: 700, left: 250, right: 278, width: 28, height: 28} as DOMRect
+      }
+      if (this.getAttribute('role') === 'menu') {
+        return {top: 0, bottom: 160, left: 0, right: 192, width: 192, height: 160} as DOMRect
+      }
+      return {top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0} as DOMRect
+    })
+    try {
+      render(
+        <TaskTree
+          tasks={[runningTask]}
+          terminals={[]}
+          selectedTerminalId={undefined}
+          onSelectTask={vi.fn()}
+          onSelectTerminal={vi.fn()}
+          onCreateTerminal={vi.fn()}
+          onEditTask={vi.fn()}
+          onOpenTaskFolder={vi.fn()}
+          onStartTask={vi.fn()}
+          onFinishTask={vi.fn()}
+          activeStatus="running"
+          onChangeStatus={vi.fn()}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', {name: '任务操作'}))
+      expect(screen.getByRole('menu')).toHaveStyle({top: '508px'})
+
+      Object.defineProperty(window, 'innerHeight', {configurable: true, value: 900})
+      fireEvent.resize(window)
+
+      expect(screen.getByRole('menu')).toHaveStyle({top: '704px'})
+    } finally {
+      getBoundingClientRect.mockRestore()
+      if (originalInnerHeight) {
+        Object.defineProperty(window, 'innerHeight', originalInnerHeight)
+      }
+      if (originalInnerWidth) {
+        Object.defineProperty(window, 'innerWidth', originalInnerWidth)
+      }
+    }
+  })
+
   it('仅在可悬停设备中以悬停、焦点或任务菜单状态显示上下文操作', () => {
     expect(appStyles).toContain('@media (hover: hover)')
     expect(appStyles).toContain('.taskai-contextual-actions')
