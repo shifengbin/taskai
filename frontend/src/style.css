@@ -10,6 +10,7 @@
   --snap-surface: rgba(255, 255, 255, 0.72);
   --snap-surface-2: rgba(255, 255, 255, 0.5);
   --snap-detail: rgba(255, 255, 255, 0.78);
+  --snap-overlay: #FFFFFF;
   --snap-ink: #0E1730;
   --snap-muted: #5A6588;
   --snap-outline: rgba(20, 40, 90, 0.12);
@@ -27,6 +28,7 @@
   --snap-surface: rgba(22, 29, 54, 0.62);
   --snap-surface-2: rgba(33, 42, 74, 0.5);
   --snap-detail: rgba(22, 29, 54, 0.78);
+  --snap-overlay: #161D36;
   --snap-ink: #E8ECFF;
   --snap-muted: #8A93C2;
   --snap-outline: rgba(124, 140, 210, 0.18);

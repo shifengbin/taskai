@@ -20,7 +20,7 @@ const DropdownMenuContent = forwardRef<
       sideOffset={sideOffset}
       className={cn(
         'z-50 min-w-[10rem] overflow-hidden p-1',
-        'border border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg backdrop-blur-md',
+        'border border-snap-outline rounded-snap bg-snap-overlay text-snap-ink shadow-snap-lg backdrop-blur-md',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
         'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',

@@ -12,6 +12,7 @@ module.exports = {
           surface: 'var(--snap-surface)',
           'surface-2': 'var(--snap-surface-2)',
           detail: 'var(--snap-detail)',
+          overlay: 'var(--snap-overlay)',
           ink: 'var(--snap-ink)',
           muted: 'var(--snap-muted)',
           outline: 'var(--snap-outline)',
