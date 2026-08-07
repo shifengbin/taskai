@@ -4,6 +4,7 @@ import {settings} from '../models';
 import {terminal} from '../models';
 import {task} from '../models';
 import {application} from '../models';
+import {quickinput} from '../models';
 
 export function ClearSelectedTerminal():Promise<void>;
 
@@ -41,6 +42,8 @@ export function DeleteLifecycleCommandChain(arg1:string):Promise<void>;
 
 export function DeleteLifecyclePreset(arg1:string):Promise<void>;
 
+export function DeleteQuickInput(arg1:string):Promise<void>;
+
 export function DetectShells():Promise<Array<string>>;
 
 export function ExecuteTaskMenuCommand(arg1:string,arg2:string,arg3:number,arg4:number):Promise<application.TaskMenuCommandResult>;
@@ -65,11 +68,15 @@ export function ListLifecycleCommands():Promise<Array<settings.LifecycleCommand>
 
 export function ListLifecyclePresets():Promise<Array<settings.LifecyclePreset>>;
 
+export function ListQuickInputs():Promise<Array<quickinput.QuickInput>>;
+
 export function ListTasks():Promise<Array<task.Task>>;
 
 export function OpenTaskFolder(arg1:string):Promise<void>;
 
 export function PrepareQuit():Promise<void>;
+
+export function ReorderQuickInputs(arg1:Array<string>):Promise<Array<quickinput.QuickInput>>;
 
 export function ReorderTasks(arg1:task.Status,arg2:Array<string>):Promise<Array<task.Task>>;
 
@@ -94,6 +101,8 @@ export function SaveLifecycleCommand(arg1:settings.LifecycleCommand):Promise<set
 export function SaveLifecycleCommandChain(arg1:settings.LifecycleCommandChain):Promise<settings.LifecycleCommandChain>;
 
 export function SaveLifecyclePreset(arg1:settings.LifecyclePreset):Promise<settings.LifecyclePreset>;
+
+export function SaveQuickInput(arg1:quickinput.QuickInput):Promise<quickinput.QuickInput>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<settings.Settings>;
 

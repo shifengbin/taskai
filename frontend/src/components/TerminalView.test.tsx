@@ -1,9 +1,10 @@
-import {cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
+import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing-library/react'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const terminalInstances = vi.hoisted(() => [] as Array<{
   cols: number
   rows: number
+  attachCustomKeyEventHandler: ReturnType<typeof vi.fn>
   element?: HTMLElement
   getSelection: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
@@ -11,9 +12,11 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   onData: ReturnType<typeof vi.fn>
   onSelectionChange: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
+  paste: ReturnType<typeof vi.fn>
   options: {scrollback?: number, theme?: {background?: string}}
   dispose: ReturnType<typeof vi.fn>
   refresh: ReturnType<typeof vi.fn>
+  triggerCustomKeyEvent(event: KeyboardEvent): boolean | undefined
   triggerSelectionChange(): void
 }> )
 const fitAddonInstances = vi.hoisted(() => [] as Array<{fit: ReturnType<typeof vi.fn>}>)
@@ -26,6 +29,9 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 100
     rows = 30
+    attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
+      this.customKeyEventHandler = handler
+    })
     element: HTMLElement | undefined
     getSelection = vi.fn(() => '')
     focus = vi.fn()
@@ -39,10 +45,16 @@ vi.mock('@xterm/xterm', () => ({
       this.element = document.createElement('div')
       container.append(this.element)
     })
+    paste = vi.fn()
     options: {scrollback?: number, theme?: {background?: string}}
     dispose = vi.fn()
     refresh = vi.fn()
+    customKeyEventHandler: ((event: KeyboardEvent) => boolean) | undefined
     selectionChangeListener: (() => void) | undefined
+
+    triggerCustomKeyEvent(event: KeyboardEvent) {
+      return this.customKeyEventHandler?.(event)
+    }
 
     triggerSelectionChange() {
       this.selectionChangeListener?.()
@@ -137,6 +149,84 @@ describe('TerminalView', () => {
     expect(actions).toHaveClass('taskai-contextual-actions')
     expect(actions).toContainElement(within(actions).getByRole('button', {name: '关闭终端'}))
     expect(actions).not.toContainElement(within(header).getByRole('status', {name: '终端状态：空闲'}))
+  })
+
+  it('从终端热键打开搜索并以模拟粘贴插入，不追加 Enter', async () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        quickInputs={[
+          {id: 'quick-1', name: '状态', content: 'git status'},
+          {id: 'quick-2', name: '部署', content: 'git push origin main'},
+        ]}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    runAnimationFrame()
+
+    await act(async () => {
+      expect(terminalInstances[0].triggerCustomKeyEvent(new KeyboardEvent('keydown', {key: 'P', ctrlKey: true, shiftKey: true}))).toBe(false)
+    })
+    const search = await screen.findByRole('textbox', {name: '搜索快捷输入'})
+    expect(search).toHaveFocus()
+    fireEvent.change(search, {target: {value: 'push'}})
+    fireEvent.keyDown(search, {key: 'Enter'})
+
+    expect(terminalInstances[0].paste).toHaveBeenCalledWith('git push origin main')
+    expect(terminalInstances[0].paste).not.toHaveBeenCalledWith('git push origin main\n')
+    expect(screen.queryByRole('textbox', {name: '搜索快捷输入'})).not.toBeInTheDocument()
+    expect(terminalInstances[0].focus).toHaveBeenCalledTimes(2)
+  })
+
+  it('支持方向键选择、Escape 关闭并将焦点恢复到终端', async () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        quickInputs={[
+          {id: 'quick-1', name: '状态', content: 'git status'},
+          {id: 'quick-2', name: '部署', content: 'git push origin main'},
+        ]}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    runAnimationFrame()
+
+    fireEvent.click(screen.getByRole('button', {name: '快捷输入（Ctrl+Shift+P）'}))
+    const search = await screen.findByRole('textbox', {name: '搜索快捷输入'})
+    fireEvent.keyDown(search, {key: 'ArrowDown'})
+
+    expect(screen.getByRole('option', {name: /部署/})).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(search, {key: 'Escape'})
+
+    expect(screen.queryByRole('textbox', {name: '搜索快捷输入'})).not.toBeInTheDocument()
+    expect(terminalInstances[0].focus).toHaveBeenCalledTimes(2)
+  })
+
+  it('会话关闭后提示无法插入快捷输入', async () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const onError = vi.fn()
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        quickInputs={[{id: 'quick-1', name: '状态', content: 'git status'}]}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+        onError={onError}
+      />,
+    )
+    registry.dispose(terminal.taskId, terminal.id)
+
+    fireEvent.click(screen.getByRole('button', {name: '快捷输入（Ctrl+Shift+P）'}))
+    fireEvent.click(await screen.findByRole('option', {name: /状态/}))
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法插入快捷输入'}))
   })
 
   it('暗色模式注入快门波普深表面终端底色', () => {

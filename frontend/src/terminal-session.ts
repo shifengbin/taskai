@@ -80,6 +80,25 @@ export class TerminalSessionRegistry {
     this.onWrite(taskID, terminalID, data)
   }
 
+  pasteQuickInput(taskID: string, terminalID: string, content: string): boolean {
+    const key = terminalSessionKey(taskID, terminalID)
+    const session = this.sessions.get(key)
+    if (!content || !session || this.closedTerminalKeys.has(key)) {
+      return false
+    }
+    session.terminal.paste(content)
+    return true
+  }
+
+  setCustomKeyEventHandler(taskID: string, terminalID: string, handler?: (event: KeyboardEvent) => boolean): boolean {
+    const session = this.sessions.get(terminalSessionKey(taskID, terminalID))
+    if (!session || this.closedTerminalKeys.has(terminalSessionKey(taskID, terminalID))) {
+      return false
+    }
+    session.terminal.attachCustomKeyEventHandler(handler ?? (() => true))
+    return true
+  }
+
   dispose(taskID: string, terminalID: string): void {
     const key = terminalSessionKey(taskID, terminalID)
     this.closedTerminalKeys.add(key)

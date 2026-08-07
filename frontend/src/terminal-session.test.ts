@@ -3,6 +3,7 @@ import {beforeEach, describe, expect, it, vi} from 'vitest'
 const terminalInstances = vi.hoisted(() => [] as Array<{
   cols: number
   rows: number
+  attachCustomKeyEventHandler: ReturnType<typeof vi.fn>
   element?: HTMLElement
   dispose: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
@@ -13,6 +14,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   onSelectionChange: ReturnType<typeof vi.fn>
   onSelectionDisposable: {dispose: ReturnType<typeof vi.fn>}
   open: ReturnType<typeof vi.fn>
+  paste: ReturnType<typeof vi.fn>
   options: {scrollback?: number, theme?: unknown}
   refresh: ReturnType<typeof vi.fn>
   triggerSelectionChange(): void
@@ -25,6 +27,7 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 100
     rows = 30
+    attachCustomKeyEventHandler = vi.fn()
     element: HTMLElement | undefined
     dispose = vi.fn()
     focus = vi.fn()
@@ -46,6 +49,7 @@ vi.mock('@xterm/xterm', () => ({
       this.element = document.createElement('div')
       container.append(this.element)
     })
+    paste = vi.fn()
     options: {scrollback?: number, theme?: unknown}
     refresh = vi.fn()
     write = vi.fn()
@@ -93,6 +97,34 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].options.scrollback).toBe(1000)
     expect(terminalInstances[0].write).toHaveBeenCalledWith('first output chunk')
+  })
+
+  it('将快捷输入作为模拟粘贴写入指定活动会话，不追加执行字符', () => {
+    const onWrite = vi.fn()
+    const registry = new TerminalSessionRegistry(onWrite)
+	registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'ready'})
+
+    expect(registry.pasteQuickInput('task-1', 'terminal-1', 'git status\ngit push')).toBe(true)
+    expect(terminalInstances[0].paste).toHaveBeenCalledWith('git status\ngit push')
+    expect(onWrite).not.toHaveBeenCalled()
+
+    registry.dispose('task-1', 'terminal-1')
+    expect(registry.pasteQuickInput('task-1', 'terminal-1', 'ignored')).toBe(false)
+    expect(terminalInstances[0].paste).toHaveBeenCalledTimes(1)
+  })
+
+  it('仅为活动会话注册终端按键处理器', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const handler = vi.fn(() => false)
+
+    expect(registry.setCustomKeyEventHandler('task-1', 'terminal-1', handler)).toBe(false)
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'ready'})
+
+    expect(registry.setCustomKeyEventHandler('task-1', 'terminal-1', handler)).toBe(true)
+    expect(terminalInstances[0].attachCustomKeyEventHandler).toHaveBeenCalledWith(handler)
+
+    registry.dispose('task-1', 'terminal-1')
+    expect(registry.setCustomKeyEventHandler('task-1', 'terminal-1', handler)).toBe(false)
   })
 
   it('重新挂载同一终端时复用实例且不回放已写入内容', () => {

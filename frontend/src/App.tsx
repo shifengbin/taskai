@@ -82,6 +82,7 @@ import {
 	taskStatusLabel,
   type ColorScheme,
 	type ExtraInfoTemplate,
+	type QuickInput,
   type TaskScript,
   type SettingsRecord,
 	type TaskExtraInfo,
@@ -111,6 +112,7 @@ export default function App() {
 	const [settings, setSettings] = useState<SettingsRecord>()
 	const [extraInfoTemplates, setExtraInfoTemplates] = useState<ExtraInfoTemplate[]>([])
 	const [extraInfos, setExtraInfos] = useState<ExtraInfo[]>([])
+	const [quickInputs, setQuickInputs] = useState<QuickInput[]>([])
   const [detectedShells, setDetectedShells] = useState<string[]>([])
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [treeWidth, setTreeWidth] = useState(360)
@@ -127,6 +129,7 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
 	const [extraInfoManagerOpen, setExtraInfoManagerOpen] = useState(false)
+	const [informationManagerTab, setInformationManagerTab] = useState<'extra-info' | 'quick-input'>('extra-info')
 	const [extraInfoTemplateDraft, setExtraInfoTemplateDraft] = useState<ExtraInfoTemplate>()
 	const [extraInfoDraft, setExtraInfoDraft] = useState<ExtraInfo>()
 	const [extraInfoEditorOpen, setExtraInfoEditorOpen] = useState(false)
@@ -135,6 +138,9 @@ export default function App() {
 	const [extraInfoSearch, setExtraInfoSearch] = useState('')
 	const [templateSectionExpanded, setTemplateSectionExpanded] = useState(false)
 	const [expandedExtraInfoTemplateIDs, setExpandedExtraInfoTemplateIDs] = useState<string[]>([])
+	const [quickInputSearch, setQuickInputSearch] = useState('')
+	const [quickInputDraft, setQuickInputDraft] = useState<QuickInput>()
+	const [quickInputDeletion, setQuickInputDeletion] = useState<QuickInput>()
   const [finishTask, setFinishTask] = useState<TaskRecord>()
 	const [completedTaskSelectionMode, setCompletedTaskSelectionMode] = useState(false)
 	const [selectedCompletedTaskIDs, setSelectedCompletedTaskIDs] = useState<string[]>([])
@@ -195,13 +201,14 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoTemplates, loadedExtraInfos] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoTemplates(), api.listExtraInfos()])
+		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoTemplates, loadedExtraInfos, loadedQuickInputs] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoTemplates(), api.listExtraInfos(), api.listQuickInputs()])
         setTasks(loadedTasks)
-        setSettings(loadedSettings)
+		setSettings(loadedSettings)
         setActiveTaskStatus(loadedSettings.activeTaskStatus ?? 'pending')
         setDetectedShells(loadedShells)
 		setExtraInfoTemplates(loadedExtraInfoTemplates)
 		setExtraInfos(loadedExtraInfos)
+		setQuickInputs(loadedQuickInputs)
         const width = clampTaskTreeWidth(loadedSettings.taskTreeWidth)
         currentTreeWidth.current = width
         setTreeWidth(width)
@@ -478,10 +485,12 @@ export default function App() {
 
 	const openExtraInfoManager = async () => {
 		setExtraInfoManagerOpen(true)
+		setInformationManagerTab('extra-info')
 		try {
-			const [templates, infos] = await Promise.all([api.listExtraInfoTemplates(), api.listExtraInfos()])
+			const [templates, infos, inputs] = await Promise.all([api.listExtraInfoTemplates(), api.listExtraInfos(), api.listQuickInputs()])
 			setExtraInfoTemplates(templates)
 			setExtraInfos(infos)
+			setQuickInputs(inputs)
 		} catch (error) {
 			showError(error, setMessage)
 		}
@@ -616,6 +625,74 @@ export default function App() {
 			setExtraInfos((current) => current.filter((item) => item.id !== infoID))
 		} catch (error) {
 			showError(error, setMessage)
+		}
+	}
+
+	const openQuickInputEditor = (input?: QuickInput) => {
+		setQuickInputDraft(input ? {...input} : {id: '', name: '', content: ''})
+	}
+
+	const closeQuickInputEditor = () => setQuickInputDraft(undefined)
+
+	const saveQuickInput = async () => {
+		if (!quickInputDraft) {
+			return
+		}
+		const name = quickInputDraft.name.trim()
+		if (!name) {
+			showErrorMessage('快捷输入名称不能为空')
+			return
+		}
+		if ([...name].length > 100) {
+			showErrorMessage('快捷输入名称不能超过 100 个字符')
+			return
+		}
+		if (!quickInputDraft.content.trim()) {
+			showErrorMessage('快捷输入内容必须包含非空白字符')
+			return
+		}
+		try {
+			const saved = await api.saveQuickInput({...quickInputDraft, name})
+			setQuickInputs((current) => current.some((input) => input.id === saved.id)
+				? current.map((input) => input.id === saved.id ? saved : input)
+				: [...current, saved])
+			closeQuickInputEditor()
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const confirmDeleteQuickInput = async () => {
+		if (!quickInputDeletion) {
+			return
+		}
+		try {
+			await api.deleteQuickInput(quickInputDeletion.id)
+			setQuickInputs((current) => current.filter((input) => input.id !== quickInputDeletion.id))
+			setQuickInputDeletion(undefined)
+		} catch (error) {
+			showError(error, setMessage)
+		}
+	}
+
+	const moveQuickInput = async (inputID: string, direction: -1 | 1) => {
+		const currentIndex = quickInputs.findIndex((input) => input.id === inputID)
+		const targetIndex = currentIndex + direction
+		if (currentIndex < 0 || targetIndex < 0 || targetIndex >= quickInputs.length) {
+			return
+		}
+		const orderedInputIDs = quickInputs.map((input) => input.id)
+		const [movedID] = orderedInputIDs.splice(currentIndex, 1)
+		orderedInputIDs.splice(targetIndex, 0, movedID)
+		try {
+			setQuickInputs(await api.reorderQuickInputs(orderedInputIDs))
+		} catch (error) {
+			showError(error, setMessage)
+			try {
+				setQuickInputs(await api.listQuickInputs())
+			} catch (reloadError) {
+				showError(reloadError, setMessage)
+			}
 		}
 	}
 
@@ -818,8 +895,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
       return
     }
     try {
-      const saved = await api.saveSettings(settingsDraft)
-      setSettings(saved)
+		const saved = await api.saveSettings(settingsDraft)
+		setSettings(saved)
       setSettingsDialogOpen(false)
       closeTaskMenuItemEditor()
     } catch (error) {
@@ -944,7 +1021,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
     setSettingsDraft((current) => ({
       workspaceRoot: current?.workspaceRoot ?? settings?.workspaceRoot ?? '',
       taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
-      colorScheme: current?.colorScheme ?? colorScheme,
+		colorScheme: current?.colorScheme ?? colorScheme,
       shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
       taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
 		activeTaskStatus: current?.activeTaskStatus ?? settings?.activeTaskStatus ?? activeTaskStatus,
@@ -1008,6 +1085,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			? '状态由 HTTP 接口更新；终端输出不会自动改变状态。'
 			: '终端标题变化会在 1.5 秒内显示为工作中，未选中的终端随后显示为未读。'
 	const extraInfoDraftTemplate = extraInfoDraft ? extraInfoTemplates.find((template) => template.id === extraInfoDraft.templateId) : undefined
+	const normalizedQuickInputSearch = quickInputSearch.trim().toLocaleLowerCase()
+	const visibleQuickInputs = quickInputs.filter((input) => !normalizedQuickInputSearch
+		|| input.name.toLocaleLowerCase().includes(normalizedQuickInputSearch)
+		|| input.content.toLocaleLowerCase().includes(normalizedQuickInputSearch))
 
   return (
     <SnapToastProvider duration={5000}>
@@ -1019,11 +1100,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           <span className="flex-1"/>
             <SnapTooltip>
               <SnapTooltipTrigger asChild>
-                <SnapIconButton aria-label="额外信息管理" onClick={() => void openExtraInfoManager()}>
-                  <FolderOpen className="h-[18px] w-[18px]" strokeWidth={2.25}/>
+				<SnapIconButton aria-label="信息管理" onClick={() => void openExtraInfoManager()}>
+					<FolderOpen className="h-[18px] w-[18px]" strokeWidth={2.25}/>
                 </SnapIconButton>
               </SnapTooltipTrigger>
-              <SnapTooltipContent>额外信息管理</SnapTooltipContent>
+				<SnapTooltipContent>信息管理</SnapTooltipContent>
             </SnapTooltip>
             <SnapTooltip>
               <SnapTooltipTrigger asChild>
@@ -1031,8 +1112,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 aria-label="设置"
                 onClick={() => {
                   const draftMenuItems = cloneTaskMenuItems(taskMenuItems)
-	                  setSettingsDraft(settings ? {
-	                    ...settings,
+				  setSettingsDraft(settings ? {
+				    ...settings,
                     colorScheme,
                     shellPath: settings.shellPath || detectedShells[0] || '',
 						taskMenuItems: draftMenuItems,
@@ -1044,8 +1125,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                   setTaskMenuItemEditorMode(undefined)
                   setSettingsTab('workspace')
 					setStatusHelpOpen(false)
-                  setTaskMenuItemEditorTab('basic')
-                  setScriptHelpAnchor(undefined)
+				  setTaskMenuItemEditorTab('basic')
+				  setScriptHelpAnchor(undefined)
                   setSettingsDialogOpen(true)
                 }}
               >
@@ -1159,6 +1240,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 key={selectedTerminal.id}
                 terminal={selectedTerminal}
                 sessionRegistry={terminalSessions.current!}
+                quickInputs={quickInputs}
                 mode={colorScheme}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onError={(error) => showError(error, setMessage)}
@@ -1231,8 +1313,14 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		<SnapDialog open={extraInfoManagerOpen} onOpenChange={(open) => { if (!open) setExtraInfoManagerOpen(false) }}>
 			<SnapDialogContent className="max-w-2xl" showClose={false} data-testid="extra-info-manager-content" style={{display: 'flex', flexDirection: 'column'}}>
 				<SnapDialogHeader>
-					<SnapDialogTitle>额外信息管理</SnapDialogTitle>
+					<SnapDialogTitle>信息管理</SnapDialogTitle>
 				</SnapDialogHeader>
+				<SnapTabs value={informationManagerTab} onValueChange={(value) => setInformationManagerTab(value as 'extra-info' | 'quick-input')}>
+					<SnapTabsList aria-label="信息管理标签">
+						<SnapTabsTrigger value="extra-info">额外信息管理</SnapTabsTrigger>
+						<SnapTabsTrigger value="quick-input">快捷输入管理</SnapTabsTrigger>
+					</SnapTabsList>
+					<SnapTabsContent value="extra-info">
 				<div data-testid="extra-info-manager-scroll" className="max-h-[55vh] overflow-y-auto snap-no-scrollbar">
 					<div className="grid gap-4 px-1">
 						<div data-testid="extra-info-manager-actions" className="flex flex-wrap justify-end gap-2">
@@ -1310,8 +1398,71 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 						)}
 					</div>
 				</div>
+					</SnapTabsContent>
+					<SnapTabsContent value="quick-input">
+						<div data-testid="quick-input-manager-scroll" className="max-h-[55vh] overflow-y-auto snap-no-scrollbar">
+							<div className="grid gap-4 px-1 py-1">
+								<div className="flex flex-wrap justify-end gap-2">
+									<SnapButton variant="primary" size="sm" onClick={() => openQuickInputEditor()}>新增快捷输入</SnapButton>
+								</div>
+								<Field label="搜索快捷输入"><Input placeholder="按名称或内容搜索" value={quickInputSearch} onChange={(event) => setQuickInputSearch(event.target.value)}/></Field>
+								{quickInputs.length === 0 ? <SnapAlert severity="info">暂无快捷输入。</SnapAlert> : visibleQuickInputs.length === 0 ? <SnapAlert severity="info">未找到匹配的快捷输入。</SnapAlert> : (
+									<div className="grid overflow-hidden rounded-snap border-2 border-snap-outline divide-y-2 divide-snap-outline">
+										{visibleQuickInputs.map((input) => {
+											const index = quickInputs.findIndex((current) => current.id === input.id)
+											return <div key={input.id} className="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+												<div className="grid min-w-0 gap-1">
+													<span className="text-sm font-bold text-snap-ink break-words">{input.name}</span>
+													<span className="font-mono text-xs text-snap-muted break-all" title={input.content}>{quickInputContentPreview(input.content)}</span>
+												</div>
+												<div className="flex flex-wrap items-center gap-1.5">
+													{!normalizedQuickInputSearch && <>
+														<SnapIconButton title="上移快捷输入" aria-label={`上移快捷输入 ${input.name}`} size="sm" disabled={index === 0} onClick={() => void moveQuickInput(input.id, -1)}><ArrowUp className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
+														<SnapIconButton title="下移快捷输入" aria-label={`下移快捷输入 ${input.name}`} size="sm" disabled={index === quickInputs.length - 1} onClick={() => void moveQuickInput(input.id, 1)}><ArrowDown className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
+													</>}
+													<SnapButton variant="secondary" size="sm" onClick={() => openQuickInputEditor(input)}>编辑</SnapButton>
+													<SnapIconButton title={`删除快捷输入 ${input.name}`} aria-label={`删除快捷输入 ${input.name}`} size="sm" onClick={() => setQuickInputDeletion(input)} className="text-snap-error hover:text-snap-error"><Trash2 className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
+												</div>
+											</div>
+										})}
+									</div>
+								)}
+							</div>
+						</div>
+					</SnapTabsContent>
+				</SnapTabs>
 				<SnapDialogFooter>
 					<SnapButton variant="secondary" onClick={() => setExtraInfoManagerOpen(false)}>关闭</SnapButton>
+				</SnapDialogFooter>
+			</SnapDialogContent>
+		</SnapDialog>
+
+		<SnapDialog open={Boolean(quickInputDraft)} onOpenChange={(open) => { if (!open) closeQuickInputEditor() }}>
+			<SnapDialogContent className="max-w-xl">
+				<SnapDialogHeader>
+					<SnapDialogTitle>{quickInputDraft?.id ? '编辑快捷输入' : '新增快捷输入'}</SnapDialogTitle>
+					<SnapDialogDescription>内容会按原样插入终端，不会由 TaskAI 自动执行。</SnapDialogDescription>
+				</SnapDialogHeader>
+				<div className="grid gap-3 px-1">
+					<Field label="名称" hint={`${[...(quickInputDraft?.name ?? '')].length} / 100 个字符`}><Input autoFocus maxLength={100} value={quickInputDraft?.name ?? ''} onChange={(event) => setQuickInputDraft((current) => current ? {...current, name: event.target.value} : current)}/></Field>
+					<Field label="内容" hint={`已用 ${[...(quickInputDraft?.content ?? '')].length} 个字符`}><Textarea rows={8} className="font-mono" value={quickInputDraft?.content ?? ''} onChange={(event) => setQuickInputDraft((current) => current ? {...current, content: event.target.value} : current)}/></Field>
+				</div>
+				<SnapDialogFooter>
+					<SnapButton variant="secondary" onClick={closeQuickInputEditor}>取消</SnapButton>
+					<SnapButton variant="primary" onClick={() => void saveQuickInput()}>保存快捷输入</SnapButton>
+				</SnapDialogFooter>
+			</SnapDialogContent>
+		</SnapDialog>
+
+		<SnapDialog open={Boolean(quickInputDeletion)} onOpenChange={(open) => { if (!open) setQuickInputDeletion(undefined) }}>
+			<SnapDialogContent className="max-w-md">
+				<SnapDialogHeader>
+					<SnapDialogTitle>删除快捷输入？</SnapDialogTitle>
+					<SnapDialogDescription>确认后将删除“{quickInputDeletion?.name}”。此操作无法撤销。</SnapDialogDescription>
+				</SnapDialogHeader>
+				<SnapDialogFooter>
+					<SnapButton variant="secondary" onClick={() => setQuickInputDeletion(undefined)}>取消</SnapButton>
+					<SnapButton variant="danger" onClick={() => void confirmDeleteQuickInput()}>删除快捷输入</SnapButton>
 				</SnapDialogFooter>
 			</SnapDialogContent>
 		</SnapDialog>
@@ -2762,6 +2913,11 @@ function extraInfoName(info: ExtraInfo): string {
 	return info.fields.find((field) => field.key === 'name')?.value ?? ''
 }
 
+function quickInputContentPreview(content: string): string {
+	const compact = content.replace(/\r?\n/g, ' ↵ ').replace(/\t/g, ' ⇥ ')
+	return [...compact].length > 120 ? `${[...compact].slice(0, 120).join('')}…` : compact
+}
+
 function gitRepositoryName(repository: string): string {
 	const normalized = repository.trim()
 	if (!normalized.endsWith('.git')) {
@@ -2861,3 +3017,4 @@ function createCustomTaskMenuItem(): TaskMenuItem {
 function showError(error: unknown, setMessage: Dispatch<SetStateAction<Notification | undefined>>) {
 	setMessage({text: error instanceof Error ? error.message : String(error), severity: 'error'})
 }
+

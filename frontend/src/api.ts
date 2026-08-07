@@ -22,6 +22,7 @@ import {
 	DeleteLifecycleCommand,
 	DeleteLifecycleCommandChain,
 	DeleteLifecyclePreset,
+	DeleteQuickInput,
   HasRunningTasks,
 	ListTasks,
 	ListExtraInfoCatalogues,
@@ -30,9 +31,11 @@ import {
 	ListLifecycleCommandChains,
 	ListLifecycleCommands,
 	ListLifecyclePresets,
+	ListQuickInputs,
 	OpenTaskFolder,
   PrepareQuit,
-  ReorderTasks,
+	ReorderTasks,
+	ReorderQuickInputs,
 	ReportTerminalTitleActivity,
   ResizeTerminal,
   RunTaskCommand,
@@ -43,6 +46,7 @@ import {
 	SaveLifecycleCommand,
 	SaveLifecycleCommandChain,
 	SaveLifecyclePreset,
+	SaveQuickInput,
 	SaveDefaultLifecyclePreset,
 	SelectTerminal,
 	SetTaskShelved,
@@ -58,9 +62,10 @@ import {
 } from '../wailsjs/go/main/App'
 import {settings as settingsModel} from '../wailsjs/go/models'
 import {task as taskModel} from '../wailsjs/go/models'
+import {quickinput as quickInputModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalRecord} from './types'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
@@ -93,6 +98,13 @@ export const api = {
 	},
 	saveExtraInfo: (info: ExtraInfo) => SaveExtraInfo(taskModel.ExtraInfo.createFrom(info)) as unknown as Promise<ExtraInfo>,
 	deleteExtraInfo: (infoID: string) => DeleteExtraInfo(infoID),
+	listQuickInputs: async () => {
+		const inputs = await ListQuickInputs()
+		return Array.isArray(inputs) ? inputs as unknown as QuickInput[] : []
+	},
+	saveQuickInput: (input: QuickInput) => SaveQuickInput(quickInputModel.QuickInput.createFrom(input)) as unknown as Promise<QuickInput>,
+	deleteQuickInput: (inputID: string) => DeleteQuickInput(inputID),
+	reorderQuickInputs: (inputIDs: string[]) => ReorderQuickInputs(inputIDs) as unknown as Promise<QuickInput[]>,
 	listLifecycleCommands: async () => {
 		const commands = await ListLifecycleCommands()
 		return Array.isArray(commands) ? commands as LifecycleCommand[] : []

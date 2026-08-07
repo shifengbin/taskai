@@ -18,6 +18,7 @@ import (
 
 	"taskai/internal/application"
 	"taskai/internal/lifecycle"
+	"taskai/internal/quickinput"
 	"taskai/internal/realtime"
 	"taskai/internal/settings"
 	"taskai/internal/storage"
@@ -351,6 +352,22 @@ func (app *App) SaveExtraInfo(info task.ExtraInfo) (task.ExtraInfo, error) {
 
 func (app *App) DeleteExtraInfo(infoID string) error {
 	return app.repository.DeleteExtraInfo(infoID)
+}
+
+func (app *App) ListQuickInputs() ([]quickinput.QuickInput, error) {
+	return app.repository.ListQuickInputs()
+}
+
+func (app *App) SaveQuickInput(input quickinput.QuickInput) (quickinput.QuickInput, error) {
+	return app.repository.SaveQuickInput(input)
+}
+
+func (app *App) DeleteQuickInput(inputID string) error {
+	return app.repository.DeleteQuickInput(inputID)
+}
+
+func (app *App) ReorderQuickInputs(inputIDs []string) ([]quickinput.QuickInput, error) {
+	return app.repository.ReorderQuickInputs(inputIDs)
 }
 
 func (app *App) ListLifecycleCommands() ([]settings.LifecycleCommand, error) {

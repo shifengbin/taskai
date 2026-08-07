@@ -140,6 +140,12 @@ export interface ExtraInfo {
 	parameters: ExtraInfoParameter[]
 }
 
+export interface QuickInput {
+	id: string
+	name: string
+	content: string
+}
+
 export interface ExtraInfoParameter extends ExtraInfoParameterDefinition {
 	value: string
 }

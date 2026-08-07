@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"taskai/internal/lifecycle"
+	"taskai/internal/quickinput"
 	"taskai/internal/realtime"
 	"taskai/internal/settings"
 	"taskai/internal/task"
@@ -115,6 +116,40 @@ func TestAppExposesLifecyclePresetBindings(t *testing.T) {
 	}
 	if err := app.DeleteLifecyclePreset(preset.ID); err != nil {
 		t.Fatalf("DeleteLifecyclePreset() error = %v", err)
+	}
+}
+
+func TestAppManagesQuickInputsThroughBindings(t *testing.T) {
+	app := newApp(t.TempDir())
+	first, err := app.SaveQuickInput(quickinput.QuickInput{Name: "部署", Content: "git status"})
+	if err != nil {
+		t.Fatalf("SaveQuickInput() first error = %v", err)
+	}
+	second, err := app.SaveQuickInput(quickinput.QuickInput{Name: "部署", Content: "git push origin main"})
+	if err != nil {
+		t.Fatalf("SaveQuickInput() second error = %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("SaveQuickInput() generated duplicate IDs: %q", first.ID)
+	}
+
+	ordered, err := app.ReorderQuickInputs([]string{second.ID, first.ID})
+	if err != nil {
+		t.Fatalf("ReorderQuickInputs() error = %v", err)
+	}
+	if len(ordered) != 2 || ordered[0].ID != second.ID || ordered[1].ID != first.ID {
+		t.Fatalf("ReorderQuickInputs() = %#v", ordered)
+	}
+
+	if err := app.DeleteQuickInput(second.ID); err != nil {
+		t.Fatalf("DeleteQuickInput() error = %v", err)
+	}
+	listed, err := app.ListQuickInputs()
+	if err != nil {
+		t.Fatalf("ListQuickInputs() error = %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != first.ID {
+		t.Fatalf("ListQuickInputs() = %#v", listed)
 	}
 }
 

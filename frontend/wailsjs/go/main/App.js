@@ -74,6 +74,10 @@ export function DeleteLifecyclePreset(arg1) {
   return window['go']['main']['App']['DeleteLifecyclePreset'](arg1);
 }
 
+export function DeleteQuickInput(arg1) {
+  return window['go']['main']['App']['DeleteQuickInput'](arg1);
+}
+
 export function DetectShells() {
   return window['go']['main']['App']['DetectShells']();
 }
@@ -122,6 +126,10 @@ export function ListLifecyclePresets() {
   return window['go']['main']['App']['ListLifecyclePresets']();
 }
 
+export function ListQuickInputs() {
+  return window['go']['main']['App']['ListQuickInputs']();
+}
+
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
@@ -132,6 +140,10 @@ export function OpenTaskFolder(arg1) {
 
 export function PrepareQuit() {
   return window['go']['main']['App']['PrepareQuit']();
+}
+
+export function ReorderQuickInputs(arg1) {
+  return window['go']['main']['App']['ReorderQuickInputs'](arg1);
 }
 
 export function ReorderTasks(arg1, arg2) {
@@ -180,6 +192,10 @@ export function SaveLifecycleCommandChain(arg1) {
 
 export function SaveLifecyclePreset(arg1) {
   return window['go']['main']['App']['SaveLifecyclePreset'](arg1);
+}
+
+export function SaveQuickInput(arg1) {
+  return window['go']['main']['App']['SaveQuickInput'](arg1);
 }
 
 export function SaveSettings(arg1) {

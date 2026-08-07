@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"taskai/internal/quickinput"
 	"taskai/internal/settings"
 	"taskai/internal/task"
 )
@@ -20,6 +21,7 @@ type Data struct {
 	ExtraInfoTemplates  []task.ExtraInfoTemplate `json:"extraInfoTemplates"`
 	ExtraInfos          []task.ExtraInfo         `json:"extraInfos"`
 	ExtraInfoCatalogues []string                 `json:"extraInfoCatalogues,omitempty"`
+	QuickInputs         []quickinput.QuickInput  `json:"quickInputs"`
 	Settings            settings.Settings        `json:"settings"`
 }
 
@@ -80,8 +82,26 @@ func defaultData(defaultSettings settings.Settings) Data {
 		ExtraInfoTemplates:  []task.ExtraInfoTemplate{task.BuiltInGitTemplate()},
 		ExtraInfos:          []task.ExtraInfo{},
 		ExtraInfoCatalogues: []string{"git"},
+		QuickInputs:         []quickinput.QuickInput{},
 		Settings:            defaultSettings,
 	}
+}
+
+func normalizeQuickInputs(inputs []quickinput.QuickInput) ([]quickinput.QuickInput, error) {
+	normalized := make([]quickinput.QuickInput, len(inputs))
+	seenIDs := make(map[string]struct{}, len(inputs))
+	for index, input := range inputs {
+		current, err := quickinput.Normalize(input)
+		if err != nil {
+			return nil, fmt.Errorf("normalize quick input: %w", err)
+		}
+		if _, exists := seenIDs[current.ID]; exists {
+			return nil, fmt.Errorf("快捷输入 ID %q 重复", current.ID)
+		}
+		seenIDs[current.ID] = struct{}{}
+		normalized[index] = current
+	}
+	return normalized, nil
 }
 
 func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, error) {
@@ -153,6 +173,18 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 			data.ExtraInfos[index] = normalized
 		}
 	}
+	if data.QuickInputs == nil {
+		data.QuickInputs = []quickinput.QuickInput{}
+		changed = true
+	}
+	quickInputs, err := normalizeQuickInputs(data.QuickInputs)
+	if err != nil {
+		return Data{}, false, err
+	}
+	if !sameJSON(data.QuickInputs, quickInputs) {
+		changed = true
+	}
+	data.QuickInputs = quickInputs
 
 	if ensureBuiltInGitTemplate(&data.ExtraInfoTemplates) {
 		changed = true
@@ -455,6 +487,9 @@ func normalizeDataForSave(data Data) (Data, bool, error) {
 	}
 	if data.ExtraInfoTemplates == nil {
 		data.ExtraInfoTemplates = []task.ExtraInfoTemplate{}
+	}
+	if data.QuickInputs == nil {
+		data.QuickInputs = []quickinput.QuickInput{}
 	}
 	return normalizeData(data, false)
 }
@@ -1092,6 +1127,105 @@ func (repository *Repository) DeleteExtraInfo(id string) error {
 		}
 	}
 	return fmt.Errorf("extra info %q does not exist", id)
+}
+
+func (repository *Repository) ListQuickInputs() ([]quickinput.QuickInput, error) {
+	data, err := repository.Load()
+	if err != nil {
+		return nil, err
+	}
+	return append([]quickinput.QuickInput(nil), data.QuickInputs...), nil
+}
+
+func (repository *Repository) SaveQuickInput(next quickinput.QuickInput) (quickinput.QuickInput, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
+	data, err := repository.Load()
+	if err != nil {
+		return quickinput.QuickInput{}, err
+	}
+	creating := strings.TrimSpace(next.ID) == ""
+	if creating {
+		next, err = quickinput.New(next.Name, next.Content)
+	} else {
+		next, err = quickinput.Normalize(next)
+	}
+	if err != nil {
+		return quickinput.QuickInput{}, err
+	}
+
+	for index, current := range data.QuickInputs {
+		if current.ID == next.ID {
+			data.QuickInputs[index] = next
+			if err := repository.Save(data); err != nil {
+				return quickinput.QuickInput{}, err
+			}
+			return next, nil
+		}
+	}
+	if !creating {
+		return quickinput.QuickInput{}, fmt.Errorf("快捷输入 %q 不存在", next.ID)
+	}
+	data.QuickInputs = append(data.QuickInputs, next)
+	if err := repository.Save(data); err != nil {
+		return quickinput.QuickInput{}, err
+	}
+	return next, nil
+}
+
+func (repository *Repository) DeleteQuickInput(id string) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
+	data, err := repository.Load()
+	if err != nil {
+		return err
+	}
+	id = strings.TrimSpace(id)
+	for index, current := range data.QuickInputs {
+		if current.ID == id {
+			data.QuickInputs = append(data.QuickInputs[:index], data.QuickInputs[index+1:]...)
+			return repository.Save(data)
+		}
+	}
+	return fmt.Errorf("快捷输入 %q 不存在", id)
+}
+
+func (repository *Repository) ReorderQuickInputs(ids []string) ([]quickinput.QuickInput, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
+	data, err := repository.Load()
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) != len(data.QuickInputs) {
+		return nil, fmt.Errorf("快捷输入排序必须包含全部项目")
+	}
+	byID := make(map[string]quickinput.QuickInput, len(data.QuickInputs))
+	for _, current := range data.QuickInputs {
+		byID[current.ID] = current
+	}
+	reordered := make([]quickinput.QuickInput, 0, len(ids))
+	seenIDs := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if _, exists := seenIDs[id]; exists {
+			return nil, fmt.Errorf("快捷输入排序包含重复 ID %q", id)
+		}
+		current, exists := byID[id]
+		if !exists {
+			return nil, fmt.Errorf("快捷输入 %q 不存在", id)
+		}
+		seenIDs[id] = struct{}{}
+		reordered = append(reordered, current)
+	}
+	data.QuickInputs = reordered
+	if err := repository.Save(data); err != nil {
+		return nil, err
+	}
+	return append([]quickinput.QuickInput(nil), reordered...), nil
 }
 
 // ListExtraInfoCatalogues is retained for callers that still consume catalogue names.

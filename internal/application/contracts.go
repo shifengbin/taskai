@@ -1,6 +1,7 @@
 package application
 
 import (
+	"taskai/internal/quickinput"
 	"taskai/internal/settings"
 	"taskai/internal/task"
 	"taskai/internal/terminal"
@@ -33,6 +34,13 @@ type ExtraInfoBinding interface {
 	ListExtraInfos() ([]task.ExtraInfo, error)
 	SaveExtraInfo(info task.ExtraInfo) (task.ExtraInfo, error)
 	DeleteExtraInfo(infoID string) error
+}
+
+type QuickInputBinding interface {
+	ListQuickInputs() ([]quickinput.QuickInput, error)
+	SaveQuickInput(input quickinput.QuickInput) (quickinput.QuickInput, error)
+	DeleteQuickInput(inputID string) error
+	ReorderQuickInputs(inputIDs []string) ([]quickinput.QuickInput, error)
 }
 
 type TerminalBinding interface {

@@ -26,6 +26,10 @@ const bindings = vi.hoisted(() => ({
 	DeleteExtraInfoCatalogue: vi.fn(),
 	DeleteExtraInfoTemplate: vi.fn(),
 	DeleteExtraInfo: vi.fn(),
+	ListQuickInputs: vi.fn(),
+	SaveQuickInput: vi.fn(),
+	DeleteQuickInput: vi.fn(),
+	ReorderQuickInputs: vi.fn(),
 	ListLifecycleCommands: vi.fn(),
 	SaveLifecycleCommand: vi.fn(),
 	DeleteLifecycleCommand: vi.fn(),
@@ -124,6 +128,7 @@ describe('App confirmation flows', () => {
 		bindings.ListExtraInfoCatalogues.mockResolvedValue([])
 		bindings.ListExtraInfoTemplates.mockResolvedValue([])
 		bindings.ListExtraInfos.mockResolvedValue([])
+		bindings.ListQuickInputs.mockResolvedValue([])
 		bindings.ListLifecycleCommands.mockResolvedValue([])
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.ListLifecyclePresets.mockResolvedValue([])
@@ -144,7 +149,7 @@ describe('App confirmation flows', () => {
     })
   })
 
-  it('结束任务在确认前不会调用后端，并在确认后执行', async () => {
+	it('结束任务在确认前不会调用后端，并在确认后执行', async () => {
     const user = userEvent.setup()
     render(<App/>)
 
@@ -173,6 +178,85 @@ describe('App confirmation flows', () => {
 		unmount()
 
 		expect(terminalSessionRegistry.disposeAll).toHaveBeenCalledOnce()
+	})
+
+	it('在信息管理中管理可重复名称的快捷输入', async () => {
+		const user = userEvent.setup()
+		bindings.ListQuickInputs.mockResolvedValue([
+			{id: 'quick-1', name: '部署', content: 'git status'},
+			{id: 'quick-2', name: '部署', content: 'git push origin main'},
+		])
+		bindings.SaveQuickInput.mockImplementation(async (input) => ({...input, id: input.id || 'quick-3'}))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		expect(screen.getByRole('dialog', {name: '信息管理'})).toBeInTheDocument()
+		expect(screen.getByRole('tab', {name: '额外信息管理'})).toHaveAttribute('data-state', 'active')
+		await user.click(screen.getByRole('tab', {name: '快捷输入管理'}))
+		expect(screen.getAllByText('部署')).toHaveLength(2)
+		expect(screen.getByText('git push origin main')).toBeInTheDocument()
+
+		await user.type(screen.getByRole('textbox', {name: '搜索快捷输入'}), 'push')
+		expect(screen.queryByText('git status')).not.toBeInTheDocument()
+		expect(screen.getByText('git push origin main')).toBeInTheDocument()
+
+		await user.click(screen.getByRole('button', {name: '新增快捷输入'}))
+		const editor = screen.getByRole('dialog', {name: '新增快捷输入'})
+		await user.type(within(editor).getByRole('textbox', {name: '名称'}), '部署')
+		await user.type(within(editor).getByRole('textbox', {name: '内容'}), 'npm run deploy')
+		expect(within(editor).getByText('已用 14 个字符')).toBeInTheDocument()
+		await user.click(within(editor).getByRole('button', {name: '保存快捷输入'}))
+
+		await waitFor(() => expect(bindings.SaveQuickInput).toHaveBeenCalledWith({id: '', name: '部署', content: 'npm run deploy'}))
+	})
+
+	it('快捷输入为空时提示空状态，并校验名称和非空白内容', async () => {
+		const user = userEvent.setup()
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('tab', {name: '快捷输入管理'}))
+		expect(screen.getByText('暂无快捷输入。')).toBeInTheDocument()
+
+		await user.click(screen.getByRole('button', {name: '新增快捷输入'}))
+		const editor = screen.getByRole('dialog', {name: '新增快捷输入'})
+		await user.click(within(editor).getByRole('button', {name: '保存快捷输入'}))
+		expect(screen.getByText('快捷输入名称不能为空')).toBeInTheDocument()
+
+		await user.type(within(editor).getByRole('textbox', {name: '名称'}), '状态')
+		await user.type(within(editor).getByRole('textbox', {name: '内容'}), '   ')
+		await user.click(within(editor).getByRole('button', {name: '保存快捷输入'}))
+		expect(screen.getByText('快捷输入内容必须包含非空白字符')).toBeInTheDocument()
+		expect(bindings.SaveQuickInput).not.toHaveBeenCalled()
+	})
+
+	it('编辑、排序和删除快捷输入均立即持久化', async () => {
+		const user = userEvent.setup()
+		const initialInputs = [
+			{id: 'quick-1', name: '状态', content: 'git status'},
+			{id: 'quick-2', name: '部署', content: 'git push origin main'},
+		]
+		bindings.ListQuickInputs.mockResolvedValue(initialInputs)
+		bindings.SaveQuickInput.mockImplementation(async (input) => input)
+		bindings.ReorderQuickInputs.mockImplementation(async (ids: string[]) => ids.map((id) => initialInputs.find((input) => input.id === id)!))
+		bindings.DeleteQuickInput.mockResolvedValue(undefined)
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('tab', {name: '快捷输入管理'}))
+		await user.click(screen.getAllByRole('button', {name: '编辑'})[0])
+		const editor = screen.getByRole('dialog', {name: '编辑快捷输入'})
+		await user.clear(within(editor).getByRole('textbox', {name: '内容'}))
+		await user.type(within(editor).getByRole('textbox', {name: '内容'}), 'git diff')
+		await user.click(within(editor).getByRole('button', {name: '保存快捷输入'}))
+		await waitFor(() => expect(bindings.SaveQuickInput).toHaveBeenCalledWith({id: 'quick-1', name: '状态', content: 'git diff'}))
+
+		await user.click(screen.getByRole('button', {name: '下移快捷输入 状态'}))
+		await waitFor(() => expect(bindings.ReorderQuickInputs).toHaveBeenCalledWith(['quick-2', 'quick-1']))
+		await user.click(screen.getByRole('button', {name: '删除快捷输入 部署'}))
+		const confirmation = screen.getByRole('dialog', {name: '删除快捷输入？'})
+		await user.click(within(confirmation).getByRole('button', {name: '删除快捷输入'}))
+		await waitFor(() => expect(bindings.DeleteQuickInput).toHaveBeenCalledWith('quick-2'))
 	})
 
 	it('没有活动终端时阻止文件拖放的默认导航', () => {
@@ -646,7 +730,7 @@ describe('App confirmation flows', () => {
     render(<App/>)
 
     await screen.findByRole('navigation', {name: '任务和终端'})
-    expect(screen.getByRole('button', {name: '额外信息管理'})).toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '信息管理'})).toBeInTheDocument()
     if (!closeRequested) {
       throw new Error('未注册原生关闭请求监听器')
     }
@@ -670,8 +754,8 @@ describe('App confirmation flows', () => {
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
       taskTreeWidth: 360,
-      colorScheme: 'dark',
-      shellPath: '/bin/sh',
+		colorScheme: 'dark',
+		shellPath: '/bin/sh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
 		statusManagementMode: 'title-change',
@@ -699,8 +783,8 @@ describe('App confirmation flows', () => {
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
       taskTreeWidth: 360,
-      colorScheme: 'light',
-      shellPath: '/bin/zsh',
+		colorScheme: 'light',
+		shellPath: '/bin/zsh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
 		statusManagementMode: 'title-change',
@@ -725,8 +809,8 @@ describe('App confirmation flows', () => {
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
       taskTreeWidth: 360,
-      colorScheme: 'light',
-      shellPath: '/custom/shell',
+		colorScheme: 'light',
+		shellPath: '/custom/shell',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
 		statusManagementMode: 'title-change',
@@ -1487,7 +1571,7 @@ describe('App confirmation flows', () => {
 		})
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '分类模板'}))
 		expect(screen.getByText('内置 Git')).toBeInTheDocument()
 		expect(screen.getByRole('button', {name: '删除模板 git'})).toBeDisabled()
@@ -1518,7 +1602,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
 		const repository = screen.getByRole('textbox', {name: '仓库地址'})
 		await user.type(repository, '  git@gitlab.jiandan100.cn:webdev/interact-study.git  ')
@@ -1542,7 +1626,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
 		const projectName = screen.getByRole('textbox', {name: '项目名称'})
 		const repository = screen.getByRole('textbox', {name: '仓库地址'})
@@ -1572,7 +1656,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
 		await user.type(screen.getByRole('textbox', {name: '仓库地址'}), 'git@gitlab.jiandan100.cn:webdev/interact-study.git')
 
@@ -1589,7 +1673,7 @@ describe('App confirmation flows', () => {
 		bindings.SaveExtraInfo.mockImplementation(async (draft) => ({...draft, id: 'git-info'}))
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		const templateSection = screen.getByRole('button', {name: '分类模板'})
 		expect(templateSection).toHaveAttribute('aria-expanded', 'false')
 		await user.click(screen.getByRole('button', {name: '新增模板'}))
@@ -1629,7 +1713,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
 		expect(screen.getByRole('combobox', {name: '选择模板'})).toHaveTextContent('Git')
 		expect(screen.getByRole('textbox', {name: '项目名称'})).toBeInTheDocument()
@@ -1643,7 +1727,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		const actions = screen.getByTestId('extra-info-manager-actions')
 		expect(within(actions).getByRole('button', {name: '新增模板'})).toBeInTheDocument()
 		expect(within(actions).getByRole('button', {name: '新增信息'})).toBeEnabled()
@@ -1657,7 +1741,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增模板'}))
 		expect(screen.getByRole('dialog', {name: '新增模板'})).toHaveClass('max-w-2xl')
 		await user.click(screen.getByRole('button', {name: '取消'}))
@@ -1671,7 +1755,7 @@ describe('App confirmation flows', () => {
 		const user = userEvent.setup()
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增模板'}))
 		await user.click(screen.getByRole('button', {name: '新增参数'}))
 		await user.click(screen.getByLabelText('参数 1 必填'))
@@ -1693,7 +1777,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增模板'}))
 		const templateBasicFields = screen.getByTestId('extra-info-template-basic-fields')
 		expect(getComputedStyle(templateBasicFields).display).toBe('grid')
@@ -1740,7 +1824,7 @@ describe('App confirmation flows', () => {
 		})
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
 		await user.type(screen.getByRole('textbox', {name: '项目名称'}), 'API 服务')
 		await user.click(screen.getByRole('button', {name: '新增动态参数'}))
@@ -1754,7 +1838,7 @@ describe('App confirmation flows', () => {
 			parameters: [expect.objectContaining({key: 'environment', displayName: '环境', required: true, value: 'production'})],
 		})))
 		await user.click(await screen.findByRole('button', {name: '关闭'}))
-		await waitFor(() => expect(screen.queryByRole('dialog', {name: '额外信息管理'})).not.toBeInTheDocument())
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '信息管理'})).not.toBeInTheDocument())
 		await user.click(await screen.findByRole('button', {name: '新建任务'}))
 		await user.click(screen.getByRole('checkbox', {name: 'API 服务'}))
 		expect(screen.getByRole('textbox', {name: '环境'})).toHaveValue('production')
@@ -1777,7 +1861,7 @@ describe('App confirmation flows', () => {
 		])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		await user.click(screen.getByRole('button', {name: '新增信息'}))
 		await user.click(screen.getByRole('combobox', {name: '选择模板'}))
 		await user.click(screen.getByRole('option', {name: 'Git（git）'}))
@@ -1816,7 +1900,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		const gitGroup = screen.getByRole('button', {name: /Git.*git/})
 		const issueGroup = screen.getByRole('button', {name: /缺陷.*issue/})
 		expect(gitGroup).toHaveAttribute('aria-expanded', 'true')
@@ -1842,7 +1926,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		expect(screen.getByRole('button', {name: /Git.*git/})).toBeInTheDocument()
 		expect(screen.queryByRole('button', {name: /缺陷.*issue/})).not.toBeInTheDocument()
 		await user.type(screen.getByRole('textbox', {name: '搜索信息'}), '不存在')
@@ -1861,7 +1945,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		const templateSection = screen.getByRole('button', {name: /分类模板/})
 		expect(templateSection).toHaveAttribute('aria-expanded', 'false')
 		await user.click(templateSection)
@@ -1893,7 +1977,7 @@ describe('App confirmation flows', () => {
 		}])
 		render(<App/>)
 
-		await user.click(await screen.findByRole('button', {name: '额外信息管理'}))
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
 		const content = screen.getByTestId('extra-info-manager-content')
 		const scrollRegion = within(content).getByTestId('extra-info-manager-scroll')
 		await user.click(within(content).getByRole('button', {name: '分类模板'}))

@@ -33,6 +33,27 @@ export namespace application {
 
 }
 
+export namespace quickinput {
+	
+	export class QuickInput {
+	    id: string;
+	    name: string;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new QuickInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.content = source["content"];
+	    }
+	}
+
+}
+
 export namespace settings {
 	
 	export class LifecycleCommand {
