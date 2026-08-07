@@ -59,4 +59,3 @@ TBD - created by archiving change fix-task-list-scrolling. Update Purpose after 
 #### Scenario: 从翻转后的菜单执行操作
 - **WHEN** 用户从因视口空间不足而翻转或限制高度的任务菜单中选择一个可用操作
 - **THEN** 系统执行与同一菜单在普通位置打开时相同的任务操作，并关闭菜单
-
