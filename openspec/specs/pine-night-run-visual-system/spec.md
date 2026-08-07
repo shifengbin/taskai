@@ -84,11 +84,15 @@ TBD - created by archiving change redesign-pine-night-run-interface. Update Purp
 - **THEN** 菜单保持既有定位、内容和关闭规则，且该任务行的上下文操作控件在菜单打开期间保持显示
 
 ### Requirement: 覆盖层与表单控件的一致视觉
-系统 SHALL 为任务编辑、额外信息管理和编辑、模板编辑、设置、状态帮助、菜单项编辑、结束确认、退出确认、菜单、Popover、Snackbar、Alert、Accordion、Tab、Chip、TextField、Checkbox 和 Switch 提供一致的快门波普视觉外壳与状态样式：粗描边、硬投影、可见焦点与清晰的操作层级。该外壳不得改变任何覆盖层的打开、关闭、提交、校验或删除逻辑。
+系统 SHALL 为任务编辑、额外信息管理和编辑、模板编辑、设置、状态帮助、菜单项编辑、结束确认、退出确认、菜单、Popover、Snackbar、Alert、Accordion、Tab、Chip、TextField、Checkbox 和 Switch 提供一致的快门波普视觉外壳与状态样式：粗描边、硬投影、可见焦点与清晰的操作层级。对话框、Popover、菜单、Snackbar/Toast、Tooltip 以及任务树右键菜单和悬浮描述等覆盖层内容 MUST 使用不透明的 overlay 表面，不得透出后方任务列表、网格或终端内容，以保证文字和控件可读性。该外壳不得改变任何覆盖层的打开、关闭、提交、校验或删除逻辑。
 
 #### Scenario: 打开新建任务对话框
 - **WHEN** 用户打开新建任务对话框
 - **THEN** 对话框必须显示快门波普标题带、粗描边表单表面、可见焦点和区分取消与创建操作的按钮层级
+
+#### Scenario: 查看覆盖层内容
+- **WHEN** 用户打开对话框、Popover、菜单、Toast、Tooltip 或任务树右键菜单，或将鼠标悬停在任务描述上
+- **THEN** 覆盖层内容必须使用不透明表面，背景内容不得透过面板干扰文字、图标或操作控件的阅读
 
 #### Scenario: 填写内容很长的新建或编辑任务
 - **WHEN** 任务模板字段、额外信息或生命周期命令链使任务表单内容超过可用视口高度
