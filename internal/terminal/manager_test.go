@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestManagerRoutesOutputAndKeepsTasksIsolated(t *testing.T) {
@@ -50,6 +51,133 @@ func TestManagerRoutesOutputAndKeepsTasksIsolated(t *testing.T) {
 	}
 	if err := manager.Write("task-a", second.ID, "wrong"); err == nil {
 		t.Fatal("不应允许跨任务写入终端")
+	}
+}
+
+func TestManagerPublishesOnlyCompleteUTF8OutputChunks(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 4)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+
+	output := []byte("before 中 after")
+	splitAt := len("before ") + 1
+	backend.session(created.ID).emitBytes(output[:splitAt])
+	backend.session(created.ID).emitBytes(output[splitAt:])
+
+	combined := ""
+	for range 2 {
+		event := receiveEvent(t, events)
+		if event.Type != "output" {
+			t.Fatalf("事件类型 = %q，期望 output", event.Type)
+		}
+		if !utf8.ValidString(event.Data) {
+			t.Fatalf("输出事件包含不完整 UTF-8: %q", event.Data)
+		}
+		combined += event.Data
+	}
+	if combined != string(output) {
+		t.Fatalf("合并输出 = %q，期望 %q", combined, string(output))
+	}
+}
+
+func TestManagerPreservesFragmentedEmojiAndANSIOutput(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 8)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+
+	output := []byte("\x1b[36m🙂\x1b[0m")
+	splitAt := len("\x1b[36m") + 1
+	backend.session(created.ID).emitBytes(output[:splitAt])
+	backend.session(created.ID).emitBytes(output[splitAt : splitAt+2])
+	backend.session(created.ID).emitBytes(output[splitAt+2:])
+	if err := manager.Close(created.TaskID, created.ID); err != nil {
+		t.Fatalf("关闭终端: %v", err)
+	}
+
+	received := receiveEventsThroughExit(t, events)
+	combined := ""
+	for index, event := range received {
+		if event.Type != "output" {
+			continue
+		}
+		if !utf8.ValidString(event.Data) {
+			t.Fatalf("第 %d 个输出事件包含不完整 UTF-8: %q", index, event.Data)
+		}
+		combined += event.Data
+	}
+	if combined != string(output) {
+		t.Fatalf("合并输出 = %q，期望 %q", combined, string(output))
+	}
+	if received[len(received)-1].Type != "exited" {
+		t.Fatalf("最后一个事件 = %q，期望 exited", received[len(received)-1].Type)
+	}
+}
+
+func TestManagerFlushesIncompleteUTF8BeforeExit(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 8)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+
+	backend.session(created.ID).emitBytes([]byte{0xe4, 0xb8})
+	if err := manager.Close(created.TaskID, created.ID); err != nil {
+		t.Fatalf("关闭终端: %v", err)
+	}
+
+	received := receiveEventsThroughExit(t, events)
+	outputIndex := -1
+	exitIndex := -1
+	for index, event := range received {
+		switch event.Type {
+		case "output":
+			if event.Data != string(utf8.RuneError) {
+				t.Fatalf("残留字节输出 = %q，期望替换字符", event.Data)
+			}
+			outputIndex = index
+		case "exited":
+			exitIndex = index
+		}
+	}
+	if outputIndex == -1 || exitIndex == -1 || outputIndex > exitIndex {
+		t.Fatalf("输出和退出事件顺序错误: %#v", received)
+	}
+}
+
+func TestManagerFlushesIncompleteUTF8BeforeUnexpectedReadError(t *testing.T) {
+	readErr := errors.New("读取失败")
+	events := make(chan Event, 4)
+	manager := NewManager(nil, func(event Event) { events <- event })
+	managed := &managedSession{
+		info:    Info{ID: "terminal-1", TaskID: "task-a"},
+		session: &singleReadSession{id: "terminal-1", data: []byte{0xe4, 0xb8}, err: readErr},
+		done:    make(chan struct{}),
+	}
+
+	go manager.watch(managed)
+
+	received := receiveEventsThroughExit(t, events)
+	if len(received) != 3 {
+		t.Fatalf("事件数量 = %d，期望 3: %#v", len(received), received)
+	}
+	if received[0].Type != "output" || received[0].Data != string(utf8.RuneError) {
+		t.Fatalf("第一个事件 = %#v，期望替换字符输出", received[0])
+	}
+	if received[1].Type != "error" || received[1].Data != readErr.Error() {
+		t.Fatalf("第二个事件 = %#v，期望读取错误", received[1])
+	}
+	if received[2].Type != "exited" {
+		t.Fatalf("第三个事件 = %#v，期望 exited", received[2])
 	}
 }
 
@@ -286,6 +414,18 @@ func receiveEvent(t *testing.T, events <-chan Event) Event {
 	}
 }
 
+func receiveEventsThroughExit(t *testing.T, events <-chan Event) []Event {
+	t.Helper()
+	received := make([]Event, 0, 4)
+	for {
+		event := receiveEvent(t, events)
+		received = append(received, event)
+		if event.Type == "exited" {
+			return received
+		}
+	}
+}
+
 type fakeBackend struct {
 	mu       sync.Mutex
 	sessions map[string]*fakeSession
@@ -334,6 +474,31 @@ type fakeSession struct {
 	closeOnce  sync.Once
 }
 
+type singleReadSession struct {
+	id   string
+	data []byte
+	err  error
+	read bool
+}
+
+func (session *singleReadSession) ID() string { return session.id }
+
+func (session *singleReadSession) Read(buffer []byte) (int, error) {
+	if session.read {
+		return 0, io.EOF
+	}
+	session.read = true
+	return copy(buffer, session.data), session.err
+}
+
+func (session *singleReadSession) Write(data []byte) (int, error) { return len(data), nil }
+
+func (session *singleReadSession) Resize(uint16, uint16) error { return nil }
+
+func (session *singleReadSession) Wait() error { return nil }
+
+func (session *singleReadSession) Close() error { return nil }
+
 func newFakeSession(id string) *fakeSession {
 	reader, writer := io.Pipe()
 	return &fakeSession{id: id, reader: reader, writer: writer}
@@ -370,6 +535,8 @@ func (session *fakeSession) Close() error {
 }
 
 func (session *fakeSession) emit(data string) { _, _ = session.writer.Write([]byte(data)) }
+
+func (session *fakeSession) emitBytes(data []byte) { _, _ = session.writer.Write(data) }
 
 func (session *fakeSession) input() string {
 	session.mu.Lock()

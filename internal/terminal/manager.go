@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"sync"
+	"unicode/utf8"
 )
 
 var ErrTaskClosing = errors.New("任务正在结束，不能新增终端")
@@ -343,23 +344,59 @@ func (manager *Manager) watch(managed *managedSession) {
 	}()
 
 	buffer := make([]byte, 4096)
+	output := terminalOutputFramer{}
 	for {
 		count, err := managed.session.Read(buffer)
 		if count > 0 {
-			manager.publish(Event{
-				TaskID:     managed.info.TaskID,
-				TerminalID: managed.info.ID,
-				Type:       "output",
-				Data:       string(buffer[:count]),
-			})
+			manager.publishOutput(managed, output.write(buffer[:count]))
 		}
 		if err != nil {
+			manager.publishOutput(managed, output.flush())
 			if !errors.Is(err, io.EOF) && !isExpectedTerminalReadError(err) {
 				manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "error", Data: err.Error()})
 			}
 			return
 		}
 	}
+}
+
+func (manager *Manager) publishOutput(managed *managedSession, data string) {
+	if data == "" {
+		return
+	}
+	manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "output", Data: data})
+}
+
+type terminalOutputFramer struct {
+	pending []byte
+}
+
+func (framer *terminalOutputFramer) write(data []byte) string {
+	combined := append(append([]byte(nil), framer.pending...), data...)
+	framer.pending = framer.pending[:0]
+	output := make([]byte, 0, len(combined))
+	for len(combined) > 0 {
+		if !utf8.FullRune(combined) {
+			framer.pending = append(framer.pending, combined...)
+			break
+		}
+		runeValue, size := utf8.DecodeRune(combined)
+		if runeValue == utf8.RuneError && size == 1 {
+			output = append(output, string(utf8.RuneError)...)
+		} else {
+			output = append(output, combined[:size]...)
+		}
+		combined = combined[size:]
+	}
+	return string(output)
+}
+
+func (framer *terminalOutputFramer) flush() string {
+	if len(framer.pending) == 0 {
+		return ""
+	}
+	framer.pending = framer.pending[:0]
+	return string(utf8.RuneError)
 }
 
 func (manager *Manager) setExitReasonLocked(taskID, terminalID string, reason ExitReason) {
