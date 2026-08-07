@@ -774,7 +774,7 @@ describe('App confirmation flows', () => {
     expect(screen.getByLabelText('颜色模式')).toHaveTextContent('暗色')
   })
 
-  it('在设置中预览终端字体，取消不保存，确认后持久化选择', async () => {
+  it('打开设置时仅显示当前终端字体摘要', async () => {
     const user = userEvent.setup()
     bindings.ListTerminalFonts.mockResolvedValue([
       {family: '', spacing: 'mono'},
@@ -784,14 +784,33 @@ describe('App confirmation flows', () => {
     render(<App/>)
 
     await user.click(await screen.findByRole('button', {name: '设置'}))
+    const summary = await screen.findByRole('button', {name: '终端字体选择，当前为 默认终端字体'})
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('radiogroup', {name: '终端字体'})).not.toBeInTheDocument()
+		expect(screen.getAllByText('中文：终端字体预览')).toHaveLength(1)
+		expect(screen.getAllByText('English: TaskAI $ git status')).toHaveLength(1)
+  })
+
+  it('选择终端字体后收起候选列表，取消不保存，确认后才持久化选择', async () => {
+    const user = userEvent.setup()
+    bindings.ListTerminalFonts.mockResolvedValue([
+      {family: '', spacing: 'mono'},
+      {family: 'Fira Code', spacing: 'mono'},
+      {family: 'Noto Sans Mono CJK SC', spacing: 'dual'},
+    ])
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(await screen.findByRole('button', {name: '终端字体选择，当前为 默认终端字体'}))
     expect(await screen.findByRole('radiogroup', {name: '终端字体'})).toBeInTheDocument()
-		expect(screen.getAllByText('中文：终端字体预览').length).toBeGreaterThan(0)
-		expect(screen.getAllByText('English: TaskAI $ git status').length).toBeGreaterThan(0)
     await user.click(screen.getByRole('radio', {name: '选择终端字体 Fira Code'}))
+    expect(screen.queryByRole('radiogroup', {name: '终端字体'})).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '终端字体选择，当前为 Fira Code'})).toHaveAttribute('aria-expanded', 'false')
     await user.click(screen.getByRole('button', {name: '取消'}))
     expect(bindings.SaveSettings).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(await screen.findByRole('button', {name: '终端字体选择，当前为 默认终端字体'}))
     await user.click(screen.getByRole('radio', {name: '选择终端字体 Fira Code'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
 
@@ -824,28 +843,36 @@ describe('App confirmation flows', () => {
     expect(terminalSessionRegistry.setFontSize).toHaveBeenCalledWith(16)
   })
 
-	it('字体发现失败时仍保留可选择的默认终端字体', async () => {
+	it('字体发现失败时仍显示可展开的默认终端字体摘要', async () => {
 		const user = userEvent.setup()
 		bindings.ListTerminalFonts.mockRejectedValue(new Error('font discovery unavailable'))
 		render(<App/>)
 
 		await user.click(await screen.findByRole('button', {name: '设置'}))
 		expect(await screen.findByText('系统字体不可用，已保留默认终端字体。')).toBeInTheDocument()
-		expect(screen.getByRole('radio', {name: '选择终端字体 默认终端字体'})).toBeChecked()
+		const summary = screen.getByRole('button', {name: '终端字体选择，当前为 默认终端字体'})
+		expect(summary).toHaveAttribute('aria-expanded', 'false')
+		expect(screen.queryByRole('radiogroup', {name: '终端字体'})).not.toBeInTheDocument()
+		await user.click(summary)
+		expect(await screen.findByRole('radio', {name: '选择终端字体 默认终端字体'})).toBeChecked()
 	})
 
-  it('保存的字体不再可用时保留当前字体选项', async () => {
-    const user = userEvent.setup()
-    bindings.GetSettings.mockResolvedValue({
-      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', terminalFontFamily: 'Removed Mono', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+	it('保存的不可用字体仍显示在可展开的当前字体摘要中', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+		  workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', terminalFontFamily: 'Removed Mono', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
     })
     bindings.ListTerminalFonts.mockResolvedValue([{family: '', spacing: 'mono'}])
     render(<App/>)
 
-    await user.click(await screen.findByRole('button', {name: '设置'}))
-    expect(await screen.findByText('当前字体不可用')).toBeInTheDocument()
-    expect(screen.getByRole('radio', {name: '选择终端字体 Removed Mono'})).toBeChecked()
-  })
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		expect(await screen.findByText('当前字体不可用')).toBeInTheDocument()
+		const summary = screen.getByRole('button', {name: '终端字体选择，当前为 Removed Mono'})
+		expect(summary).toHaveAttribute('aria-expanded', 'false')
+		expect(screen.queryByRole('radiogroup', {name: '终端字体'})).not.toBeInTheDocument()
+		await user.click(summary)
+		expect(await screen.findByRole('radio', {name: '选择终端字体 Removed Mono'})).toBeChecked()
+	})
 
   it('选择探测到的 Shell 并保存', async () => {
     const user = userEvent.setup()

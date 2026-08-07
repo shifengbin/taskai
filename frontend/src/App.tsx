@@ -157,6 +157,7 @@ export default function App() {
 	const [terminalFontCandidates, setTerminalFontCandidates] = useState<TerminalFontCandidate[]>([defaultTerminalFontCandidate])
 	const [terminalFontsLoading, setTerminalFontsLoading] = useState(false)
 	const [terminalFontsError, setTerminalFontsError] = useState(false)
+	const [terminalFontPickerExpanded, setTerminalFontPickerExpanded] = useState(false)
 	const fontOptions = useMemo(() => {
 		const selectedFamily = settingsDraft?.terminalFontFamily?.trim() ?? ''
 		if (!selectedFamily || terminalFontCandidates.some((candidate) => candidate.family === selectedFamily)) {
@@ -164,6 +165,7 @@ export default function App() {
 		}
 		return [...terminalFontCandidates, {family: selectedFamily, spacing: 'unavailable' as const}]
 	}, [settingsDraft?.terminalFontFamily, terminalFontCandidates])
+	const selectedTerminalFont = fontOptions.find((candidate) => candidate.family === (settingsDraft?.terminalFontFamily?.trim() ?? '')) ?? defaultTerminalFontCandidate
 	const terminalFontSizeDraft = normalizeTerminalFontSize(settingsDraft?.terminalFontSize)
 	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
   const [statusHelpOpen, setStatusHelpOpen] = useState(false)
@@ -950,6 +952,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   const closeSettingsDialog = () => {
     setSettingsDialogOpen(false)
     setSettingsTab('workspace')
+		setTerminalFontPickerExpanded(false)
 		setStatusHelpOpen(false)
     closeTaskMenuItemEditor()
   }
@@ -1163,6 +1166,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                   setTaskMenuItemDraft(undefined)
                   setTaskMenuItemEditorMode(undefined)
                   setSettingsTab('workspace')
+				  setTerminalFontPickerExpanded(false)
 					setStatusHelpOpen(false)
 				  setTaskMenuItemEditorTab('basic')
 				  setScriptHelpAnchor(undefined)
@@ -1676,31 +1680,53 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					<div className="grid gap-2">
 						{terminalFontsLoading && <span role="status" className="text-sm text-snap-muted">正在读取系统字体…</span>}
 						{terminalFontsError && <span role="status" className="text-sm text-snap-muted">系统字体不可用，已保留默认终端字体。</span>}
-						<div role="radiogroup" aria-label="终端字体" className="grid max-h-72 gap-2 overflow-y-auto pr-1">
-							{fontOptions.map((candidate) => {
-								const selected = (settingsDraft?.terminalFontFamily?.trim() ?? '') === candidate.family
-								const name = terminalFontCandidateName(candidate)
-								return <button
-									key={`${candidate.family}-${candidate.spacing}`}
-									type="button"
-									role="radio"
-									aria-label={`选择终端字体 ${name}`}
-									aria-checked={selected}
-									onClick={() => updateSettingsDraft({terminalFontFamily: candidate.family})}
-									className={cn('grid w-full gap-2 rounded-snap border-2 p-3 text-left shadow-snap-sm outline-none transition-[border-color,box-shadow,transform] focus-visible:border-snap-cobalt focus-visible:ring-[3px] focus-visible:ring-snap-cobalt', selected ? 'border-snap-cobalt bg-snap-cobalt/10' : 'border-snap-outline bg-snap-surface hover:-translate-x-px hover:-translate-y-px hover:shadow-snap')}
-								>
-									<div className="flex items-center justify-between gap-3">
-										<span className="min-w-0 truncate text-sm font-bold text-snap-ink">{name}</span>
-										<SnapChip variant={candidate.spacing === 'unavailable' ? 'amber' : 'muted'}>{terminalFontSpacingLabel(candidate.spacing)}</SnapChip>
+						<SnapAccordion type="single" collapsible value={terminalFontPickerExpanded ? 'terminal-fonts' : ''} onValueChange={(value) => setTerminalFontPickerExpanded(value === 'terminal-fonts')}>
+							<SnapAccordionItem value="terminal-fonts">
+								<SnapAccordionTrigger aria-label={`终端字体选择，当前为 ${terminalFontCandidateName(selectedTerminalFont)}`}>
+									<div className="grid w-full gap-2 pr-2">
+										<div className="flex items-center justify-between gap-3">
+											<span className="min-w-0 truncate text-sm font-bold text-snap-ink">{terminalFontCandidateName(selectedTerminalFont)}</span>
+											<SnapChip variant={selectedTerminalFont.spacing === 'unavailable' ? 'amber' : 'muted'}>{terminalFontSpacingLabel(selectedTerminalFont.spacing)}</SnapChip>
+										</div>
+										<div className="grid gap-0.5 text-sm leading-5 text-snap-ink" style={{fontFamily: resolveTerminalFontFamily(selectedTerminalFont.family), fontSize: `${terminalFontSizeDraft}px`}}>
+											<span>中文：终端字体预览</span>
+											<span>English: TaskAI $ git status</span>
+											<span>┌─ ~/taskai $ █</span>
+										</div>
 									</div>
-									<div className="grid gap-0.5 text-sm leading-5 text-snap-ink" style={{fontFamily: resolveTerminalFontFamily(candidate.family), fontSize: `${terminalFontSizeDraft}px`}}>
-										<span>中文：终端字体预览</span>
-										<span>English: TaskAI $ git status</span>
-										<span>┌─ ~/taskai $ █</span>
+								</SnapAccordionTrigger>
+								<SnapAccordionContent>
+									<div role="radiogroup" aria-label="终端字体" className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+										{fontOptions.map((candidate) => {
+											const selected = (settingsDraft?.terminalFontFamily?.trim() ?? '') === candidate.family
+											const name = terminalFontCandidateName(candidate)
+											return <button
+												key={`${candidate.family}-${candidate.spacing}`}
+												type="button"
+												role="radio"
+												aria-label={`选择终端字体 ${name}`}
+												aria-checked={selected}
+												onClick={() => {
+													updateSettingsDraft({terminalFontFamily: candidate.family})
+													setTerminalFontPickerExpanded(false)
+												}}
+												className={cn('grid w-full gap-2 rounded-snap border-2 p-3 text-left shadow-snap-sm outline-none transition-[border-color,box-shadow,transform] focus-visible:border-snap-cobalt focus-visible:ring-[3px] focus-visible:ring-snap-cobalt', selected ? 'border-snap-cobalt bg-snap-cobalt/10' : 'border-snap-outline bg-snap-surface hover:-translate-x-px hover:-translate-y-px hover:shadow-snap')}
+											>
+												<div className="flex items-center justify-between gap-3">
+													<span className="min-w-0 truncate text-sm font-bold text-snap-ink">{name}</span>
+													<SnapChip variant={candidate.spacing === 'unavailable' ? 'amber' : 'muted'}>{terminalFontSpacingLabel(candidate.spacing)}</SnapChip>
+												</div>
+												<div className="grid gap-0.5 text-sm leading-5 text-snap-ink" style={{fontFamily: resolveTerminalFontFamily(candidate.family), fontSize: `${terminalFontSizeDraft}px`}}>
+													<span>中文：终端字体预览</span>
+													<span>English: TaskAI $ git status</span>
+													<span>┌─ ~/taskai $ █</span>
+												</div>
+											</button>
+										})}
 									</div>
-								</button>
-							})}
-						</div>
+								</SnapAccordionContent>
+							</SnapAccordionItem>
+						</SnapAccordion>
 					</div>
 				</Field>
 				<Field label="终端字号">
