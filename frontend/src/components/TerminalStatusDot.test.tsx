@@ -19,4 +19,11 @@ describe('TerminalStatusDot', () => {
     rerender(<TerminalStatusDot status="error"/>)
     expect(screen.getByRole('status', {name: '终端状态：异常'})).not.toHaveAttribute('data-pulse')
   })
+
+  it('使用 Nebula 语义色区分未读状态', () => {
+    render(<TerminalStatusDot status="unread" />)
+
+    const unread = screen.getAllByRole('status', {name: '终端状态：未读'}).at(-1)
+    expect(unread).toHaveStyle({backgroundColor: 'var(--snap-violet)'})
+  })
 })

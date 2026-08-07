@@ -133,6 +133,19 @@ html, body, #root {
   backdrop-filter: blur(8px);
 }
 
+.taskai-terminal__header {
+  border-bottom-width: 1px !important;
+  border-color: var(--snap-outline) !important;
+  background: var(--snap-surface) !important;
+  backdrop-filter: blur(12px);
+}
+
+.taskai-terminal__content {
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--snap-outline) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--snap-outline) 24%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
 .taskai-app button,
 .taskai-app [role="button"],
 .taskai-app input,

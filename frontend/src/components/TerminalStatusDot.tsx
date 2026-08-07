@@ -6,12 +6,11 @@ interface TerminalStatusDotProps {
   status: RealtimeStatus
 }
 
-// 快门波普状态点配色（覆盖 design-preview 的绿/紫）：
-// 空闲=墨灰、工作中=钴蓝、未读=琥珀、异常=红。颜色取自令牌，亮暗自适应。
+// Nebula 状态点配色：空闲=蓝灰、工作中=青绿、未读=紫色、异常=红。
 const statusColor: Record<RealtimeStatus, string> = {
   idle: 'var(--snap-muted)',
   working: 'var(--snap-cobalt)',
-  unread: 'var(--snap-amber)',
+  unread: 'var(--snap-violet)',
   error: 'var(--snap-error)',
 }
 

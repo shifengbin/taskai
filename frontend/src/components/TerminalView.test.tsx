@@ -143,6 +143,7 @@ describe('TerminalView', () => {
   it('右侧终端标题栏仅保留始终可见的快捷输入入口', () => {
     render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={vi.fn()} onClose={vi.fn()} />)
 
+    expect(screen.getByTestId('terminal-view-header').parentElement).toHaveStyle({gridTemplateRows: '40px minmax(0, 1fr)'})
     const header = screen.getByTestId('terminal-view-header')
     const actions = screen.getByTestId('terminal-view-actions')
     expect(header).not.toHaveClass('taskai-contextual-container')
@@ -231,12 +232,12 @@ describe('TerminalView', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法插入快捷输入'}))
   })
 
-  it('暗色模式注入快门波普深表面终端底色', () => {
+  it('暗色模式注入 Nebula 深色终端底色', () => {
     const darkRegistry = new TerminalSessionRegistry(vi.fn())
     render(
       <TerminalView mode="dark" terminal={terminal} sessionRegistry={darkRegistry} onResize={vi.fn()} onClose={vi.fn()} />,
     )
-    expect(terminalInstances[0].options.theme?.background).toBe('#16242B')
+    expect(terminalInstances[0].options.theme?.background).toBe('#070A16')
   })
 
   it('挂载活动终端后限制滚屏并自动聚焦 xterm 输入区', () => {
