@@ -140,15 +140,17 @@ describe('TerminalView', () => {
     expect(screen.getByTestId('terminal-view-title-container')).toHaveStyle({flex: '1', minWidth: '0'})
   })
 
-  it('将关闭按钮限定在终端标题栏的上下文操作容器内', () => {
+  it('右侧终端标题栏仅保留始终可见的快捷输入入口', () => {
     render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={vi.fn()} onClose={vi.fn()} />)
 
     const header = screen.getByTestId('terminal-view-header')
     const actions = screen.getByTestId('terminal-view-actions')
-    expect(header).toHaveClass('taskai-contextual-container')
-    expect(actions).toHaveClass('taskai-contextual-actions')
-    expect(actions).toContainElement(within(actions).getByRole('button', {name: '关闭终端'}))
-    expect(actions).not.toContainElement(within(header).getByRole('status', {name: '终端状态：空闲'}))
+    expect(header).not.toHaveClass('taskai-contextual-container')
+    expect(actions).toHaveClass('taskai-terminal__quick-input-actions')
+    expect(actions).not.toHaveClass('taskai-contextual-actions')
+    expect(actions).toContainElement(within(actions).getByRole('button', {name: /^快捷输入（/}))
+    expect(within(header).queryByRole('button', {name: '关闭终端'})).not.toBeInTheDocument()
+    expect(within(header).queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('从终端热键打开搜索并以模拟粘贴插入，不追加 Enter', async () => {

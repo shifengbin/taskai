@@ -1,13 +1,12 @@
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from 'react'
-import {ClipboardPaste, Terminal as TerminalIcon, X} from 'lucide-react'
+import {ClipboardPaste, Terminal as TerminalIcon} from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
-import {terminalDisplayName, terminalRealtimeStatus, type QuickInput, type TerminalRecord} from '../types'
+import {terminalDisplayName, type QuickInput, type TerminalRecord} from '../types'
 import {api} from '../api'
 import {defaultTerminalFontSize} from '../terminal-font-size'
 import {ClipboardGetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
-import {TerminalStatusDot} from './TerminalStatusDot'
 import {IconButton, Input, Popover, PopoverContent, PopoverTrigger} from './ui'
 
 interface TerminalViewProps {
@@ -156,7 +155,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
 
   return (
     <div className="taskai-terminal grid h-full min-w-0" style={{gridTemplateRows: '44px minmax(0, 1fr)'}}>
-      <div className="taskai-terminal__header taskai-contextual-container flex items-center gap-2 border-b-2 border-snap-outline bg-snap-surface px-2" data-testid="terminal-view-header">
+      <div className="taskai-terminal__header flex items-center gap-2 border-b-2 border-snap-outline bg-snap-surface px-2" data-testid="terminal-view-header">
         <TerminalIcon className="h-4 w-4 shrink-0 text-snap-cobalt"/>
         <div data-testid="terminal-view-title-container" style={{flex: 1, minWidth: 0}}>
           <span
@@ -167,9 +166,8 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
             {terminalDisplayName(terminal)}
           </span>
         </div>
-        <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
         {terminal.state === 'active' && (
-          <div className="taskai-contextual-actions flex shrink-0 items-center" data-testid="terminal-view-actions">
+          <div className="taskai-terminal__quick-input-actions flex shrink-0 items-center" data-testid="terminal-view-actions">
             <Popover
               open={quickInputSelectorOpen}
               onOpenChange={(open) => {
@@ -241,9 +239,6 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
                 </div>
               </PopoverContent>
             </Popover>
-            <IconButton aria-label="关闭终端" title="关闭终端" className="h-7 w-7" onClick={onClose}>
-              <X className="h-4 w-4"/>
-            </IconButton>
           </div>
         )}
       </div>
