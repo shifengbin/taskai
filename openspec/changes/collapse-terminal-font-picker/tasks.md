@@ -13,5 +13,5 @@
 ## 3. 验证与合并
 
 - [x] 3.1 在 worktree 中运行受影响的前端测试，并运行 `cd frontend && npm test && npm run build`。
-- [ ] 3.2 将当前基线分支合并到 worktree 分支，解决冲突后再次验证变更。
+- [x] 3.2 将当前基线分支合并到 worktree 分支，解决冲突后再次验证变更。
 - [ ] 3.3 将已验证的 worktree 分支合并回当前分支，并使用 `scripts/` 中适用的编译脚本完成项目编译。
