@@ -3,15 +3,43 @@ import {describe, expect, it} from 'vitest'
 
 const require = createRequire(import.meta.url)
 const config = require('./tailwind.config.cjs') as {
-  theme: {extend: {boxShadow: Record<string, string>}}
+  theme: {
+    extend: {
+      colors: {snap: Record<string, string>}
+      fontFamily: Record<string, string[]>
+      borderRadius: Record<string, string>
+    }
+  }
 }
 
-describe('Snap shadow tokens', () => {
-  it('uses the original Snap hard-shadow hierarchy while preserving the outline color', () => {
-    expect(config.theme.extend.boxShadow).toMatchObject({
-      'snap-sm': '2px 2px 0 var(--snap-outline)',
-      snap: '3px 3px 0 var(--snap-outline)',
-      'snap-lg': '4px 4px 0 var(--snap-outline)',
+describe('Nebula visual tokens', () => {
+  it('uses the Nebula font stack for body, display, and terminal content', () => {
+    expect(config.theme.extend.fontFamily).toMatchObject({
+      sans: ['"Sora Variable"', '"Noto Sans SC"', 'sans-serif'],
+      display: ['"Chakra Petch Variable"', '"Noto Sans SC"', 'sans-serif'],
+      mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'monospace'],
+    })
+  })
+
+  it('keeps the Nebula surface aliases available to existing UI classes', () => {
+    expect(config.theme.extend.colors.snap).toMatchObject({
+      canvas: 'var(--snap-canvas)',
+      surface: 'var(--snap-surface)',
+      'surface-2': 'var(--snap-surface-2)',
+      detail: 'var(--snap-detail)',
+      ink: 'var(--snap-ink)',
+      muted: 'var(--snap-muted)',
+      outline: 'var(--snap-outline)',
+      cobalt: 'var(--snap-cobalt)',
+      violet: 'var(--snap-violet)',
+    })
+  })
+
+  it('uses Nebula geometry for compact, card, and overlay surfaces', () => {
+    expect(config.theme.extend.borderRadius).toMatchObject({
+      'snap-sm': '8px',
+      snap: '10px',
+      'snap-lg': '10px',
     })
   })
 })
