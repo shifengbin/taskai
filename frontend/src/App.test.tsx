@@ -718,7 +718,7 @@ describe('App confirmation flows', () => {
       throw new Error('未找到任务树的面板容器')
     }
 
-    expect(taskPanel).toHaveStyle({display: 'grid', gridTemplateRows: '42px minmax(0, 1fr)', minHeight: '0'})
+    expect(taskPanel).toHaveStyle({display: 'grid', gridTemplateRows: '40px minmax(0, 1fr)', minHeight: '0'})
     expect(taskTreeRegion).toHaveStyle({minHeight: '0'})
   })
 

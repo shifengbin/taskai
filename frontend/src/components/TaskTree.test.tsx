@@ -690,7 +690,7 @@ describe('TaskTree', () => {
     expect(description).toBe(title.parentElement?.lastElementChild)
   })
 
-  it('选中任务以紫色描边和玻璃层保持 Nebula 卡片层级', () => {
+  it('选中任务以青色描边和玻璃层保持 Nebula 卡片层级', () => {
     render(
       <TaskTree
         {...({
@@ -713,7 +713,7 @@ describe('TaskTree', () => {
 
     expect(screen.getByText('整理发布说明').closest('[data-task-id]')).toHaveAttribute('data-task-selected', 'true')
     expect(appStyles).toContain('.taskai-task-row[data-task-selected="true"]')
-    expect(appStyles).toContain('border-color: var(--snap-violet);')
+    expect(appStyles).toContain('border-color: var(--snap-cobalt);')
     expect(appStyles).not.toContain('box-shadow: 3px 3px 0 var(--snap-cobalt)')
   })
 
