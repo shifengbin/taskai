@@ -17,7 +17,7 @@ const PopoverContent = forwardRef<
       sideOffset={sideOffset}
       className={cn(
         'z-50 w-72 outline-none p-4',
-        'border-2 border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg',
+        'border border-snap-outline rounded-snap bg-snap-surface text-snap-ink shadow-snap-lg backdrop-blur-md',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
         'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',

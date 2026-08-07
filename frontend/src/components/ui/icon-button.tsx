@@ -21,8 +21,7 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 /**
- * Snap IconButton — 32px square (28px at size="sm"), 2px outline, 7px radius,
- * 2px hard shadow, lifts to 3px on hover. Pair with lucide icons at strokeWidth 2.25.
+ * Nebula IconButton — 32px square (28px at size="sm"), fine outline and soft glow.
  */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
   ({className, asChild = false, size = 'md', type, ...props}, ref) => {
@@ -34,7 +33,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         className={cn(
           'inline-grid place-items-center shrink-0',
           iconButtonSizes({size}),
-          'border-2 border-snap-outline rounded-snap bg-snap-surface text-snap-ink',
+          'border border-snap-outline rounded-snap bg-snap-surface text-snap-ink',
           'shadow-snap-sm transition-[transform,box-shadow] duration-150',
           'hover:-translate-x-px hover:-translate-y-px hover:shadow-snap hover:text-snap-cobalt',
           focusRing,

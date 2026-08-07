@@ -10,7 +10,7 @@ const TabsList = forwardRef<
 >(({className, ...props}, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={cn('flex items-stretch w-full border-b-2 border-snap-outline bg-snap-surface', className)}
+    className={cn('flex items-stretch w-full border-b border-snap-outline bg-snap-surface', className)}
     {...props}
   />
 ))
@@ -25,8 +25,8 @@ const TabsTrigger = forwardRef<
     className={cn(
       'inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap',
       'h-10 px-4 font-display font-bold text-xs uppercase tracking-wide text-snap-muted',
-      'border-r-2 border-snap-outline transition-colors last:border-r-0',
-      'data-[state=active]:bg-snap-cobalt data-[state=active]:text-white data-[state=active]:shadow-[inset_0_-2px_0_0_var(--snap-outline)]',
+      'border-r border-snap-outline transition-colors last:border-r-0',
+      'data-[state=active]:bg-snap-surface-2 data-[state=active]:text-snap-ink data-[state=active]:shadow-[inset_0_-2px_0_0_var(--snap-cobalt)]',
       focusRing,
       'disabled:pointer-events-none disabled:opacity-50',
       className,

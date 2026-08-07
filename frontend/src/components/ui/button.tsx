@@ -4,14 +4,14 @@ import {cva, type VariantProps} from 'class-variance-authority'
 import {cn, focusRing} from '../../lib/utils'
 
 /**
- * Snap Button — 2px outline, hard offset shadow, hover lift.
+ * Nebula Button — translucent surface, fine outline, soft glow, hover lift.
  * `coral`/`danger` fills only ever carry bold white text (contrast ≥3:1 large-bold).
  * `primary` (cobalt) passes 4.5:1 for normal text.
  */
 const buttonVariants = cva(
   [
     'inline-flex items-center justify-center gap-2 whitespace-nowrap select-none',
-    'font-sans font-bold leading-none border-2 border-snap-outline rounded-snap',
+    'font-sans font-bold leading-none border border-snap-outline rounded-snap',
     'shadow-snap-sm transition-[transform,box-shadow] duration-150',
     'hover:-translate-x-px hover:-translate-y-px',
     focusRing,

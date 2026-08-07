@@ -12,7 +12,7 @@ const AccordionItem = forwardRef<
   <AccordionPrimitive.Item
     ref={ref}
     className={cn(
-      'border-2 border-snap-outline rounded-snap bg-snap-surface shadow-snap-sm overflow-hidden',
+      'border border-snap-outline rounded-snap bg-snap-surface shadow-snap-sm overflow-hidden',
       className,
     )}
     {...props}

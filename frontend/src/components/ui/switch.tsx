@@ -10,7 +10,7 @@ const Switch = forwardRef<
     ref={ref}
     className={cn(
       'peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center',
-      'border-2 border-snap-outline rounded-snap-sm bg-snap-surface-2 px-0.5',
+      'border border-snap-outline rounded-snap-sm bg-snap-surface-2 px-0.5',
       'transition-colors outline-none',
       'data-[state=checked]:bg-snap-cobalt',
       'focus-visible:ring-[3px] focus-visible:ring-snap-cobalt',
@@ -21,7 +21,7 @@ const Switch = forwardRef<
   >
     <SwitchPrimitive.Thumb
       className={cn(
-        'pointer-events-none block h-4 w-4 border-2 border-snap-outline rounded-snap-sm bg-snap-surface',
+        'pointer-events-none block h-4 w-4 border border-snap-outline rounded-snap-sm bg-snap-surface',
         'shadow-snap-sm transition-transform',
         'data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0',
       )}
