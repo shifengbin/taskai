@@ -2,44 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 快门波普（Snap）令牌 —— 亮色为默认（:root），暗色在 .dark 下覆盖。
+/* Nebula 令牌 —— 亮色为默认（:root），暗色在 .dark 下覆盖。
    根容器由 App 在 colorScheme 为 dark 时附加 .dark class。 */
 :root {
   color-scheme: light;
-  --snap-canvas: #F1F5F4;
-  --snap-surface: #FFFFFF;
-  --snap-surface-2: #E3EAE9;
-  --snap-detail: #FFFFFF;
-  --snap-ink: #10212B;
-  --snap-muted: #5A6E78;
-  --snap-outline: #10212B;
-  --snap-coral: #FF5A4E;
-  --snap-cobalt: #1E66F5;
-  --snap-amber: #F5B700;
-  --snap-violet: #8B5CF6;
-  --snap-error: #E0341B;
-  --snap-dots: rgba(16, 33, 43, 0.06);
+  --snap-canvas: #EDF1FB;
+  --snap-surface: rgba(255, 255, 255, 0.72);
+  --snap-surface-2: rgba(255, 255, 255, 0.5);
+  --snap-detail: rgba(255, 255, 255, 0.78);
+  --snap-ink: #0E1730;
+  --snap-muted: #5A6588;
+  --snap-outline: rgba(20, 40, 90, 0.12);
+  --snap-coral: #0BA5BE;
+  --snap-cobalt: #0BA5BE;
+  --snap-amber: #B97816;
+  --snap-violet: #7C3AED;
+  --snap-error: #E0413E;
+  --snap-dots: rgba(14, 23, 48, 0.08);
+  --snap-shadow: rgba(14, 23, 48, 0.32);
 }
 .dark {
   color-scheme: dark;
-  --snap-canvas: #0B151A;
-  --snap-surface: #16242B;
-  --snap-surface-2: #1F3038;
-  --snap-detail: #16242B;
-  --snap-ink: #E6EEF1;
-  --snap-muted: #8AA0A8;
-  --snap-outline: #E6EEF1;
-  --snap-coral: #FF7A6E;
-  --snap-cobalt: #5C8CFF;
-  --snap-amber: #FFCD33;
-  --snap-violet: #A98CFF;
-  --snap-error: #FF6A5A;
-  --snap-dots: rgba(230, 238, 241, 0.06);
+  --snap-canvas: #070A16;
+  --snap-surface: rgba(22, 29, 54, 0.62);
+  --snap-surface-2: rgba(33, 42, 74, 0.5);
+  --snap-detail: rgba(22, 29, 54, 0.78);
+  --snap-ink: #E8ECFF;
+  --snap-muted: #8A93C2;
+  --snap-outline: rgba(124, 140, 210, 0.18);
+  --snap-coral: #2DE2E6;
+  --snap-cobalt: #2DE2E6;
+  --snap-amber: #F3C969;
+  --snap-violet: #B06BFF;
+  --snap-error: #FF5D73;
+  --snap-dots: rgba(232, 236, 255, 0.08);
+  --snap-shadow: rgba(0, 0, 0, 0.62);
 }
 
 body {
   overflow: hidden;
-  font-family: Nunito, "Noto Sans SC", sans-serif;
+  font-family: "Sora", "Noto Sans SC", sans-serif;
 }
 
 /* —— 快门波普动效（由令牌与每任务 --task-color 驱动） —— */

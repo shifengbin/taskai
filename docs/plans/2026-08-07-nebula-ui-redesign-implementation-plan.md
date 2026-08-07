@@ -47,7 +47,7 @@ git commit -m "test(ui): define Nebula visual contracts"
 
 **Step 1: 引入本地字体资源**
 
-- 添加 Sora 与 Chakra Petch 的本地可变字体资源；JetBrains Mono 继续复用现有资源。
+- 添加 Sora 与 Chakra Petch 的本地字体资源；JetBrains Mono 继续复用现有资源。
 - 在 `main.tsx` 只导入本地字体入口，确保运行时不访问外部 CDN。
 
 **Step 2: 替换 CSS 令牌**

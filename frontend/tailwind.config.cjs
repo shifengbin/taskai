@@ -1,7 +1,6 @@
 /** @type {import('tailwindcss').Config} */
-// 快门波普（Snap）令牌：颜色/字体/圆角/硬投影都引用 CSS 变量 var(--snap-*)，
+// Nebula 令牌：颜色/字体/圆角/阴影都引用 CSS 变量 var(--snap-*)，
 // 由 style.css 的 :root（亮色默认）与 .dark（暗色覆盖）提供具体值。
-// 字体由 @fontsource-variable 自托管（woff2，离线），family 名带 " Variable" 后缀。
 module.exports = {
   darkMode: 'class',
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -24,19 +23,19 @@ module.exports = {
         },
       },
       fontFamily: {
-        display: ['"Hanken Grotesk Variable"', '"Noto Sans SC"', 'sans-serif'],
-        sans: ['"Plus Jakarta Sans Variable"', '"Noto Sans SC"', 'sans-serif'],
+        display: ['"Chakra Petch"', '"Noto Sans SC"', 'sans-serif'],
+        sans: ['"Sora"', '"Noto Sans SC"', 'sans-serif'],
         mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
-        'snap-sm': '6px',
-        snap: '7px',
-        'snap-lg': '9px',
+        'snap-sm': '8px',
+        snap: '10px',
+        'snap-lg': '10px',
       },
       boxShadow: {
-        'snap-sm': '2px 2px 0 var(--snap-outline)',
-        snap: '3px 3px 0 var(--snap-outline)',
-        'snap-lg': '4px 4px 0 var(--snap-outline)',
+        'snap-sm': '0 8px 22px -16px var(--snap-shadow)',
+        snap: '0 14px 34px -20px var(--snap-shadow)',
+        'snap-lg': '0 22px 48px -26px var(--snap-shadow)',
       },
       backgroundImage: {
         'snap-dots': 'radial-gradient(var(--snap-dots) 1.3px, transparent 1.3px)',

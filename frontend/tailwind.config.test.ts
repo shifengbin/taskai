@@ -15,8 +15,8 @@ const config = require('./tailwind.config.cjs') as {
 describe('Nebula visual tokens', () => {
   it('uses the Nebula font stack for body, display, and terminal content', () => {
     expect(config.theme.extend.fontFamily).toMatchObject({
-      sans: ['"Sora Variable"', '"Noto Sans SC"', 'sans-serif'],
-      display: ['"Chakra Petch Variable"', '"Noto Sans SC"', 'sans-serif'],
+      sans: ['"Sora"', '"Noto Sans SC"', 'sans-serif'],
+      display: ['"Chakra Petch"', '"Noto Sans SC"', 'sans-serif'],
       mono: ['"JetBrains Mono Variable"', 'ui-monospace', 'monospace'],
     })
   })

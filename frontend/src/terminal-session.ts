@@ -8,9 +8,8 @@ import {defaultTerminalFontSize, normalizeTerminalFontSize} from './terminal-fon
 
 export const terminalScrollback = 1000
 
-// 快门波普终端主题：直接注入 xterm ITheme。背景取自令牌（亮色=浅次表面 #E3EAE9，
-// 暗色=深表面 #16242B），前景/光标用墨色/钴蓝；ANSI 调色板把成功→钴蓝、关键字→紫罗兰、
-// 提示/错误→珊瑚、警告→琥珀，使原始 PTY 输出整体偏快门波普色系。
+// Nebula 终端主题：直接注入 xterm ITheme。背景/前景/光标和 ANSI 调色板与
+// 亮暗主题令牌保持一致，终端输出仍由现有 PTY 会话管理。
 export type TerminalVisualTheme = ITheme
 
 interface TerminalSession {
@@ -195,52 +194,52 @@ export class TerminalSessionRegistry {
 export function terminalVisualTheme(mode: 'light' | 'dark'): TerminalVisualTheme {
   return mode === 'dark'
     ? {
-        background: '#16242B',
-        foreground: '#E6EEF1',
-        cursor: '#5C8CFF',
-        cursorAccent: '#16242B',
-        selectionBackground: '#5C8CFF40',
+        background: '#070A16',
+        foreground: '#E8ECFF',
+        cursor: '#2DE2E6',
+        cursorAccent: '#070A16',
+        selectionBackground: '#2DE2E640',
         selectionForeground: '#FFFFFF',
-        black: '#16242B',
-        red: '#FF6A5A',
-        green: '#5C8CFF',
-        yellow: '#FFCD33',
-        blue: '#5C8CFF',
-        magenta: '#A98CFF',
-        cyan: '#3FA9C0',
-        white: '#8AA0A8',
-        brightBlack: '#8AA0A8',
+        black: '#070A16',
+        red: '#FF5D73',
+        green: '#34F5C5',
+        yellow: '#F3C969',
+        blue: '#2DE2E6',
+        magenta: '#B06BFF',
+        cyan: '#2DE2E6',
+        white: '#8A93C2',
+        brightBlack: '#8A93C2',
         brightRed: '#FF7A6E',
-        brightGreen: '#5C8CFF',
-        brightYellow: '#FFCD33',
-        brightBlue: '#5C8CFF',
-        brightMagenta: '#A98CFF',
-        brightCyan: '#3FA9C0',
-        brightWhite: '#E6EEF1',
+        brightGreen: '#34F5C5',
+        brightYellow: '#F3C969',
+        brightBlue: '#2DE2E6',
+        brightMagenta: '#C08BFF',
+        brightCyan: '#6FF5F2',
+        brightWhite: '#E8ECFF',
       }
     : {
-        background: '#E3EAE9',
-        foreground: '#10212B',
-        cursor: '#1E66F5',
-        cursorAccent: '#E3EAE9',
-        selectionBackground: '#1E66F540',
+        background: '#EDF1FB',
+        foreground: '#0E1730',
+        cursor: '#0BA5BE',
+        cursorAccent: '#EDF1FB',
+        selectionBackground: '#0BA5BE40',
         selectionForeground: '#FFFFFF',
-        black: '#10212B',
-        red: '#E0341B',
-        green: '#1E66F5',
-        yellow: '#B07A00',
-        blue: '#1E66F5',
-        magenta: '#8B5CF6',
-        cyan: '#0E7C9B',
-        white: '#5A6E78',
-        brightBlack: '#5A6E78',
-        brightRed: '#FF5A4E',
-        brightGreen: '#1E66F5',
-        brightYellow: '#F5B700',
-        brightBlue: '#1E66F5',
-        brightMagenta: '#8B5CF6',
-        brightCyan: '#0E7C9B',
-        brightWhite: '#10212B',
+        black: '#0E1730',
+        red: '#E0413E',
+        green: '#0E9F6E',
+        yellow: '#B97816',
+        blue: '#0BA5BE',
+        magenta: '#7C3AED',
+        cyan: '#0BA5BE',
+        white: '#5A6588',
+        brightBlack: '#5A6588',
+        brightRed: '#E0413E',
+        brightGreen: '#0E9F6E',
+        brightYellow: '#B97816',
+        brightBlue: '#0BA5BE',
+        brightMagenta: '#7C3AED',
+        brightCyan: '#2DE2E6',
+        brightWhite: '#0E1730',
       }
 }
 
