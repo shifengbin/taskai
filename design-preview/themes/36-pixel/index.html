@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>36 Pixel — 像素糖果 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   36 · PIXEL — 8-bit candy pop (Pop family)
+   ========================================================================= */
+.d-pixel .stage{border:3px solid var(--px-outline); border-radius:8px; background:var(--px-bg); overflow:hidden; box-shadow:8px 8px 0 var(--px-outline)}
+.d-pixel.light{--px-bg:#F0F4FF;--px-surface:#FFFFFF;--px-surface2:#E2EAFB;--px-ink:#0D0B2A;--px-mut:#5A5680;--px-outline:#0D0B2A;--px-accent:#FF2BB1;--px-accent2:#00C2FF;--px-accent3:#FFD400;--px-accent4:#22C55E;--px-dots:rgba(13,11,42,.06);
+  --px-work:#15803D;--px-idle:#AEABC8;--px-unread:#FF2BB1;--px-error:#E11D48}
+.d-pixel.dark{--px-bg:#0B0A20;--px-surface:#141233;--px-surface2:#1D1A45;--px-ink:#EAF0FF;--px-mut:#8E8AC0;--px-outline:#EAF0FF;--px-accent:#FF5CC4;--px-accent2:#33D0FF;--px-accent3:#FFDF3A;--px-accent4:#3DD97A;--px-dots:rgba(234,240,255,.06);
+  --px-work:#3DD97A;--px-idle:#4E4A70;--px-unread:#FF5CC4;--px-error:#FF5C7A}
+.d-pixel{font-family:'Chakra Petch',sans-serif}
+.d-pixel .stage-bar{background:var(--px-accent); border-bottom:3px solid var(--px-outline); justify-content:flex-start}
+.d-pixel .tl i{border:2px solid var(--px-outline); background:var(--px-surface)}
+.d-pixel .tl i:nth-child(1){background:var(--px-accent2)}.d-pixel .tl i:nth-child(2){background:var(--px-accent3)}
+.d-pixel .win-title{font-family:'Titan One',sans-serif; font-weight:400; font-size:13px; letter-spacing:.02em; color:#fff}
+.d-pixel .appbar{border-bottom:3px solid var(--px-outline); background:var(--px-surface)}
+.d-pixel .brand-name{font-family:'Titan One',sans-serif; font-weight:400; font-size:23px; letter-spacing:.01em}
+.d-pixel .brand-name em{font-style:normal; color:var(--px-accent2)}
+.d-pixel .brand-mark{background:var(--px-accent); border:2.5px solid var(--px-outline); border-radius:6px; color:#fff}
+.d-pixel .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-pixel .iconbtn{border:2px solid var(--px-outline); border-radius:6px; background:var(--px-surface); color:var(--px-ink); box-shadow:2px 2px 0 var(--px-outline)}
+.d-pixel .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--px-outline)}
+.d-pixel .iconbtn svg{stroke-width:2.2}
+.d-pixel .sidebar{border-right:3px solid var(--px-outline); background:var(--px-surface)}
+.d-pixel .side-head{border-bottom:2px solid var(--px-outline)}
+.d-pixel .side-label{font-family:'Titan One'; font-weight:400; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--px-ink)}
+.d-pixel .tabs{border-bottom:3px solid var(--px-outline)}
+.d-pixel .tab{font-family:'Chakra Petch'; font-weight:600; font-size:12.5px; color:var(--px-ink); border-right:2px solid var(--px-outline)}
+.d-pixel .tab:last-child{border-right:none}
+.d-pixel .tab.active{background:var(--px-accent2); color:#0D0B2A}
+.d-pixel .tab.active em{color:#0D0B2A}
+.d-pixel .task{border-left:none}
+.d-pixel .task-row{border:2.5px solid var(--px-outline); border-radius:9px; margin:7px 8px; box-shadow:3px 3px 0 var(--px-outline), inset 5px 0 0 var(--c); background:var(--px-surface)}
+.d-pixel .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--px-outline), inset 5px 0 0 var(--c)}
+.d-pixel .task-title{font-family:'Titan One'; font-weight:400}
+.d-pixel .task-sub{color:var(--px-mut); font-weight:600}
+.d-pixel .term{border:2px solid var(--px-outline); border-radius:6px; margin:4px 10px; box-shadow:2px 2px 0 var(--px-outline); background:var(--px-surface2); color:var(--px-ink)}
+.d-pixel .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--px-outline)}
+.d-pixel .dot.idle{background:var(--px-idle)}
+.d-pixel .dot.working{background:var(--px-work)}.d-pixel .dot.working::before{border-color:var(--px-work)}
+.d-pixel .dot.unread{background:var(--px-unread)}.d-pixel .dot.unread::before{border-color:var(--px-unread)}
+.d-pixel .dot.error{background:var(--px-error)}
+.d-pixel .pane{background:var(--px-bg)}
+.d-pixel .term-head{border-bottom:3px solid var(--px-outline); background:var(--px-surface2)}
+.d-pixel .term-tab{font-family:'Chakra Petch'; font-weight:600; color:var(--px-ink); border:2px solid var(--px-outline); border-bottom:none; background:var(--px-surface); border-radius:6px 6px 0 0}
+.d-pixel .term-tab.active{background:var(--px-accent); color:#fff}
+.d-pixel .term-meta{font-family:'Titan One'; font-weight:400; font-size:11px; text-transform:uppercase; color:var(--px-work)}
+.d-pixel .term-body{font-family:'JetBrains Mono',monospace; color:var(--px-ink); background-color:var(--px-surface); background-image:radial-gradient(var(--px-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-pixel .t-prompt{color:var(--px-accent)}
+.d-pixel .t-ok{color:var(--px-work)}
+.d-pixel .t-key{color:var(--px-ink)}
+.d-pixel .t-url{color:var(--px-accent)}
+.d-pixel .t-info{color:var(--px-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>36 / Pixel — 像素糖果</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s36">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF2BB1">36</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Titan One',sans-serif">Pixel — 像素糖果</h2>
+        <div class="s-sub">8-bit Candy Pop</div>
+        <div class="s-tag">像素糖果：品红、青、明黄、草绿的街机糖果色，Titan One 厚重圆体配 Chakra Petch——复古游戏机的甜。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Titan One',sans-serif">Titan</span>厚重圆体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Chakra Petch',sans-serif;font-weight:600">Chakra</span>科技正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F0F4FF"></span><span style="background:#0D0B2A"></span><span style="background:#FF2BB1"></span><span style="background:#00C2FF"></span><span style="background:#FFD400"></span></div></div>
+      <div class="vibes"><b>像素</b><b>街机</b><b>糖果</b><b>活力</b></div>
+      <button class="pick" data-design="Pixel">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-pixel light"><div class="cap"><span class="tag">36 · Pixel</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-pixel dark"><div class="cap"><span class="tag">36 · Pixel</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"PIXEL<em>!</em>","windowText":"▶ PLAYER 1","windowHtml":"","extraClass":"","extraText":"","fallback":"Pixel — 像素糖果","number":"36"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>18 Burst — 彩纸庆典 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   18 · BURST — confetti celebration
+   ========================================================================= */
+.d-burst .stage{border:1px solid var(--bu-line); border-radius:20px; background:var(--bu-bg); overflow:hidden; box-shadow:0 30px 70px -36px rgba(40,80,160,.4)}
+.d-burst.light{--bu-bg:#F7FBFF;--bu-surface:#FFFFFF;--bu-surface2:#EAF2FF;--bu-ink:#182238;--bu-mut:#6E7A95;--bu-line:#DCE6F5;--bu-accent:#FF5C5C;--bu-accent2:#3DA5F4;--bu-accent3:#22C186;--bu-accent4:#FFB237;
+  --bu-work:#22C186;--bu-idle:#B6C2D6;--bu-unread:#3DA5F4;--bu-error:#FF5C5C}
+.d-burst.dark{--bu-bg:#0E1320;--bu-surface:#18203A;--bu-surface2:#202A4A;--bu-ink:#EAF1FF;--bu-mut:#8590B0;--bu-line:#2C3658;--bu-accent:#FF6B6B;--bu-accent2:#4DB5FF;--bu-accent3:#2BD693;--bu-accent4:#FFC04D;
+  --bu-work:#2BD693;--bu-idle:#48536E;--bu-unread:#4DB5FF;--bu-error:#FF6B6B}
+.d-burst{font-family:'Comfortaa',cursive}
+.d-burst .stage-bar{background:var(--bu-surface); border-bottom:1px solid var(--bu-line); justify-content:center; position:relative}
+.d-burst .tl{position:absolute; left:18px}
+.d-burst.light .tl i{background:#DCE6F5}.d-burst.light .tl i:nth-child(1){background:#FF5C5C}.d-burst.light .tl i:nth-child(2){background:#FFB237}.d-burst.light .tl i:nth-child(3){background:#22C186}
+.d-burst.dark .tl i{background:#2C3658}.d-burst.dark .tl i:nth-child(1){background:#FF6B6B}.d-burst.dark .tl i:nth-child(2){background:#FFC04D}.d-burst.dark .tl i:nth-child(3){background:#2BD693}
+.d-burst .win-title{font-family:'Titan One',cursive; font-weight:400; font-size:15px; color:var(--bu-mut)}
+.d-burst .appbar{border-bottom:1px solid var(--bu-line); background:var(--bu-surface)}
+.d-burst .brand-name{font-family:'Titan One'; font-weight:400; font-size:22px; letter-spacing:-.01em}
+.d-burst .brand-name em{font-style:normal; color:var(--bu-accent)}
+.d-burst .brand-mark{background:var(--bu-accent); border-radius:10px; color:#fff}
+.d-burst .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-burst .iconbtn{border-radius:12px; color:var(--bu-ink); border:1.5px solid var(--bu-line); background:var(--bu-surface)}
+.d-burst .iconbtn:hover{border-color:var(--bu-accent2); color:var(--bu-accent2)}
+.d-burst .iconbtn svg{stroke-width:2.2}
+.d-burst .sidebar{border-right:1px solid var(--bu-line); background:var(--bu-surface)}
+.d-burst .side-head{border-bottom:1px solid var(--bu-line)}
+.d-burst .side-label{font-family:'Titan One'; font-weight:400; font-size:14px; color:var(--bu-mut)}
+.d-burst .tabs{border-bottom:1px solid var(--bu-line)}
+.d-burst .tab{font-family:'Comfortaa'; font-weight:700; font-size:13px; color:var(--bu-mut); position:relative}
+.d-burst .tab.active{color:var(--bu-ink)}
+.d-burst .tab.active em{color:var(--bu-accent)}
+.d-burst .tab.active::after{content:""; position:absolute; left:28%; right:28%; bottom:-1px; height:3px; background:linear-gradient(90deg,#FF5C5C,#FFB237,#22C186,#3DA5F4); border-radius:3px}
+.d-burst .task{border-left:none}
+.d-burst .task-row{border-radius:14px; margin:4px 8px; box-shadow:inset 4px 0 0 var(--c); background:var(--bu-surface2)}
+.d-burst .task-row:hover{background:var(--bu-surface)}
+.d-burst .task-title{font-family:'Comfortaa'; font-weight:700; font-size:14px}
+.d-burst .task-sub{color:var(--bu-mut)}
+.d-burst .term{color:var(--bu-mut); border-radius:10px}
+.d-burst .term:hover{background:var(--bu-surface2)}
+.d-burst .dot.idle{background:var(--bu-idle)}
+.d-burst .dot.working{background:var(--bu-work)}.d-burst .dot.working::before{border-color:var(--bu-work)}
+.d-burst .dot.unread{background:var(--bu-unread)}.d-burst .dot.unread::before{border-color:var(--bu-unread)}
+.d-burst .dot.error{background:var(--bu-error)}
+.d-burst .pane{position:relative; background:var(--bu-bg)}
+.d-burst .pane::before{content:""; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:.5;
+  background:radial-gradient(circle 2px at 12% 18%,var(--bu-accent) 50%,transparent 51%),radial-gradient(circle 2px at 88% 12%,var(--bu-accent3) 50%,transparent 51%),radial-gradient(circle 2px at 78% 82%,var(--bu-accent2) 50%,transparent 51%),radial-gradient(circle 2px at 20% 88%,var(--bu-accent4) 50%,transparent 51%),radial-gradient(circle 2px at 55% 30%,var(--bu-accent4) 50%,transparent 51%),radial-gradient(circle 2px at 40% 75%,var(--bu-accent) 50%,transparent 51%)}
+.d-burst .term-head{position:relative; z-index:1; border-bottom:1px solid var(--bu-line); background:var(--bu-surface)}
+.d-burst .term-tab{font-family:'Comfortaa'; font-weight:700; color:var(--bu-mut)}
+.d-burst .term-tab.active{color:#fff; background:linear-gradient(135deg,var(--bu-accent),var(--bu-accent4)); border-radius:9px 9px 0 0}
+.d-burst .term-meta{font-family:'Titan One'; font-size:12px; color:var(--bu-work)}
+.d-burst .term-body{position:relative; z-index:1; font-family:'JetBrains Mono',monospace; color:var(--bu-ink); background:var(--bu-surface)}
+.d-burst .t-prompt{color:var(--bu-accent)}
+.d-burst .t-ok{color:var(--bu-work)}
+.d-burst .t-key{color:var(--bu-accent2)}
+.d-burst .t-url{color:var(--bu-accent)}
+.d-burst .t-info{color:var(--bu-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>18 / Burst — 彩纸庆典</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s18">
+    <div class="s-head">
+      <div class="s-num" style="background:linear-gradient(90deg,#FF5C5C,#FFB237,#22C186,#3DA5F4);-webkit-background-clip:text;background-clip:text;color:transparent">18</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Titan One',cursive;font-weight:400">Burst — 彩纸庆典</h2>
+        <div class="s-sub">Confetti Celebration</div>
+        <div class="s-tag">庆祝般的明亮多彩，终端区飘洒的彩色纸屑点缀，活泼开朗的庆典感——多色克制有度，深墨文字与实心渐变标签让功能依旧清楚。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Titan One',cursive">Titan One</span>庆典标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Comfortaa',cursive;font-weight:700">Comfortaa</span>圆润正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FF5C5C"></span><span style="background:#FFB237"></span><span style="background:#22C186"></span><span style="background:#3DA5F4"></span><span style="background:#182238"></span></div></div>
+      <div class="vibes"><b>庆典</b><b>多彩</b><b>开朗</b><b>纸屑</b></div>
+      <button class="pick" data-design="Burst">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-burst light"><div class="cap"><span class="tag">18 · Burst</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-burst dark"><div class="cap"><span class="tag">18 · Burst</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"task<em>ai</em>","windowText":"taskai · burst","windowHtml":"","extraClass":"","extraText":"","fallback":"Burst — 彩纸庆典","number":"18"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>35 Juice — 果味波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   35 · JUICE — tropical fruit pop (Pop family)
+   ========================================================================= */
+.d-juice .stage{border:3px solid var(--jc-outline); border-radius:20px; background:var(--jc-bg); overflow:hidden; box-shadow:9px 9px 0 var(--jc-outline)}
+.d-juice.light{--jc-bg:#FFF4E6;--jc-surface:#FFFFFF;--jc-surface2:#FFE2CC;--jc-ink:#2A1133;--jc-mut:#6E5A78;--jc-outline:#2A1133;--jc-accent:#FF6B35;--jc-accent2:#F72585;--jc-accent3:#80E000;--jc-accent4:#7209B7;--jc-dots:rgba(42,17,51,.06);
+  --jc-work:#3DAA14;--jc-idle:#B6A0C8;--jc-unread:#F72585;--jc-error:#E5383B}
+.d-juice.dark{--jc-bg:#190F24;--jc-surface:#241533;--jc-surface2:#2E1C40;--jc-ink:#FFEBE0;--jc-mut:#B59CC0;--jc-outline:#FFEBE0;--jc-accent:#FF8A5C;--jc-accent2:#FF5CA8;--jc-accent3:#9EE840;--jc-accent4:#B55CDB;--jc-dots:rgba(255,235,224,.06);
+  --jc-work:#9EE840;--jc-idle:#5C4C6E;--jc-unread:#FF5CA8;--jc-error:#FF6B6B}
+.d-juice{font-family:'Quicksand',sans-serif}
+.d-juice .stage-bar{background:var(--jc-accent); border-bottom:3px solid var(--jc-outline); justify-content:flex-start}
+.d-juice .tl i{border:2px solid var(--jc-outline); background:var(--jc-surface)}
+.d-juice .tl i:nth-child(1){background:var(--jc-accent2)}.d-juice .tl i:nth-child(2){background:var(--jc-accent3)}
+.d-juice .win-title{font-family:'Modak',sans-serif; font-weight:400; font-size:15px; color:#fff}
+.d-juice .appbar{border-bottom:3px solid var(--jc-outline); background:var(--jc-surface)}
+.d-juice .brand-name{font-family:'Modak',sans-serif; font-weight:400; font-size:27px; letter-spacing:.01em}
+.d-juice .brand-name em{font-style:normal; color:var(--jc-accent2)}
+.d-juice .brand-mark{background:var(--jc-accent); border:2.5px solid var(--jc-outline); border-radius:10px; color:#fff}
+.d-juice .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-juice .iconbtn{border:2px solid var(--jc-outline); border-radius:14px; background:var(--jc-surface); color:var(--jc-ink); box-shadow:2px 2px 0 var(--jc-outline)}
+.d-juice .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--jc-outline)}
+.d-juice .iconbtn svg{stroke-width:2.2}
+.d-juice .sidebar{border-right:3px solid var(--jc-outline); background:var(--jc-surface)}
+.d-juice .side-head{border-bottom:2px solid var(--jc-outline)}
+.d-juice .side-label{font-family:'Modak'; font-weight:400; font-size:13px; text-transform:uppercase; letter-spacing:.03em; color:var(--jc-ink)}
+.d-juice .tabs{border-bottom:3px solid var(--jc-outline)}
+.d-juice .tab{font-family:'Quicksand'; font-weight:700; font-size:12.5px; color:var(--jc-ink); border-right:2px solid var(--jc-outline)}
+.d-juice .tab:last-child{border-right:none}
+.d-juice .tab.active{background:var(--jc-accent); color:#fff}
+.d-juice .tab.active em{color:#fff}
+.d-juice .task{border-left:none}
+.d-juice .task-row{border:2.5px solid var(--jc-outline); border-radius:16px; margin:7px 8px; box-shadow:3px 3px 0 var(--jc-outline), inset 5px 0 0 var(--c); background:var(--jc-surface)}
+.d-juice .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--jc-outline), inset 5px 0 0 var(--c)}
+.d-juice .task-title{font-family:'Modak'; font-weight:400}
+.d-juice .task-sub{color:var(--jc-mut); font-weight:600}
+.d-juice .term{border:2px solid var(--jc-outline); border-radius:14px; margin:4px 10px; box-shadow:2px 2px 0 var(--jc-outline); background:var(--jc-surface2); color:var(--jc-ink)}
+.d-juice .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--jc-outline)}
+.d-juice .dot.idle{background:var(--jc-idle)}
+.d-juice .dot.working{background:var(--jc-work)}.d-juice .dot.working::before{border-color:var(--jc-work)}
+.d-juice .dot.unread{background:var(--jc-unread)}.d-juice .dot.unread::before{border-color:var(--jc-unread)}
+.d-juice .dot.error{background:var(--jc-error)}
+.d-juice .pane{background:var(--jc-bg)}
+.d-juice .term-head{border-bottom:3px solid var(--jc-outline); background:var(--jc-surface2)}
+.d-juice .term-tab{font-family:'Quicksand'; font-weight:700; color:var(--jc-ink); border:2px solid var(--jc-outline); border-bottom:none; background:var(--jc-surface); border-radius:13px 13px 0 0}
+.d-juice .term-tab.active{background:var(--jc-accent2); color:#fff}
+.d-juice .term-meta{font-family:'Modak'; font-weight:400; font-size:11px; text-transform:uppercase; color:var(--jc-work)}
+.d-juice .term-body{font-family:'JetBrains Mono',monospace; color:var(--jc-ink); background-color:var(--jc-surface); background-image:radial-gradient(var(--jc-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-juice .t-prompt{color:var(--jc-accent2)}
+.d-juice .t-ok{color:var(--jc-work)}
+.d-juice .t-key{color:var(--jc-accent4)}
+.d-juice .t-url{color:var(--jc-accent2)}
+.d-juice .t-info{color:var(--jc-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>35 / Juice — 果味波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s35">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF6B35">35</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Modak',sans-serif">Juice — 果味波普</h2>
+        <div class="s-sub">Tropical Fruit Pop</div>
+        <div class="s-tag">果味波普：橙、粉、青柠、紫的水果撞色，Modak 超重圆体配 Quicksand——多汁、圆润、最饱满的大色块。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Modak',sans-serif">Modak</span>超重圆体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Quicksand',sans-serif;font-weight:600">Quicksand</span>柔和正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FFF4E6"></span><span style="background:#2A1133"></span><span style="background:#FF6B35"></span><span style="background:#F72585"></span><span style="background:#80E000"></span></div></div>
+      <div class="vibes"><b>多汁</b><b>热带</b><b>圆润</b><b>甜美</b></div>
+      <button class="pick" data-design="Juice">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-juice light"><div class="cap"><span class="tag">35 · Juice</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-juice dark"><div class="cap"><span class="tag">35 · Juice</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"juice<em>!</em>","windowText":"✦ JUICE ✦","windowHtml":"","extraClass":"","extraText":"","fallback":"Juice — 果味波普","number":"35"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

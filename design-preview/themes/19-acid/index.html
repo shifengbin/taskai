@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>19 Acid — 酸性实验 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   19 · ACID — acid-lab brutalism (same hard-shadow family as Disco)
+   ========================================================================= */
+.d-acid .stage{border:2.5px solid var(--ac-frame); border-radius:12px; background:var(--ac-bg); overflow:hidden; box-shadow:6px 6px 0 var(--ac-frame)}
+.d-acid.light{--ac-bg:#F4F4EE;--ac-surface:#FFFFFF;--ac-surface2:#E9E9DF;--ac-ink:#15140E;--ac-mut:#686A55;--ac-line:rgba(21,20,14,.14);--ac-frame:#15140E;--ac-accent:#5C9E00;--ac-accent2:#2347FF;--ac-accent3:#15140E;
+  --ac-work:#1FAA4F;--ac-idle:#B7B7A0;--ac-unread:#2347FF;--ac-error:#E8431F}
+.d-acid.dark{--ac-bg:#0E0E0A;--ac-surface:#1A1A14;--ac-surface2:#23231A;--ac-ink:#EDEDE0;--ac-mut:#8C8C76;--ac-line:rgba(237,237,224,.16);--ac-frame:#EDEDE0;--ac-accent:#9BE600;--ac-accent2:#5C7BFF;--ac-accent3:#EDEDE0;
+  --ac-work:#39D96B;--ac-idle:#5A5A48;--ac-unread:#5C7BFF;--ac-error:#FF6B45}
+.d-acid{font-family:'IBM Plex Sans',sans-serif}
+.d-acid .stage-bar{background:var(--ac-accent2); border-bottom:2.5px solid var(--ac-frame); justify-content:flex-start}
+.d-acid .tl i{border:2px solid rgba(255,255,255,.7); background:#fff}
+.d-acid .tl i:nth-child(1){background:#C6F000}.d-acid .tl i:nth-child(2){background:#FFB400}.d-acid .tl i:nth-child(3){background:#fff}
+.d-acid .win-title{font-family:'Archivo',sans-serif; font-weight:900; font-size:13px; color:#fff; letter-spacing:.12em; text-transform:uppercase}
+.d-acid .appbar{border-bottom:2.5px solid var(--ac-frame); background:var(--ac-surface)}
+.d-acid .brand-name{font-family:'Archivo'; font-weight:900; font-size:21px; letter-spacing:-.02em}
+.d-acid .brand-name em{font-style:normal; color:var(--ac-accent)}
+.d-acid .brand-mark{background:var(--ac-accent2); border-radius:8px; color:#fff}
+.d-acid .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-acid .iconbtn{border:2px solid var(--ac-frame); border-radius:8px; background:var(--ac-surface); color:var(--ac-ink); box-shadow:2.5px 2.5px 0 var(--ac-frame)}
+.d-acid .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--ac-frame)}
+.d-acid .iconbtn svg{stroke-width:2.4}
+.d-acid .sidebar{border-right:2.5px solid var(--ac-frame); background:var(--ac-surface)}
+.d-acid .side-head{border-bottom:1.5px solid var(--ac-line)}
+.d-acid .side-label{font-family:'Archivo'; font-weight:900; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--ac-ink)}
+.d-acid .tabs{border-bottom:2.5px solid var(--ac-frame)}
+.d-acid .tab{font-family:'IBM Plex Sans'; font-weight:600; font-size:12.5px; color:var(--ac-mut); border-right:1.5px solid var(--ac-line)}
+.d-acid .tab:last-child{border-right:none}
+.d-acid .tab.active{background:#C6F000; color:var(--ac-ink)}
+.d-acid .tab.active em{color:#15140E}
+.d-acid .task{border-left:none}
+.d-acid .task-row{border:1.5px solid var(--ac-line); border-radius:10px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--ac-surface2)}
+.d-acid .task-row:hover{border-color:var(--ac-frame)}
+.d-acid .task-title{font-family:'IBM Plex Sans'; font-weight:600; font-size:14px}
+.d-acid .task-sub{color:var(--ac-mut)}
+.d-acid .term{color:var(--ac-mut); border-radius:7px}
+.d-acid .term:hover{background:var(--ac-surface2)}
+.d-acid .dot.idle{background:var(--ac-idle)}
+.d-acid .dot.working{background:var(--ac-work)}.d-acid .dot.working::before{border-color:var(--ac-work)}
+.d-acid .dot.unread{background:var(--ac-unread)}.d-acid .dot.unread::before{border-color:var(--ac-unread)}
+.d-acid .dot.error{background:var(--ac-error)}
+.d-acid .pane{background:var(--ac-bg)}
+.d-acid .term-head{border-bottom:2px solid var(--ac-frame); background:var(--ac-surface)}
+.d-acid .term-tab{font-family:'IBM Plex Sans'; font-weight:600; color:var(--ac-mut); border:1.5px solid var(--ac-line); border-bottom:none; background:var(--ac-surface2)}
+.d-acid .term-tab.active{background:var(--ac-accent2); color:#fff}
+.d-acid .term-meta{font-family:'Archivo'; font-weight:900; font-size:11px; text-transform:uppercase; color:var(--ac-work)}
+.d-acid .term-body{font-family:'JetBrains Mono',monospace; color:var(--ac-ink)}
+.d-acid .t-prompt{color:var(--ac-accent)}
+.d-acid .t-ok{color:var(--ac-work)}
+.d-acid .t-key{color:var(--ac-accent2)}
+.d-acid .t-url{color:var(--ac-accent)}
+.d-acid .t-info{color:var(--ac-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>19 / Acid — 酸性实验</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s19">
+    <div class="s-head">
+      <div class="s-num" style="color:#9BE600">19</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Archivo',sans-serif;font-weight:900">Acid — 酸性实验</h2>
+        <div class="s-sub">Acid Lab</div>
+        <div class="s-tag">与 17 号同源的粗框 + 硬投影语言，主调换成电光酸柠檬绿与钴蓝——实验室仪表般的冷峻撞色，激活态用高饱和酸绿填充，黑底白字按钮依旧一目了然。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Archivo',sans-serif;font-weight:900">Archivo 900</span>黑体标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'IBM Plex Sans',sans-serif;font-weight:600">IBM Plex Sans</span>几何正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#2347FF"></span><span style="background:#C6F000"></span><span style="background:#15140E"></span><span style="background:#F4F4EE"></span><span style="background:#1FAA4F"></span></div></div>
+      <div class="vibes"><b>酸性</b><b>冷峻</b><b>硬投影</b><b>撞色</b></div>
+      <button class="pick" data-design="Acid">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-acid light"><div class="cap"><span class="tag">19 · Acid</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-acid dark"><div class="cap"><span class="tag">19 · Acid</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"◢ ACID // LAB","windowHtml":"","extraClass":"","extraText":"","fallback":"Acid — 酸性实验","number":"19"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

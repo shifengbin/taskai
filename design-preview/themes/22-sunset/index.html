@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>22 Sunset — 落日大道 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   22 · SUNSET — sunset boulevard (hard-shadow family; dusk gradient bar)
+   ========================================================================= */
+.d-sunset .stage{border:2.5px solid var(--su-frame); border-radius:13px; background:var(--su-bg); overflow:hidden; box-shadow:6px 6px 0 var(--su-frame)}
+.d-sunset.light{--su-bg:#FBF1EA;--su-surface:#FFFFFF;--su-surface2:#F5E4D6;--su-ink:#2A1A5E;--su-mut:#6E5E8C;--su-line:rgba(42,26,94,.14);--su-frame:#2A1A5E;--su-accent:#FF6B5C;--su-accent2:#FFB02E;--su-accent3:#9B4DCA;
+  --su-work:#1F9D55;--su-idle:#C2B0D6;--su-unread:#9B4DCA;--su-error:#FF6B5C}
+.d-sunset.dark{--su-bg:#1A1230;--su-surface:#241A40;--su-surface2:#2E2350;--su-ink:#F3E8FF;--su-mut:#9C8AB8;--su-line:rgba(243,232,255,.16);--su-frame:#F3E8FF;--su-accent:#FF8A7A;--su-accent2:#FFC44A;--su-accent3:#B06BE0;
+  --su-work:#3FD980;--su-idle:#4A4060;--su-unread:#B06BE0;--su-error:#FF8A7A}
+.d-sunset{font-family:'DM Sans',sans-serif}
+.d-sunset .stage-bar{background:linear-gradient(90deg,var(--su-accent),var(--su-accent2) 55%,var(--su-accent3)); border-bottom:2.5px solid var(--su-frame); justify-content:flex-start}
+.d-sunset .tl i{border:2px solid rgba(255,255,255,.7); background:#fff}
+.d-sunset .tl i:nth-child(1){background:var(--su-accent)}.d-sunset .tl i:nth-child(2){background:var(--su-accent2)}.d-sunset .tl i:nth-child(3){background:var(--su-accent3)}
+.d-sunset .win-title{font-family:'Anton',sans-serif; font-weight:400; font-size:14px; color:#fff; letter-spacing:.06em; text-transform:uppercase}
+.d-sunset .appbar{border-bottom:2.5px solid var(--su-frame); background:var(--su-surface)}
+.d-sunset .brand-name{font-family:'Anton',sans-serif; font-weight:400; font-size:22px; letter-spacing:.01em}
+.d-sunset .brand-name em{font-style:normal; color:var(--su-accent)}
+.d-sunset .brand-mark{background:var(--su-accent3); border-radius:8px; color:#fff}
+.d-sunset .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-sunset .iconbtn{border:2px solid var(--su-frame); border-radius:9px; background:var(--su-surface); color:var(--su-ink); box-shadow:2.5px 2.5px 0 var(--su-frame)}
+.d-sunset .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--su-frame)}
+.d-sunset .iconbtn svg{stroke-width:2.4}
+.d-sunset .sidebar{border-right:2.5px solid var(--su-frame); background:var(--su-surface)}
+.d-sunset .side-head{border-bottom:1.5px solid var(--su-line)}
+.d-sunset .side-label{font-family:'Anton',sans-serif; font-weight:400; font-size:13px; letter-spacing:.04em; text-transform:uppercase; color:var(--su-ink)}
+.d-sunset .tabs{border-bottom:2.5px solid var(--su-frame)}
+.d-sunset .tab{font-family:'DM Sans'; font-weight:700; font-size:12.5px; color:var(--su-mut); border-right:1.5px solid var(--su-line)}
+.d-sunset .tab:last-child{border-right:none}
+.d-sunset .tab.active{background:var(--su-accent2); color:var(--su-ink)}
+.d-sunset .tab.active em{color:var(--su-accent3)}
+.d-sunset .task{border-left:none}
+.d-sunset .task-row{border:1.5px solid var(--su-line); border-radius:11px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--su-surface2)}
+.d-sunset .task-row:hover{border-color:var(--su-frame)}
+.d-sunset .task-title{font-family:'DM Sans'; font-weight:700; font-size:14px}
+.d-sunset .task-sub{color:var(--su-mut)}
+.d-sunset .term{color:var(--su-mut); border-radius:8px}
+.d-sunset .term:hover{background:var(--su-surface2)}
+.d-sunset .dot.idle{background:var(--su-idle)}
+.d-sunset .dot.working{background:var(--su-work)}.d-sunset .dot.working::before{border-color:var(--su-work)}
+.d-sunset .dot.unread{background:var(--su-unread)}.d-sunset .dot.unread::before{border-color:var(--su-unread)}
+.d-sunset .dot.error{background:var(--su-error)}
+.d-sunset .pane{background:var(--su-bg)}
+.d-sunset .term-head{border-bottom:2px solid var(--su-frame); background:var(--su-surface)}
+.d-sunset .term-tab{font-family:'DM Sans'; font-weight:700; color:var(--su-mut); border:1.5px solid var(--su-line); border-bottom:none; background:var(--su-surface2)}
+.d-sunset .term-tab.active{background:var(--su-accent); color:#fff}
+.d-sunset .term-meta{font-family:'Anton',sans-serif; font-size:12px; color:var(--su-work)}
+.d-sunset .term-body{font-family:'JetBrains Mono',monospace; color:var(--su-ink)}
+.d-sunset .t-prompt{color:var(--su-accent)}
+.d-sunset .t-ok{color:var(--su-work)}
+.d-sunset .t-key{color:var(--su-accent3)}
+.d-sunset .t-url{color:var(--su-accent)}
+.d-sunset .t-info{color:var(--su-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>22 / Sunset — 落日大道</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s22">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF7A5C">22</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Anton',sans-serif;font-weight:400">Sunset — 落日大道</h2>
+        <div class="s-sub">Sunset Boulevard</div>
+        <div class="s-tag">黄昏渐变标题栏（珊瑚→琥珀→紫），深紫粗框 + 硬投影——暖色高饱和但克制，琥珀激活标签配深紫文字，功能区清晰温暖。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Anton',sans-serif">Anton</span>压缩标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'DM Sans',sans-serif;font-weight:700">DM Sans</span>沉稳正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FF6B5C"></span><span style="background:#FFB02E"></span><span style="background:#9B4DCA"></span><span style="background:#2A1A5E"></span><span style="background:#FBF1EA"></span></div></div>
+      <div class="vibes"><b>黄昏</b><b>暖色</b><b>渐变</b><b>硬投影</b></div>
+      <button class="pick" data-design="Sunset">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-sunset light"><div class="cap"><span class="tag">22 · Sunset</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-sunset dark"><div class="cap"><span class="tag">22 · Sunset</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"任务<em>工作台</em>","windowText":"taskai · sunset","windowHtml":"","extraClass":"","extraText":"","fallback":"Sunset — 落日大道","number":"22"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

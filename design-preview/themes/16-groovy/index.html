@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>16 Groovy — 复古暖橙 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   16 · GROOVY — 70s retro warm
+   ========================================================================= */
+.d-groovy .stage{border:1px solid var(--gr-line); border-radius:26px; background:var(--gr-bg); overflow:hidden; box-shadow:0 30px 70px -36px rgba(107,68,35,.45)}
+.d-groovy.light{--gr-bg:#FBF3E2;--gr-surface:#FFFBF0;--gr-surface2:#F5E6C8;--gr-ink:#3A2A16;--gr-mut:#8A7355;--gr-line:#E6D2A8;--gr-accent:#E07A2F;--gr-accent2:#8A9A2A;--gr-accent3:#C8431E;
+  --gr-work:#5B8C2A;--gr-idle:#BDA882;--gr-unread:#A65CA8;--gr-error:#C8431E}
+.d-groovy.dark{--gr-bg:#1E160C;--gr-surface:#2A1F13;--gr-surface2:#33261A;--gr-ink:#F5E8CC;--gr-mut:#A08766;--gr-line:#473422;--gr-accent:#F0942E;--gr-accent2:#A8B833;--gr-accent3:#E25530;
+  --gr-work:#88B833;--gr-idle:#5E4E36;--gr-unread:#C07CC2;--gr-error:#E25530}
+.d-groovy{font-family:'Rubik',sans-serif}
+.d-groovy .stage-bar{background:var(--gr-accent); border-bottom:1px solid rgba(0,0,0,.12); justify-content:flex-start}
+.d-groovy .tl i{background:#fff; opacity:.85}
+.d-groovy .tl i:nth-child(1){background:var(--gr-accent3)}.d-groovy .tl i:nth-child(2){background:var(--gr-accent2)}.d-groovy .tl i:nth-child(3){background:#E8B51E}
+.d-groovy .win-title{font-family:'Modak',cursive; font-weight:400; font-size:18px; color:#fff}
+.d-groovy .appbar{border-bottom:1px solid var(--gr-line); background:var(--gr-surface)}
+.d-groovy .brand-name{font-family:'Modak'; font-weight:400; font-size:26px; line-height:1}
+.d-groovy .brand-name em{font-style:normal; color:var(--gr-accent)}
+.d-groovy .brand-mark{background:var(--gr-accent3); border-radius:12px; color:#fff}
+.d-groovy .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-groovy .iconbtn{border-radius:14px; color:var(--gr-ink); border:1.5px solid var(--gr-line); background:var(--gr-surface)}
+.d-groovy .iconbtn:hover{background:var(--gr-surface2); border-color:var(--gr-accent)}
+.d-groovy .iconbtn svg{stroke-width:2}
+.d-groovy .sidebar{border-right:1px solid var(--gr-line); background:var(--gr-surface)}
+.d-groovy .side-head{border-bottom:1px solid var(--gr-line)}
+.d-groovy .side-label{font-family:'Modak'; font-weight:400; font-size:16px; color:var(--gr-mut)}
+.d-groovy .tabs{border-bottom:1px solid var(--gr-line)}
+.d-groovy .tab{font-family:'Rubik'; font-weight:600; font-size:13px; color:var(--gr-mut); position:relative}
+.d-groovy .tab.active{color:var(--gr-ink)}
+.d-groovy .tab.active em{color:var(--gr-accent)}
+.d-groovy .tab.active::after{content:""; position:absolute; left:28%; right:28%; bottom:-1px; height:3px; background:var(--gr-accent); border-radius:3px}
+.d-groovy .task{border-left:none}
+.d-groovy .task-row{border-radius:16px; margin:4px 8px; box-shadow:inset 4px 0 0 var(--c); background:var(--gr-surface2)}
+.d-groovy .task-row:hover{background:var(--gr-surface)}
+.d-groovy .task-title{font-family:'Rubik'; font-weight:700; font-size:14px}
+.d-groovy .task-sub{color:var(--gr-mut)}
+.d-groovy .term{color:var(--gr-mut); border-radius:12px}
+.d-groovy .term:hover{background:var(--gr-surface2)}
+.d-groovy .dot.idle{background:var(--gr-idle)}
+.d-groovy .dot.working{background:var(--gr-work)}.d-groovy .dot.working::before{border-color:var(--gr-work)}
+.d-groovy .dot.unread{background:var(--gr-unread)}.d-groovy .dot.unread::before{border-color:var(--gr-unread)}
+.d-groovy .dot.error{background:var(--gr-error)}
+.d-groovy .pane{background:var(--gr-bg)}
+.d-groovy .term-head{border-bottom:1px solid var(--gr-line); background:var(--gr-surface)}
+.d-groovy .term-tab{font-family:'Rubik'; font-weight:600; color:var(--gr-mut)}
+.d-groovy .term-tab.active{color:#fff; background:var(--gr-accent); border-radius:10px 10px 0 0}
+.d-groovy .term-meta{font-family:'Modak'; font-size:14px; color:var(--gr-work)}
+.d-groovy .term-body{font-family:'JetBrains Mono',monospace; color:var(--gr-ink)}
+.d-groovy .t-prompt{color:var(--gr-accent)}
+.d-groovy .t-ok{color:var(--gr-work)}
+.d-groovy .t-key{color:var(--gr-accent2)}
+.d-groovy .t-url{color:var(--gr-accent)}
+.d-groovy .t-info{color:var(--gr-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>16 / Groovy — 复古暖橙</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s16">
+    <div class="s-head">
+      <div class="s-num" style="color:#E07A2F">16</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Modak',cursive;font-weight:400">Groovy — 复古暖橙</h2>
+        <div class="s-sub">70s Retro Warm</div>
+        <div class="s-tag">七十年代的焦糖橙、牛油果绿与芥末黄，圆润鼓胀的复古字——温暖怀旧，米白卡片上的深棕文字保证可读性。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Modak',cursive">Modak</span>鼓胀标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Rubik',sans-serif;font-weight:600">Rubik</span>现代正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#E07A2F"></span><span style="background:#8A9A2A"></span><span style="background:#C8431E"></span><span style="background:#FBF3E2"></span><span style="background:#3A2A16"></span></div></div>
+      <div class="vibes"><b>复古</b><b>暖橙</b><b>怀旧</b><b>温润</b></div>
+      <button class="pick" data-design="Groovy">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-groovy light"><div class="cap"><span class="tag">16 · Groovy</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-groovy dark"><div class="cap"><span class="tag">16 · Groovy</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"任务<em>工作台</em>","windowText":"taskai · groovy","windowHtml":"","extraClass":"","extraText":"","fallback":"Groovy — 复古暖橙","number":"16"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

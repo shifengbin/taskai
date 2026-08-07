@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>02 Atelier — 静修工坊 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   02 · ATELIER — warm editorial
+   ========================================================================= */
+.d-atelier .stage{border-radius:16px; overflow:hidden; background:var(--a-bg); box-shadow:0 40px 90px -30px rgba(0,0,0,.5)}
+.d-atelier.light{--a-bg:#FBF8F1;--a-surface:#FFFFFF;--a-surface2:#F5F1E8;--a-ink:#2B2620;--a-mut:#948A7B;--a-line:#E8E0D0;--a-accent:#B5572A;
+  --a-work:#2E8B57;--a-idle:#A89F90;--a-unread:#7C5CB8;--a-error:#C0473E}
+.d-atelier.dark{--a-bg:#17140F;--a-surface:#201C16;--a-surface2:#27221A;--a-ink:#EDE6D8;--a-mut:#9A8F7D;--a-line:#332D23;--a-accent:#E0A06A;
+  --a-work:#74B07F;--a-idle:#6E6553;--a-unread:#A98FDC;--a-error:#D9706A}
+.d-atelier{font-family:'Hanken Grotesk',sans-serif}
+.d-atelier .stage-bar{background:var(--a-surface); border-bottom:1px solid var(--a-line); justify-content:center; position:relative}
+.d-atelier .tl{position:absolute; left:16px}
+.d-atelier.light .tl i:nth-child(1){background:#E0B6A0}.d-atelier.light .tl i:nth-child(2){background:#C9BFA8}.d-atelier.light .tl i:nth-child(3){background:#B5572A}
+.d-atelier.dark .tl i{background:#3a3329!important}
+.d-atelier .win-title{font-family:'Fraunces',serif; font-style:italic; font-weight:500; font-size:13px; color:var(--a-mut)}
+.d-atelier .appbar{border-bottom:1px solid var(--a-line); background:var(--a-surface)}
+.d-atelier .brand-name{font-family:'Fraunces',serif; font-weight:600; font-optical-sizing:auto; font-size:19px; letter-spacing:-.01em}
+.d-atelier .brand-mark{color:var(--a-accent)}
+.d-atelier .brand-mark svg{width:22px;height:22px;stroke-width:1.4}
+.d-atelier .iconbtn{border-radius:9px; color:var(--a-mut)}
+.d-atelier .iconbtn:hover{background:var(--a-surface2); color:var(--a-ink)}
+.d-atelier .iconbtn svg{stroke-width:1.5}
+.d-atelier .sidebar{border-right:1px solid var(--a-line); background:var(--a-surface)}
+.d-atelier .side-head{border-bottom:1px solid var(--a-line)}
+.d-atelier .side-label{font-family:'Hanken Grotesk',sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--a-mut); font-weight:600}
+.d-atelier .tabs{border-bottom:1px solid var(--a-line)}
+.d-atelier .tab{color:var(--a-mut); font-size:13px; position:relative; font-weight:500}
+.d-atelier .tab.active{color:var(--a-ink); font-weight:600}
+.d-atelier .tab.active::after{content:""; position:absolute; left:20%; right:20%; bottom:-1px; height:2px; background:var(--a-accent); border-radius:2px}
+.d-atelier .task{border-left:none}
+.d-atelier .task-row{border-radius:10px; margin:3px 8px; box-shadow: inset 3px 0 0 var(--c)}
+.d-atelier .task-row:hover{background:var(--a-surface2)}
+.d-atelier .task-title{font-family:'Hanken Grotesk',sans-serif; font-weight:600}
+.d-atelier .task-sub{color:var(--a-mut)}
+.d-atelier .term{border-radius:8px; margin:2px 10px}
+.d-atelier .term:hover{background:var(--a-surface2)}
+.d-atelier .term .t-name{color:var(--a-mut)}
+.d-atelier .dot.idle{background:var(--a-idle)}
+.d-atelier .dot.working{background:var(--a-work)}.d-atelier .dot.working::before{border-color:var(--a-work)}
+.d-atelier .dot.unread{background:var(--a-unread)}.d-atelier .dot.unread::before{border-color:var(--a-unread)}
+.d-atelier .dot.error{background:var(--a-error)}
+.d-atelier .pane{background:var(--a-bg)}
+.d-atelier .term-head{border-bottom:1px solid var(--a-line); background:var(--a-surface)}
+.d-atelier .term-tab{color:var(--a-mut); border-radius:0}
+.d-atelier .term-tab.active{color:var(--a-ink); font-weight:600}
+.d-atelier .term-meta{color:var(--a-work); font-family:'Fraunces',serif; font-style:italic; font-size:12px}
+.d-atelier .term-body{font-family:'JetBrains Mono',monospace; color:var(--a-ink)}
+.d-atelier .t-prompt{color:var(--a-accent)}
+.d-atelier .t-ok{color:var(--a-work)}
+.d-atelier .t-url{color:var(--a-accent)}
+.d-atelier .t-info{color:var(--a-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>02 / Atelier — 静修工坊</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s2">
+    <div class="s-head">
+      <div class="s-num" style="color:#B5572A">02</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Fraunces',serif">Atelier — 静修工坊</h2>
+        <div class="s-sub">Warm Editorial</div>
+        <div class="s-tag">像一本印刷精良的工作手账：衬线标题、暖纸底色、大量留白，让管理任务变成一件从容不迫的事。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Fraunces',serif;font-weight:600">Fraunces</span>光学衬线</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Hanken Grotesk',sans-serif">Hanken Grotesk</span>人文无衬</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FBF8F1"></span><span style="background:#2B2620"></span><span style="background:#B5572A"></span><span style="background:#17140F"></span><span style="background:#E0A06A"></span></div></div>
+      <div class="vibes"><b>暖色</b><b>衬线</b><b>留白</b><b>手账感</b></div>
+      <button class="pick" data-design="Atelier">选择此方案</button>
+    </div>
+
+    <div class="scroll-x">
+      <div class="mockup d-atelier light">
+        <div class="cap"><span class="tag">02 · Atelier</span> 亮色 / Light</div>
+        <div class="stage" data-variant></div>
+      </div>
+      <div class="mockup d-atelier dark">
+        <div class="cap"><span class="tag">02 · Atelier</span> 暗色 / Dark</div>
+        <div class="stage" data-variant></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"任务工作台","brandHtml":"","windowText":"任务工作台","windowHtml":"","extraClass":"","extraText":"","fallback":"Atelier — 静修工坊","number":"02"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

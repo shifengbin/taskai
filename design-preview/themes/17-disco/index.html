@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>17 Disco — 电音派对 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   17 · DISCO — electric club (bold, high-energy)
+   ========================================================================= */
+.d-disco .stage{border:2.5px solid var(--di-frame); border-radius:14px; background:var(--di-bg); overflow:hidden; box-shadow:6px 6px 0 var(--di-frame)}
+.d-disco.light{--di-bg:#F4F1FF;--di-surface:#FFFFFF;--di-surface2:#EDE6FF;--di-ink:#181430;--di-mut:#6E6890;--di-line:rgba(24,20,48,.14);--di-frame:#181430;--di-accent:#FF2D87;--di-accent2:#2E6BFF;--di-accent3:#9B00E0;
+  --di-work:#00B86B;--di-idle:#B6B0D6;--di-unread:#9B00E0;--di-error:#FF2D87}
+.d-disco.dark{--di-bg:#110E22;--di-surface:#1B1734;--di-surface2:#241F44;--di-ink:#ECE8FF;--di-mut:#8F87B8;--di-line:rgba(236,232,255,.16);--di-frame:#ECE8FF;--di-accent:#FF4DA0;--di-accent2:#4D86FF;--di-accent3:#B06BFF;
+  --di-work:#1FD688;--di-idle:#4E4874;--di-unread:#B06BFF;--di-error:#FF4DA0}
+.d-disco{font-family:'Be Vietnam Pro',sans-serif}
+.d-disco .stage-bar{background:var(--di-accent3); border-bottom:2.5px solid var(--di-frame); justify-content:flex-start}
+.d-disco .tl i{border:2px solid var(--di-frame); background:var(--di-surface)}
+.d-disco .tl i:nth-child(1){background:var(--di-accent)}.d-disco .tl i:nth-child(2){background:var(--di-accent2)}.d-disco .tl i:nth-child(3){background:#C6FF2E}
+.d-disco .win-title{font-family:'Bowlby One',sans-serif; font-weight:400; font-size:14px; color:#fff; letter-spacing:.02em}
+.d-disco .appbar{border-bottom:2.5px solid var(--di-frame); background:var(--di-surface)}
+.d-disco .brand-name{font-family:'Bowlby One'; font-weight:400; font-size:21px; letter-spacing:-.01em}
+.d-disco .brand-name em{font-style:normal; color:var(--di-accent)}
+.d-disco .brand-mark{background:var(--di-accent2); border-radius:8px; color:#fff}
+.d-disco .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-disco .iconbtn{border:2px solid var(--di-frame); border-radius:9px; background:var(--di-surface); color:var(--di-ink); box-shadow:2.5px 2.5px 0 var(--di-frame)}
+.d-disco .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--di-frame)}
+.d-disco .iconbtn svg{stroke-width:2.4}
+.d-disco .sidebar{border-right:2.5px solid var(--di-frame); background:var(--di-surface)}
+.d-disco .side-head{border-bottom:1.5px solid var(--di-line)}
+.d-disco .side-label{font-family:'Bowlby One'; font-weight:400; font-size:12px; letter-spacing:.03em; text-transform:uppercase; color:var(--di-ink)}
+.d-disco .tabs{border-bottom:2.5px solid var(--di-frame)}
+.d-disco .tab{font-family:'Be Vietnam Pro'; font-weight:700; font-size:12.5px; color:var(--di-mut); border-right:1.5px solid var(--di-line)}
+.d-disco .tab:last-child{border-right:none}
+.d-disco .tab.active{background:#C6FF2E; color:#1A1A00}
+.d-disco .tab.active em{color:var(--di-accent3)}
+.d-disco .task{border-left:none}
+.d-disco .task-row{border:1.5px solid var(--di-line); border-radius:11px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--di-surface2)}
+.d-disco .task-row:hover{border-color:var(--di-frame)}
+.d-disco .task-title{font-family:'Be Vietnam Pro'; font-weight:700; font-size:14px}
+.d-disco .task-sub{color:var(--di-mut)}
+.d-disco .term{color:var(--di-mut); border-radius:8px}
+.d-disco .term:hover{background:var(--di-surface2)}
+.d-disco .dot.idle{background:var(--di-idle)}
+.d-disco .dot.working{background:var(--di-work)}.d-disco .dot.working::before{border-color:var(--di-work)}
+.d-disco .dot.unread{background:var(--di-unread)}.d-disco .dot.unread::before{border-color:var(--di-unread)}
+.d-disco .dot.error{background:var(--di-error)}
+.d-disco .pane{background:var(--di-bg)}
+.d-disco .term-head{border-bottom:2px solid var(--di-frame); background:var(--di-surface)}
+.d-disco .term-tab{font-family:'Be Vietnam Pro'; font-weight:700; color:var(--di-mut); border:1.5px solid var(--di-line); border-bottom:none; background:var(--di-surface2)}
+.d-disco .term-tab.active{background:var(--di-work); color:#062A1A}
+.d-disco .term-meta{font-family:'Bowlby One'; font-size:11px; text-transform:uppercase; color:var(--di-work)}
+.d-disco .term-body{font-family:'JetBrains Mono',monospace; color:var(--di-ink)}
+.d-disco .t-prompt{color:var(--di-accent)}
+.d-disco .t-ok{color:var(--di-work)}
+.d-disco .t-key{color:var(--di-accent2)}
+.d-disco .t-url{color:var(--di-accent)}
+.d-disco .t-info{color:var(--di-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>17 / Disco — 电音派对</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s17">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF2D87">17</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Bowlby One',sans-serif;font-weight:400">Disco — 电音派对</h2>
+        <div class="s-sub">Electric Club</div>
+        <div class="s-tag">霓虹品红、电光蓝与荧光柠檬绿的高能撞色，粗黑框 + 硬投影按钮——夜店般的冲击力，活跃状态用高饱和填充色，操作清晰不打架。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Bowlby One',sans-serif">Bowlby One</span>厚体标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Be Vietnam Pro',sans-serif;font-weight:700">Be Vietnam Pro</span>几何正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FF2D87"></span><span style="background:#2E6BFF"></span><span style="background:#C6FF2E"></span><span style="background:#F4F1FF"></span><span style="background:#110E22"></span></div></div>
+      <div class="vibes"><b>高能</b><b>撞色</b><b>霓虹</b><b>硬投影</b></div>
+      <button class="pick" data-design="Disco">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-disco light"><div class="cap"><span class="tag">17 · Disco</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-disco dark"><div class="cap"><span class="tag">17 · Disco</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"◆ TASKAI ◆","windowHtml":"","extraClass":"","extraText":"","fallback":"Disco — 电音派对","number":"17"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

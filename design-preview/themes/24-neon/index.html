@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>24 Neon — 霓虹灯牌 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   24 · NEON — neon sign (hard-shadow family; glowing tube brand name)
+   ========================================================================= */
+.d-neon .stage{border:2.5px solid var(--ne-frame); border-radius:13px; background:var(--ne-bg); overflow:hidden; box-shadow:6px 6px 0 var(--ne-frame)}
+.d-neon.light{--ne-bg:#F4F4F8;--ne-surface:#FFFFFF;--ne-surface2:#E9E9F2;--ne-ink:#15151C;--ne-mut:#5E5E6E;--ne-line:rgba(21,21,28,.14);--ne-frame:#15151C;--ne-accent:#0098B8;--ne-accent2:#E0218C;--ne-bar:#15151C;
+  --ne-work:#1FAA4F;--ne-idle:#B7B7C6;--ne-unread:#9B00C0;--ne-error:#E0218C}
+.d-neon.dark{--ne-bg:#0D0D14;--ne-surface:#16161F;--ne-surface2:#1F1F2C;--ne-ink:#EAEAF4;--ne-mut:#8A8AA0;--ne-line:rgba(234,234,244,.16);--ne-frame:#EAEAF4;--ne-accent:#00E5FF;--ne-accent2:#FF2E97;--ne-bar:#15151C;
+  --ne-work:#39D96B;--ne-idle:#4A4A5C;--ne-unread:#B06BFF;--ne-error:#FF2E97}
+.d-neon{font-family:'Lexend',sans-serif}
+.d-neon .stage-bar{background:var(--ne-bar); border-bottom:2.5px solid var(--ne-frame); justify-content:flex-start}
+.d-neon .tl i{border:2px solid rgba(234,234,244,.4); background:#2A2A38}
+.d-neon .tl i:nth-child(1){background:var(--ne-accent)}.d-neon .tl i:nth-child(2){background:var(--ne-accent2)}.d-neon .tl i:nth-child(3){background:#6A6A7A}
+.d-neon .win-title{font-family:'Lexend',sans-serif; font-weight:700; font-size:12.5px; color:#EAEAF4; letter-spacing:.08em; text-transform:uppercase}
+.d-neon .appbar{border-bottom:2.5px solid var(--ne-frame); background:var(--ne-surface)}
+.d-neon .brand-name{font-family:'Monoton',cursive; font-weight:400; font-size:23px; letter-spacing:.04em}
+.d-neon .brand-name em{font-style:normal; color:var(--ne-accent); text-shadow:0 0 7px rgba(0,229,255,.45)}
+.d-neon .brand-mark{background:var(--ne-accent); border-radius:8px; color:#0D0D14}
+.d-neon .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-neon .iconbtn{border:2px solid var(--ne-frame); border-radius:9px; background:var(--ne-surface); color:var(--ne-ink); box-shadow:2.5px 2.5px 0 var(--ne-frame)}
+.d-neon .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--ne-frame)}
+.d-neon .iconbtn svg{stroke-width:2.4}
+.d-neon .sidebar{border-right:2.5px solid var(--ne-frame); background:var(--ne-surface)}
+.d-neon .side-head{border-bottom:1.5px solid var(--ne-line)}
+.d-neon .side-label{font-family:'Lexend'; font-weight:700; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ne-ink)}
+.d-neon .tabs{border-bottom:2.5px solid var(--ne-frame)}
+.d-neon .tab{font-family:'Lexend'; font-weight:600; font-size:12.5px; color:var(--ne-mut); border-right:1.5px solid var(--ne-line)}
+.d-neon .tab:last-child{border-right:none}
+.d-neon .tab.active{background:var(--ne-accent); color:#001824}
+.d-neon .tab.active em{color:#001824}
+.d-neon .task{border-left:none}
+.d-neon .task-row{border:1.5px solid var(--ne-line); border-radius:11px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--ne-surface2)}
+.d-neon .task-row:hover{border-color:var(--ne-frame)}
+.d-neon .task-title{font-family:'Lexend'; font-weight:600; font-size:14px}
+.d-neon .task-sub{color:var(--ne-mut)}
+.d-neon .term{color:var(--ne-mut); border-radius:8px}
+.d-neon .term:hover{background:var(--ne-surface2)}
+.d-neon .dot.idle{background:var(--ne-idle)}
+.d-neon .dot.working{background:var(--ne-work)}.d-neon .dot.working::before{border-color:var(--ne-work)}
+.d-neon .dot.unread{background:var(--ne-unread)}.d-neon .dot.unread::before{border-color:var(--ne-unread)}
+.d-neon .dot.error{background:var(--ne-error)}
+.d-neon .pane{background:var(--ne-bg)}
+.d-neon .term-head{border-bottom:2px solid var(--ne-frame); background:var(--ne-surface)}
+.d-neon .term-tab{font-family:'Lexend'; font-weight:600; color:var(--ne-mut); border:1.5px solid var(--ne-line); border-bottom:none; background:var(--ne-surface2)}
+.d-neon .term-tab.active{background:var(--ne-accent2); color:#fff}
+.d-neon .term-meta{font-family:'Lexend'; font-weight:700; font-size:11px; text-transform:uppercase; color:var(--ne-work)}
+.d-neon .term-body{font-family:'JetBrains Mono',monospace; color:var(--ne-ink)}
+.d-neon .t-prompt{color:var(--ne-accent)}
+.d-neon .t-ok{color:var(--ne-work)}
+.d-neon .t-key{color:var(--ne-accent2)}
+.d-neon .t-url{color:var(--ne-accent)}
+.d-neon .t-info{color:var(--ne-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>24 / Neon — 霓虹灯牌</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s24">
+    <div class="s-head">
+      <div class="s-num" style="color:#00E5FF">24</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Monoton',cursive;font-weight:400">Neon — 霓虹灯牌</h2>
+        <div class="s-sub">Neon Sign</div>
+        <div class="s-tag">深夜灯牌般的霓虹：黑粗框 + 硬投影，青色霓虹管品牌名带柔光，洋红与电光青撞色——正文不加发光、保持锐利，仅标题与激活态发亮。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Monoton',cursive">Monoton</span>霓虹标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Lexend',sans-serif;font-weight:600">Lexend</span>现代正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#00E5FF"></span><span style="background:#FF2E97"></span><span style="background:#15151C"></span><span style="background:#F4F4F8"></span><span style="background:#1FAA4F"></span></div></div>
+      <div class="vibes"><b>霓虹</b><b>夜店</b><b>发光</b><b>硬投影</b></div>
+      <button class="pick" data-design="Neon">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-neon light"><div class="cap"><span class="tag">24 · Neon</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-neon dark"><div class="cap"><span class="tag">24 · Neon</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"✦ NEON ✦","windowHtml":"","extraClass":"","extraText":"","fallback":"Neon — 霓虹灯牌","number":"24"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

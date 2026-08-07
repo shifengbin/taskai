@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>34 Riot — 朋克波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   34 · RIOT — punk zine pop (Pop family)
+   ========================================================================= */
+.d-riot .stage{border:3px solid var(--rt-outline); border-radius:0; background:var(--rt-bg); overflow:hidden; box-shadow:9px 9px 0 var(--rt-outline)}
+.d-riot.light{--rt-bg:#FFFFFF;--rt-surface:#FFFFFF;--rt-surface2:#FFF1F5;--rt-ink:#0A0A0A;--rt-mut:#5E5E5E;--rt-outline:#0A0A0A;--rt-accent:#FF2E88;--rt-accent2:#EBFF00;--rt-accent3:#39FF14;--rt-accent4:#9D00FF;--rt-dots:rgba(10,10,10,.07);
+  --rt-work:#1FAA4F;--rt-idle:#A8A8A8;--rt-unread:#FF2E88;--rt-error:#FF1744}
+.d-riot.dark{--rt-bg:#0A0A0A;--rt-surface:#161616;--rt-surface2:#202020;--rt-ink:#FFFFFF;--rt-mut:#9A9A9A;--rt-outline:#FFFFFF;--rt-accent:#FF4B95;--rt-accent2:#EBFF00;--rt-accent3:#39FF14;--rt-accent4:#B14BFF;--rt-dots:rgba(255,255,255,.07);
+  --rt-work:#39FF14;--rt-idle:#5C5C5C;--rt-unread:#FF4B95;--rt-error:#FF4B6B}
+.d-riot{font-family:'Outfit',sans-serif}
+.d-riot .stage-bar{background:var(--rt-accent2); border-bottom:3px solid var(--rt-outline); justify-content:flex-start}
+.d-riot .tl i{border:2px solid var(--rt-outline); background:var(--rt-surface)}
+.d-riot .tl i:nth-child(1){background:var(--rt-accent)}.d-riot .tl i:nth-child(2){background:var(--rt-accent3)}
+.d-riot .win-title{font-family:'Archivo',sans-serif; font-weight:900; font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:#0A0A0A}
+.d-riot .appbar{border-bottom:3px solid var(--rt-outline); background:var(--rt-surface)}
+.d-riot .brand-name{font-family:'Archivo',sans-serif; font-weight:900; font-size:24px; letter-spacing:-.01em; text-transform:uppercase}
+.d-riot .brand-name em{font-style:normal; color:var(--rt-accent)}
+.d-riot .brand-mark{background:var(--rt-accent); border:2.5px solid var(--rt-outline); border-radius:0; color:#fff}
+.d-riot .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-riot .iconbtn{border:2px solid var(--rt-outline); border-radius:0; background:var(--rt-surface); color:var(--rt-ink); box-shadow:2px 2px 0 var(--rt-outline)}
+.d-riot .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--rt-outline)}
+.d-riot .iconbtn svg{stroke-width:2.2}
+.d-riot .sidebar{border-right:3px solid var(--rt-outline); background:var(--rt-surface)}
+.d-riot .side-head{border-bottom:2px solid var(--rt-outline)}
+.d-riot .side-label{font-family:'Archivo'; font-weight:900; font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--rt-ink)}
+.d-riot .tabs{border-bottom:3px solid var(--rt-outline)}
+.d-riot .tab{font-family:'Outfit'; font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--rt-ink); border-right:2px solid var(--rt-outline)}
+.d-riot .tab:last-child{border-right:none}
+.d-riot .tab.active{background:var(--rt-accent); color:#fff}
+.d-riot .tab.active em{color:#fff}
+.d-riot .task{border-left:none}
+.d-riot .task-row{border:2.5px solid var(--rt-outline); border-radius:0; margin:7px 8px; box-shadow:3px 3px 0 var(--rt-outline), inset 5px 0 0 var(--c); background:var(--rt-surface)}
+.d-riot .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--rt-outline), inset 5px 0 0 var(--c)}
+.d-riot .task-title{font-family:'Archivo'; font-weight:900; text-transform:uppercase}
+.d-riot .task-sub{color:var(--rt-mut); font-weight:600}
+.d-riot .term{border:2px solid var(--rt-outline); border-radius:0; margin:4px 10px; box-shadow:2px 2px 0 var(--rt-outline); background:var(--rt-surface2); color:var(--rt-ink)}
+.d-riot .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--rt-outline)}
+.d-riot .dot.idle{background:var(--rt-idle)}
+.d-riot .dot.working{background:var(--rt-work)}.d-riot .dot.working::before{border-color:var(--rt-work)}
+.d-riot .dot.unread{background:var(--rt-unread)}.d-riot .dot.unread::before{border-color:var(--rt-unread)}
+.d-riot .dot.error{background:var(--rt-error)}
+.d-riot .pane{background:var(--rt-bg)}
+.d-riot .term-head{border-bottom:3px solid var(--rt-outline); background:var(--rt-surface2)}
+.d-riot .term-tab{font-family:'Outfit'; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--rt-ink); border:2px solid var(--rt-outline); border-bottom:none; background:var(--rt-surface); border-radius:0}
+.d-riot .term-tab.active{background:var(--rt-accent2); color:#0A0A0A}
+.d-riot .term-meta{font-family:'Archivo'; font-weight:900; font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--rt-work)}
+.d-riot .term-body{font-family:'JetBrains Mono',monospace; color:var(--rt-ink); background-color:var(--rt-surface); background-image:radial-gradient(var(--rt-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-riot .t-prompt{color:var(--rt-accent)}
+.d-riot .t-ok{color:var(--rt-work)}
+.d-riot .t-key{color:var(--rt-accent4)}
+.d-riot .t-url{color:var(--rt-accent)}
+.d-riot .t-info{color:var(--rt-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>34 / Riot — 朋克波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s34">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF2E88">34</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Archivo',sans-serif;font-weight:900;text-transform:uppercase">Riot — 朋克波普</h2>
+        <div class="s-sub">Punk Zine Pop</div>
+        <div class="s-tag">朋克波普：热粉 + 酸黄 + 毒绿 + 黑白，直角无圆角的 DIY 滑板杂志风——Archivo 900 最锋利、最叛逆。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Archivo',sans-serif;font-weight:900">Archivo</span>超黑体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Outfit',sans-serif;font-weight:600">Outfit</span>几何正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FFFFFF"></span><span style="background:#0A0A0A"></span><span style="background:#FF2E88"></span><span style="background:#EBFF00"></span><span style="background:#39FF14"></span></div></div>
+      <div class="vibes"><b>朋克</b><b>撞色</b><b>直角</b><b>反叛</b></div>
+      <button class="pick" data-design="Riot">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-riot light"><div class="cap"><span class="tag">34 · Riot</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-riot dark"><div class="cap"><span class="tag">34 · Riot</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"RIOT<em>!</em>","windowText":"☠ RIOT // 86","windowHtml":"","extraClass":"","extraText":"","fallback":"Riot — 朋克波普","number":"34"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

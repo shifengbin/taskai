@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>06 DECO — 装饰艺术 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   06 · DECO — art deco geometric luxury
+   ========================================================================= */
+.d-deco .stage{border:1px solid var(--d-line); border-radius:2px; background:var(--d-bg); overflow:hidden; box-shadow:inset 0 0 0 1px var(--d-accent), inset 0 0 0 5px var(--d-bg), inset 0 0 0 6px var(--d-line), 0 34px 80px -36px rgba(0,0,0,.6)}
+.d-deco.light{--d-bg:#F4EFE3;--d-surface:#FBF7EC;--d-surface2:#EDE4CF;--d-ink:#2A2118;--d-mut:#8A7B63;--d-line:#C9BB8E;--d-accent:#B08A3E;--d-accent2:#7A2230;
+  --d-work:#6E7A3E;--d-idle:#A99C82;--d-unread:#7A2230;--d-error:#A33A2E}
+.d-deco.dark{--d-bg:#15121A;--d-surface:#1E1924;--d-surface2:#271F2C;--d-ink:#EDE3CC;--d-mut:#9A8E73;--d-line:#473D52;--d-accent:#C9A24A;--d-accent2:#B8465A;
+  --d-work:#9CA85A;--d-idle:#6E6478;--d-unread:#C46A7C;--d-error:#D85A4E}
+.d-deco{font-family:'Spectral',serif}
+.d-deco .stage-bar{background:var(--d-surface); border-bottom:1px solid var(--d-line); justify-content:center; position:relative}
+.d-deco .tl{position:absolute; left:20px}
+.d-deco .tl i{background:var(--d-accent)}
+.d-deco .tl i:nth-child(2){background:var(--d-accent2)}
+.d-deco .win-title{font-family:'Cinzel',serif; font-weight:600; font-size:11px; letter-spacing:.32em; text-transform:uppercase; color:var(--d-accent)}
+.d-deco .appbar{border-bottom:1px solid var(--d-line); background:var(--d-surface)}
+.d-deco .brand-name{font-family:'Cinzel',serif; font-weight:600; font-size:17px; letter-spacing:.18em; text-transform:uppercase; color:var(--d-ink)}
+.d-deco .brand-name span{color:var(--d-accent)}
+.d-deco .brand-mark{width:16px;height:16px;background:var(--d-accent);transform:rotate(45deg);border-radius:1px}
+.d-deco .brand-mark svg{display:none}
+.d-deco .iconbtn{border-radius:0; color:var(--d-mut); border:1px solid transparent}
+.d-deco .iconbtn:hover{color:var(--d-accent); border-color:var(--d-line)}
+.d-deco .iconbtn svg{stroke-width:1.3}
+.d-deco .sidebar{border-right:1px solid var(--d-line); background:var(--d-surface)}
+.d-deco .side-head{border-bottom:1px solid var(--d-line)}
+.d-deco .side-label{font-family:'Cinzel'; font-weight:600; font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:var(--d-accent)}
+.d-deco .tabs{border-bottom:1px solid var(--d-line)}
+.d-deco .tab{color:var(--d-mut); font-family:'Cinzel'; font-weight:500; font-size:10px; letter-spacing:.12em; text-transform:uppercase}
+.d-deco .tab.active{color:var(--d-ink); box-shadow:inset 0 -2px 0 var(--d-accent)}
+.d-deco .tab.active em{color:var(--d-accent)}
+.d-deco .task{border-left:none}
+.d-deco .task-row{box-shadow:inset 2px 0 0 var(--c); border-bottom:1px solid var(--d-line)}
+.d-deco .task-row:hover{background:var(--d-surface2)}
+.d-deco .task-title{font-family:'Spectral'; font-weight:600; font-size:14px}
+.d-deco .task-sub{color:var(--d-mut); font-family:'Spectral'; font-style:italic}
+.d-deco .term{color:var(--d-mut)}
+.d-deco .term:hover{background:var(--d-surface2)}
+.d-deco .dot.idle{background:var(--d-idle)}
+.d-deco .dot.working{background:var(--d-work)}.d-deco .dot.working::before{border-color:var(--d-work)}
+.d-deco .dot.unread{background:var(--d-unread)}.d-deco .dot.unread::before{border-color:var(--d-unread)}
+.d-deco .dot.error{background:var(--d-error)}
+.d-deco .pane{background:var(--d-bg)}
+.d-deco .term-head{border-bottom:1px solid var(--d-line); background:var(--d-surface)}
+.d-deco .term-tab{color:var(--d-mut); font-family:'Cinzel'; font-weight:500; font-size:10px; letter-spacing:.1em; text-transform:uppercase}
+.d-deco .term-tab.active{color:var(--d-ink); box-shadow:inset 0 -2px 0 var(--d-accent)}
+.d-deco .term-meta{font-family:'Cinzel'; font-weight:500; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--d-work)}
+.d-deco .term-body{font-family:'JetBrains Mono',monospace; color:var(--d-ink)}
+.d-deco .t-prompt{color:var(--d-accent)}
+.d-deco .t-ok{color:var(--d-work)}
+.d-deco .t-url{color:var(--d-accent2)}
+.d-deco .t-info{color:var(--d-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>06 / DECO — 装饰艺术</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s6">
+    <div class="s-head">
+      <div class="s-num" style="color:#C9A24A">06</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Cinzel',serif;letter-spacing:.08em">DECO — 装饰艺术</h2>
+        <div class="s-sub">Art Deco Geometric Luxury</div>
+        <div class="s-tag">对称构图、金色双线边框、几何菱形、罗马大写字母——让工具带上一点黄金时代的仪式感。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Cinzel',serif;font-weight:600">CINZEL</span>罗马大写</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Spectral',serif">Spectral</span>阅读衬线</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F4EFE3"></span><span style="background:#2A2118"></span><span style="background:#B08A3E"></span><span style="background:#15121A"></span><span style="background:#C9A24A"></span></div></div>
+      <div class="vibes"><b>金色</b><b>对称</b><b>几何</b><b>仪式感</b></div>
+      <button class="pick" data-design="Deco">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-deco light"><div class="cap"><span class="tag">06 · Deco</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-deco dark"><div class="cap"><span class="tag">06 · Deco</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<span>AI</span>","windowText":"T A S K A I","windowHtml":"","extraClass":"","extraText":"","fallback":"DECO — 装饰艺术","number":"06"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

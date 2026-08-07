@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>33 Crayon — 蜡笔波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   33 · CRAYON — crayon pop (Pop family)
+   ========================================================================= */
+.d-crayon .stage{border:3px solid var(--cy-outline); border-radius:18px; background:var(--cy-bg); overflow:hidden; box-shadow:9px 9px 0 var(--cy-outline)}
+.d-crayon.light{--cy-bg:#FFFCF3;--cy-surface:#FFFFFF;--cy-surface2:#FFF0D6;--cy-ink:#1F1A2E;--cy-mut:#6E6878;--cy-outline:#1F1A2E;--cy-accent:#FF4D4D;--cy-accent2:#36B5FF;--cy-accent3:#FFC93C;--cy-accent4:#4CC66B;--cy-dots:rgba(31,26,46,.06);
+  --cy-work:#2EA84B;--cy-idle:#B5AEBC;--cy-unread:#FF4D4D;--cy-error:#E63946}
+.d-crayon.dark{--cy-bg:#14102B;--cy-surface:#1F1A3A;--cy-surface2:#29224A;--cy-ink:#FFF7E6;--cy-mut:#A99BCB;--cy-outline:#FFF7E6;--cy-accent:#FF6B6B;--cy-accent2:#5CC8FF;--cy-accent3:#FFD45C;--cy-accent4:#5AD98A;--cy-dots:rgba(255,247,230,.06);
+  --cy-work:#5AD98A;--cy-idle:#5C557A;--cy-unread:#FF6B6B;--cy-error:#FF7A7A}
+.d-crayon{font-family:'Nunito',sans-serif}
+.d-crayon .stage-bar{background:var(--cy-accent3); border-bottom:3px solid var(--cy-outline); justify-content:flex-start}
+.d-crayon .tl i{border:2px solid var(--cy-outline); background:var(--cy-surface)}
+.d-crayon .tl i:nth-child(1){background:var(--cy-accent)}.d-crayon .tl i:nth-child(2){background:var(--cy-accent2)}
+.d-crayon .win-title{font-family:'Fredoka',sans-serif; font-weight:600; font-size:14px; color:#1F1A2E}
+.d-crayon .appbar{border-bottom:3px solid var(--cy-outline); background:var(--cy-surface)}
+.d-crayon .brand-name{font-family:'Fredoka',sans-serif; font-weight:700; font-size:24px; letter-spacing:-.01em}
+.d-crayon .brand-name em{font-style:normal; color:var(--cy-accent)}
+.d-crayon .brand-mark{background:var(--cy-accent); border:2.5px solid var(--cy-outline); border-radius:9px; color:#fff}
+.d-crayon .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-crayon .iconbtn{border:2px solid var(--cy-outline); border-radius:12px; background:var(--cy-surface); color:var(--cy-ink); box-shadow:2px 2px 0 var(--cy-outline)}
+.d-crayon .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--cy-outline)}
+.d-crayon .iconbtn svg{stroke-width:2.2}
+.d-crayon .sidebar{border-right:3px solid var(--cy-outline); background:var(--cy-surface)}
+.d-crayon .side-head{border-bottom:2px solid var(--cy-outline)}
+.d-crayon .side-label{font-family:'Fredoka'; font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:.02em; color:var(--cy-ink)}
+.d-crayon .tabs{border-bottom:3px solid var(--cy-outline)}
+.d-crayon .tab{font-family:'Fredoka'; font-weight:600; font-size:13px; color:var(--cy-ink); border-right:2px solid var(--cy-outline)}
+.d-crayon .tab:last-child{border-right:none}
+.d-crayon .tab.active{background:var(--cy-accent); color:#fff}
+.d-crayon .tab.active em{color:#fff}
+.d-crayon .task{border-left:none}
+.d-crayon .task-row{border:2.5px solid var(--cy-outline); border-radius:14px; margin:7px 8px; box-shadow:3px 3px 0 var(--cy-outline), inset 5px 0 0 var(--c); background:var(--cy-surface)}
+.d-crayon .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--cy-outline), inset 5px 0 0 var(--c)}
+.d-crayon .task-title{font-family:'Fredoka'; font-weight:700}
+.d-crayon .task-sub{color:var(--cy-mut); font-weight:600}
+.d-crayon .term{border:2px solid var(--cy-outline); border-radius:12px; margin:4px 10px; box-shadow:2px 2px 0 var(--cy-outline); background:var(--cy-surface2); color:var(--cy-ink)}
+.d-crayon .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--cy-outline)}
+.d-crayon .dot.idle{background:var(--cy-idle)}
+.d-crayon .dot.working{background:var(--cy-work)}.d-crayon .dot.working::before{border-color:var(--cy-work)}
+.d-crayon .dot.unread{background:var(--cy-unread)}.d-crayon .dot.unread::before{border-color:var(--cy-unread)}
+.d-crayon .dot.error{background:var(--cy-error)}
+.d-crayon .pane{background:var(--cy-bg)}
+.d-crayon .term-head{border-bottom:3px solid var(--cy-outline); background:var(--cy-surface2)}
+.d-crayon .term-tab{font-family:'Fredoka'; font-weight:600; color:var(--cy-ink); border:2px solid var(--cy-outline); border-bottom:none; background:var(--cy-surface); border-radius:11px 11px 0 0}
+.d-crayon .term-tab.active{background:var(--cy-accent2); color:#1F1A2E}
+.d-crayon .term-meta{font-family:'Fredoka'; font-weight:700; font-size:11px; text-transform:uppercase; color:var(--cy-work)}
+.d-crayon .term-body{font-family:'JetBrains Mono',monospace; color:var(--cy-ink); background-color:var(--cy-surface); background-image:radial-gradient(var(--cy-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-crayon .t-prompt{color:var(--cy-accent2)}
+.d-crayon .t-ok{color:var(--cy-work)}
+.d-crayon .t-key{color:var(--cy-accent4)}
+.d-crayon .t-url{color:var(--cy-accent2)}
+.d-crayon .t-info{color:var(--cy-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>33 / Crayon — 蜡笔波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s33">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF4D4D">33</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Fredoka',sans-serif;font-weight:700">Crayon — 蜡笔波普</h2>
+        <div class="s-sub">Crayon Pop</div>
+        <div class="s-tag">蜡笔波普：蜡笔红、天蓝、明黄、草绿，像打开一盒新蜡笔——Fredoka 圆润童趣，全场最阳光活泼的一款。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Fredoka',sans-serif;font-weight:700">Fredoka</span>圆润童趣</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Nunito',sans-serif;font-weight:700">Nunito</span>友好正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FFFCF3"></span><span style="background:#1F1A2E"></span><span style="background:#FF4D4D"></span><span style="background:#36B5FF"></span><span style="background:#FFC93C"></span></div></div>
+      <div class="vibes"><b>童趣</b><b>阳光</b><b>圆润</b><b>缤纷</b></div>
+      <button class="pick" data-design="Crayon">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-crayon light"><div class="cap"><span class="tag">33 · Crayon</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-crayon dark"><div class="cap"><span class="tag">33 · Crayon</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"cray<em>on</em>","windowText":"✿ taskai ✿","windowHtml":"","extraClass":"","extraText":"","fallback":"Crayon — 蜡笔波普","number":"33"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

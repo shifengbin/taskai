@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>32 ZAP — 电流波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   32 · ZAP — electric pop (Pop family)
+   ========================================================================= */
+.d-zap .stage{border:3px solid var(--zp-outline); border-radius:4px; background:var(--zp-bg); overflow:hidden; box-shadow:8px 8px 0 var(--zp-outline)}
+.d-zap.light{--zp-bg:#ECF7F2;--zp-surface:#FFFFFF;--zp-surface2:#DCEEE6;--zp-ink:#0A0E1A;--zp-mut:#5A6B6A;--zp-outline:#0A0E1A;--zp-accent:#1E5FFF;--zp-accent2:#00C853;--zp-accent3:#FF6D00;--zp-accent4:#E500A4;--zp-dots:rgba(10,14,26,.06);
+  --zp-work:#1FAA4F;--zp-idle:#9CB0AC;--zp-unread:#E500A4;--zp-error:#FF3B30}
+.d-zap.dark{--zp-bg:#06101F;--zp-surface:#0E1B30;--zp-surface2:#15263F;--zp-ink:#E6F0FF;--zp-mut:#8AA0C0;--zp-outline:#E6F0FF;--zp-accent:#4C8CFF;--zp-accent2:#1FF09A;--zp-accent3:#FF8A3A;--zp-accent4:#FF4FB8;--zp-dots:rgba(230,240,255,.06);
+  --zp-work:#1FF09A;--zp-idle:#4E5C6E;--zp-unread:#FF4FB8;--zp-error:#FF6B5C}
+.d-zap{font-family:'DM Sans',sans-serif}
+.d-zap .stage-bar{background:var(--zp-accent); border-bottom:3px solid var(--zp-outline); justify-content:flex-start}
+.d-zap .tl i{border:2px solid var(--zp-outline); background:var(--zp-surface)}
+.d-zap .tl i:nth-child(1){background:var(--zp-accent2)}.d-zap .tl i:nth-child(2){background:var(--zp-accent3)}
+.d-zap .win-title{font-family:'Bungee',sans-serif; font-weight:400; font-size:12px; letter-spacing:.04em; color:#fff}
+.d-zap .appbar{border-bottom:3px solid var(--zp-outline); background:var(--zp-surface)}
+.d-zap .brand-name{font-family:'Bungee',sans-serif; font-weight:400; font-size:21px; letter-spacing:.01em}
+.d-zap .brand-name em{font-style:normal; color:var(--zp-accent2)}
+.d-zap .brand-mark{background:var(--zp-accent); border:2.5px solid var(--zp-outline); border-radius:4px; color:#fff}
+.d-zap .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-zap .iconbtn{border:2px solid var(--zp-outline); border-radius:5px; background:var(--zp-surface); color:var(--zp-ink); box-shadow:2px 2px 0 var(--zp-outline)}
+.d-zap .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--zp-outline)}
+.d-zap .iconbtn svg{stroke-width:2.2}
+.d-zap .sidebar{border-right:3px solid var(--zp-outline); background:var(--zp-surface)}
+.d-zap .side-head{border-bottom:2px solid var(--zp-outline)}
+.d-zap .side-label{font-family:'Bungee'; font-weight:400; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--zp-ink)}
+.d-zap .tabs{border-bottom:3px solid var(--zp-outline)}
+.d-zap .tab{font-family:'DM Sans'; font-weight:700; font-size:12.5px; color:var(--zp-ink); border-right:2px solid var(--zp-outline)}
+.d-zap .tab:last-child{border-right:none}
+.d-zap .tab.active{background:var(--zp-accent); color:#fff}
+.d-zap .tab.active em{color:#fff}
+.d-zap .task{border-left:none}
+.d-zap .task-row{border:2.5px solid var(--zp-outline); border-radius:6px; margin:7px 8px; box-shadow:3px 3px 0 var(--zp-outline), inset 5px 0 0 var(--c); background:var(--zp-surface)}
+.d-zap .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--zp-outline), inset 5px 0 0 var(--c)}
+.d-zap .task-title{font-family:'Bungee'; font-weight:400}
+.d-zap .task-sub{color:var(--zp-mut); font-weight:600}
+.d-zap .term{border:2px solid var(--zp-outline); border-radius:5px; margin:4px 10px; box-shadow:2px 2px 0 var(--zp-outline); background:var(--zp-surface2); color:var(--zp-ink)}
+.d-zap .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--zp-outline)}
+.d-zap .dot.idle{background:var(--zp-idle)}
+.d-zap .dot.working{background:var(--zp-work)}.d-zap .dot.working::before{border-color:var(--zp-work)}
+.d-zap .dot.unread{background:var(--zp-unread)}.d-zap .dot.unread::before{border-color:var(--zp-unread)}
+.d-zap .dot.error{background:var(--zp-error)}
+.d-zap .pane{background:var(--zp-bg)}
+.d-zap .term-head{border-bottom:3px solid var(--zp-outline); background:var(--zp-surface2)}
+.d-zap .term-tab{font-family:'DM Sans'; font-weight:700; color:var(--zp-ink); border:2px solid var(--zp-outline); border-bottom:none; background:var(--zp-surface); border-radius:5px 5px 0 0}
+.d-zap .term-tab.active{background:var(--zp-accent2); color:#0A0E1A}
+.d-zap.dark .term-tab.active{color:#06101F}
+.d-zap .term-meta{font-family:'Bungee'; font-weight:400; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--zp-work)}
+.d-zap .term-body{font-family:'JetBrains Mono',monospace; color:var(--zp-ink); background-color:var(--zp-surface); background-image:radial-gradient(var(--zp-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-zap .t-prompt{color:var(--zp-accent4)}
+.d-zap .t-ok{color:var(--zp-work)}
+.d-zap .t-key{color:var(--zp-accent)}
+.d-zap .t-url{color:var(--zp-accent4)}
+.d-zap .t-info{color:var(--zp-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>32 / ZAP — 电流波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s32">
+    <div class="s-head">
+      <div class="s-num" style="color:#1E5FFF">32</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Bungee',sans-serif">ZAP — 电流波普</h2>
+        <div class="s-sub">Electric Pop</div>
+        <div class="s-tag">电流波普：电蓝 + 霓虹绿 + 橙红高速撞色，Bungee 块状全大写——硬朗的电流脉冲感，棱角分明。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Bungee',sans-serif">Bungee</span>块状建筑体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'DM Sans',sans-serif;font-weight:600">DM Sans</span>现代正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#ECF7F2"></span><span style="background:#0A0E1A"></span><span style="background:#1E5FFF"></span><span style="background:#00C853"></span><span style="background:#FF6D00"></span></div></div>
+      <div class="vibes"><b>电流</b><b>科技</b><b>锐利</b><b>高速</b></div>
+      <button class="pick" data-design="Zap">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-zap light"><div class="cap"><span class="tag">32 · Zap</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-zap dark"><div class="cap"><span class="tag">32 · Zap</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"ZAP<em>!</em>","windowText":"⚡ ZAP // ON","windowHtml":"","extraClass":"","extraText":"","fallback":"ZAP — 电流波普","number":"32"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

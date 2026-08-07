@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>31 Boom — 爆炸波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   31 · BOOM — explosion pop (Pop family)
+   ========================================================================= */
+.d-boom .stage{border:3px solid var(--bm-outline); border-radius:16px; background:var(--bm-bg); overflow:hidden; box-shadow:9px 9px 0 var(--bm-outline)}
+.d-boom.light{--bm-bg:#FFF8E1;--bm-surface:#FFFFFF;--bm-surface2:#FFEFD0;--bm-ink:#141414;--bm-mut:#6B6B6B;--bm-outline:#141414;--bm-accent:#FF2D87;--bm-accent2:#FFD60A;--bm-accent3:#2D6BFF;--bm-accent4:#06D6A0;--bm-dots:rgba(20,20,20,.06);
+  --bm-work:#0E9F6E;--bm-idle:#B0B0B0;--bm-unread:#FF2D87;--bm-error:#FF3B3B}
+.d-boom.dark{--bm-bg:#160C2E;--bm-surface:#22143F;--bm-surface2:#2C1A4D;--bm-ink:#FFE9F4;--bm-mut:#B59BCB;--bm-outline:#FFE9F4;--bm-accent:#FF5CAB;--bm-accent2:#FFE03A;--bm-accent3:#5C8CFF;--bm-accent4:#2EE8B0;--bm-dots:rgba(255,233,244,.06);
+  --bm-work:#2EE8B0;--bm-idle:#6E5C95;--bm-unread:#FF5CAB;--bm-error:#FF6B7A}
+.d-boom{font-family:'Baloo 2',sans-serif}
+.d-boom .stage-bar{background:var(--bm-accent2); border-bottom:3px solid var(--bm-outline); justify-content:flex-start}
+.d-boom .tl i{border:2px solid var(--bm-outline); background:var(--bm-surface)}
+.d-boom .tl i:nth-child(1){background:var(--bm-accent)}.d-boom .tl i:nth-child(2){background:var(--bm-accent3)}
+.d-boom .win-title{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:13px; color:#1A0A1A}
+.d-boom .appbar{border-bottom:3px solid var(--bm-outline); background:var(--bm-surface)}
+.d-boom .brand-name{font-family:'Bagel Fat One',sans-serif; font-weight:400; font-size:25px; letter-spacing:.01em}
+.d-boom .brand-name em{font-style:normal; color:var(--bm-accent)}
+.d-boom .brand-mark{background:var(--bm-accent); border:2.5px solid var(--bm-outline); border-radius:8px; color:#fff}
+.d-boom .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-boom .iconbtn{border:2px solid var(--bm-outline); border-radius:10px; background:var(--bm-surface); color:var(--bm-ink); box-shadow:2px 2px 0 var(--bm-outline)}
+.d-boom .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--bm-outline)}
+.d-boom .iconbtn svg{stroke-width:2.2}
+.d-boom .sidebar{border-right:3px solid var(--bm-outline); background:var(--bm-surface)}
+.d-boom .side-head{border-bottom:2px solid var(--bm-outline)}
+.d-boom .side-label{font-family:'Bagel Fat One'; font-weight:400; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--bm-ink)}
+.d-boom .tabs{border-bottom:3px solid var(--bm-outline)}
+.d-boom .tab{font-family:'Baloo 2'; font-weight:700; font-size:12.5px; color:var(--bm-ink); border-right:2px solid var(--bm-outline)}
+.d-boom .tab:last-child{border-right:none}
+.d-boom .tab.active{background:var(--bm-accent); color:#fff}
+.d-boom .tab.active em{color:#fff}
+.d-boom .task{border-left:none}
+.d-boom .task-row{border:2.5px solid var(--bm-outline); border-radius:14px; margin:7px 8px; box-shadow:3px 3px 0 var(--bm-outline), inset 5px 0 0 var(--c); background:var(--bm-surface)}
+.d-boom .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--bm-outline), inset 5px 0 0 var(--c)}
+.d-boom .task-title{font-family:'Bagel Fat One'; font-weight:400}
+.d-boom .task-sub{color:var(--bm-mut); font-weight:600}
+.d-boom .term{border:2px solid var(--bm-outline); border-radius:11px; margin:4px 10px; box-shadow:2px 2px 0 var(--bm-outline); background:var(--bm-surface2); color:var(--bm-ink)}
+.d-boom .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--bm-outline)}
+.d-boom .dot.idle{background:var(--bm-idle)}
+.d-boom .dot.working{background:var(--bm-work)}.d-boom .dot.working::before{border-color:var(--bm-work)}
+.d-boom .dot.unread{background:var(--bm-unread)}.d-boom .dot.unread::before{border-color:var(--bm-unread)}
+.d-boom .dot.error{background:var(--bm-error)}
+.d-boom .pane{background:var(--bm-bg)}
+.d-boom .term-head{border-bottom:3px solid var(--bm-outline); background:var(--bm-surface2)}
+.d-boom .term-tab{font-family:'Baloo 2'; font-weight:700; color:var(--bm-ink); border:2px solid var(--bm-outline); border-bottom:none; background:var(--bm-surface); border-radius:10px 10px 0 0}
+.d-boom .term-tab.active{background:var(--bm-accent3); color:#fff}
+.d-boom .term-meta{font-family:'Bagel Fat One'; font-weight:400; font-size:11px; text-transform:uppercase; color:var(--bm-work)}
+.d-boom .term-body{font-family:'JetBrains Mono',monospace; color:var(--bm-ink); background-color:var(--bm-surface); background-image:radial-gradient(var(--bm-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-boom .t-prompt{color:var(--bm-accent)}
+.d-boom .t-ok{color:var(--bm-work)}
+.d-boom .t-key{color:var(--bm-accent3)}
+.d-boom .t-url{color:var(--bm-accent)}
+.d-boom .t-info{color:var(--bm-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>31 / Boom — 爆炸波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s31">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF2D87">31</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Bagel Fat One',sans-serif">Boom — 爆炸波普</h2>
+        <div class="s-sub">Explosion Pop</div>
+        <div class="s-tag">爆炸波普：品红、电黄、钴蓝、青柠四色高能冲撞，配 Bagel Fat One 超粗圆体——视觉上的一记重拳。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Bagel Fat One',sans-serif">Boom</span>超粗圆体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Baloo 2',sans-serif;font-weight:700">Baloo</span>圆润正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FFF8E1"></span><span style="background:#141414"></span><span style="background:#FF2D87"></span><span style="background:#FFD60A"></span><span style="background:#2D6BFF"></span></div></div>
+      <div class="vibes"><b>爆裂</b><b>撞色</b><b>圆胖</b><b>高能</b></div>
+      <button class="pick" data-design="Boom">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-boom light"><div class="cap"><span class="tag">31 · Boom</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-boom dark"><div class="cap"><span class="tag">31 · Boom</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"BOO<em>M</em>","windowText":"✸ BOOM ✸","windowHtml":"","extraClass":"","extraText":"","fallback":"Boom — 爆炸波普","number":"31"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

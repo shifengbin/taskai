@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>23 Concrete — 工业混凝土 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   23 · CONCRETE — industrial concrete (hard-shadow family; hazard-stripe bar)
+   ========================================================================= */
+.d-concrete .stage{border:2.5px solid var(--co-frame); border-radius:11px; background:var(--co-bg); overflow:hidden; box-shadow:6px 6px 0 var(--co-frame)}
+.d-concrete.light{--co-bg:#EFEEEA;--co-surface:#FAFAF8;--co-surface2:#E2E1DC;--co-ink:#23272E;--co-mut:#5E626B;--co-line:rgba(35,39,46,.14);--co-frame:#23272E;--co-accent:#FF5A1F;--co-accent2:#3C6E9E;--co-bar:#2A2E35;
+  --co-work:#2E9E5B;--co-idle:#B4B3AC;--co-unread:#3C6E9E;--co-error:#FF5A1F}
+.d-concrete.dark{--co-bg:#16181C;--co-surface:#202329;--co-surface2:#2A2E35;--co-ink:#E6E6E0;--co-mut:#8E929C;--co-line:rgba(230,230,224,.16);--co-frame:#E6E6E0;--co-accent:#FF7A45;--co-accent2:#5C9CC8;--co-bar:#2A2E35;
+  --co-work:#46D97F;--co-idle:#494D57;--co-unread:#5C9CC8;--co-error:#FF7A45}
+.d-concrete{font-family:'Figtree',sans-serif}
+.d-concrete .stage-bar{background-color:var(--co-bar); background-image:repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 6px, transparent 6px 12px); border-bottom:2.5px solid var(--co-frame); justify-content:flex-start}
+.d-concrete .tl i{border:2px solid rgba(230,230,224,.5); background:#3A3F47}
+.d-concrete .tl i:nth-child(1){background:var(--co-accent)}.d-concrete .tl i:nth-child(2){background:var(--co-accent2)}.d-concrete .tl i:nth-child(3){background:#6A6F78}
+.d-concrete .win-title{font-family:'Syne',sans-serif; font-weight:800; font-size:12.5px; color:#E6E6E0; letter-spacing:.1em; text-transform:uppercase}
+.d-concrete .appbar{border-bottom:2.5px solid var(--co-frame); background:var(--co-surface)}
+.d-concrete .brand-name{font-family:'Syne',sans-serif; font-weight:800; font-size:21px; letter-spacing:-.01em}
+.d-concrete .brand-name em{font-style:normal; color:var(--co-accent)}
+.d-concrete .brand-mark{background:var(--co-accent); border-radius:7px; color:#fff}
+.d-concrete .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-concrete .iconbtn{border:2px solid var(--co-frame); border-radius:8px; background:var(--co-surface); color:var(--co-ink); box-shadow:2.5px 2.5px 0 var(--co-frame)}
+.d-concrete .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--co-frame)}
+.d-concrete .iconbtn svg{stroke-width:2.4}
+.d-concrete .sidebar{border-right:2.5px solid var(--co-frame); background:var(--co-surface)}
+.d-concrete .side-head{border-bottom:1.5px solid var(--co-line)}
+.d-concrete .side-label{font-family:'Syne',sans-serif; font-weight:800; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--co-ink)}
+.d-concrete .tabs{border-bottom:2.5px solid var(--co-frame)}
+.d-concrete .tab{font-family:'Figtree'; font-weight:700; font-size:12.5px; color:var(--co-mut); border-right:1.5px solid var(--co-line)}
+.d-concrete .tab:last-child{border-right:none}
+.d-concrete .tab.active{background:var(--co-accent); color:#fff}
+.d-concrete .tab.active em{color:#fff}
+.d-concrete .task{border-left:none}
+.d-concrete .task-row{border:1.5px solid var(--co-line); border-radius:10px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--co-surface2)}
+.d-concrete .task-row:hover{border-color:var(--co-frame)}
+.d-concrete .task-title{font-family:'Figtree'; font-weight:700; font-size:14px}
+.d-concrete .task-sub{color:var(--co-mut)}
+.d-concrete .term{color:var(--co-mut); border-radius:7px}
+.d-concrete .term:hover{background:var(--co-surface2)}
+.d-concrete .dot.idle{background:var(--co-idle)}
+.d-concrete .dot.working{background:var(--co-work)}.d-concrete .dot.working::before{border-color:var(--co-work)}
+.d-concrete .dot.unread{background:var(--co-unread)}.d-concrete .dot.unread::before{border-color:var(--co-unread)}
+.d-concrete .dot.error{background:var(--co-error)}
+.d-concrete .pane{background:var(--co-bg)}
+.d-concrete .term-head{border-bottom:2px solid var(--co-frame); background:var(--co-surface)}
+.d-concrete .term-tab{font-family:'Figtree'; font-weight:700; color:var(--co-mut); border:1.5px solid var(--co-line); border-bottom:none; background:var(--co-surface2)}
+.d-concrete .term-tab.active{background:var(--co-accent2); color:#fff}
+.d-concrete .term-meta{font-family:'Syne',sans-serif; font-weight:800; font-size:11px; text-transform:uppercase; color:var(--co-work)}
+.d-concrete .term-body{font-family:'JetBrains Mono',monospace; color:var(--co-ink)}
+.d-concrete .t-prompt{color:var(--co-accent)}
+.d-concrete .t-ok{color:var(--co-work)}
+.d-concrete .t-key{color:var(--co-accent2)}
+.d-concrete .t-url{color:var(--co-accent)}
+.d-concrete .t-info{color:var(--co-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>23 / Concrete — 工业混凝土</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s23">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF7A45">23</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Syne',sans-serif;font-weight:800">Concrete — 工业混凝土</h2>
+        <div class="s-sub">Industrial Concrete</div>
+        <div class="s-tag">工业混凝土灰 + 警示橙的克制组合：石墨粗框 + 硬投影、斜纹警示标题栏——单一高饱和橙点亮操作，黑墨文字在灰底上毫不含糊。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Syne',sans-serif;font-weight:800">Syne 800</span>几何标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Figtree',sans-serif;font-weight:700">Figtree</span>清晰正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FF5A1F"></span><span style="background:#23272E"></span><span style="background:#3C6E9E"></span><span style="background:#EFEEEA"></span><span style="background:#2E9E5B"></span></div></div>
+      <div class="vibes"><b>工业</b><b>克制</b><b>警示</b><b>硬投影</b></div>
+      <button class="pick" data-design="Concrete">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-concrete light"><div class="cap"><span class="tag">23 · Concrete</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-concrete dark"><div class="cap"><span class="tag">23 · Concrete</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"■ TASKAI ■","windowHtml":"","extraClass":"","extraText":"","fallback":"Concrete — 工业混凝土","number":"23"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

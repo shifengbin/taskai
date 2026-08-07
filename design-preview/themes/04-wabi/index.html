@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 Wabi — 侘寂留白 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   04 · WABI — japanese zen minimal
+   ========================================================================= */
+.d-wabi .stage{border:1px solid var(--w-line); border-top:3px solid var(--w-accent); background:var(--w-bg); border-radius:6px; overflow:hidden; box-shadow:0 30px 70px -34px rgba(0,0,0,.45)}
+.d-wabi.light{--w-bg:#F7F6F2;--w-surface:#FFFFFF;--w-surface2:#F1EFE9;--w-ink:#1F1D1A;--w-mut:#8C8780;--w-line:#E0DCD2;--w-accent:#C8442B;
+  --w-work:#5B8C5A;--w-idle:#B5B0A6;--w-unread:#7B6BA8;--w-error:#C8442B}
+.d-wabi.dark{--w-bg:#15130E;--w-surface:#1D1A14;--w-surface2:#252119;--w-ink:#EDEAE2;--w-mut:#8A8478;--w-line:#322E25;--w-accent:#E0724E;
+  --w-work:#8FB579;--w-idle:#6E6A60;--w-unread:#A99BCB;--w-error:#E0724E}
+.d-wabi{font-family:'Jost',sans-serif}
+.d-wabi .stage-bar{background:var(--w-surface); border-bottom:1px solid var(--w-line); justify-content:center; position:relative}
+.d-wabi .tl{position:absolute; left:18px}
+.d-wabi.light .tl i{background:#D8D3C8}.d-wabi.light .tl i:nth-child(1){background:#C8442B}
+.d-wabi.dark .tl i{background:#3A352B}.d-wabi.dark .tl i:nth-child(1){background:#E0724E}
+.d-wabi .win-title{font-family:'Cormorant Garamond',serif; font-style:italic; font-size:14px; color:var(--w-mut)}
+.d-wabi .appbar{border-bottom:1px solid var(--w-line); background:var(--w-surface)}
+.d-wabi .brand-name{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:21px; letter-spacing:.02em}
+.d-wabi .brand-mark{width:22px;height:22px;border:2px solid var(--w-accent);border-radius:50%;background:none}
+.d-wabi .brand-mark svg{display:none}
+.d-wabi .iconbtn{border-radius:999px; color:var(--w-mut)}
+.d-wabi .iconbtn:hover{background:var(--w-surface2); color:var(--w-ink)}
+.d-wabi .iconbtn svg{stroke-width:1.2}
+.d-wabi .sidebar{border-right:1px solid var(--w-line); background:var(--w-surface)}
+.d-wabi .side-head{border-bottom:1px solid var(--w-line)}
+.d-wabi .side-label{font-family:'Jost'; font-size:10px; letter-spacing:.32em; text-transform:uppercase; color:var(--w-mut); font-weight:400}
+.d-wabi .tabs{border-bottom:1px solid var(--w-line)}
+.d-wabi .tab{color:var(--w-mut); font-size:12.5px; letter-spacing:.04em}
+.d-wabi .tab.active{color:var(--w-ink); box-shadow:inset 0 -2px 0 var(--w-accent)}
+.d-wabi .tab.active em{color:var(--w-accent)}
+.d-wabi .task{border-left:none}
+.d-wabi .task-row{box-shadow:inset 2px 0 0 var(--c)}
+.d-wabi .task-row:hover{background:var(--w-surface2)}
+.d-wabi .task-title{font-weight:500; letter-spacing:.01em}
+.d-wabi .task-sub{color:var(--w-mut)}
+.d-wabi .term{color:var(--w-mut)}
+.d-wabi .term:hover{background:var(--w-surface2)}
+.d-wabi .dot.idle{background:var(--w-idle)}
+.d-wabi .dot.working{background:var(--w-work)}.d-wabi .dot.working::before{border-color:var(--w-work)}
+.d-wabi .dot.unread{background:var(--w-unread)}.d-wabi .dot.unread::before{border-color:var(--w-unread)}
+.d-wabi .dot.error{background:var(--w-error)}
+.d-wabi .pane{background:var(--w-bg)}
+.d-wabi .term-head{border-bottom:1px solid var(--w-line); background:var(--w-surface)}
+.d-wabi .term-tab{color:var(--w-mut)}
+.d-wabi .term-tab.active{color:var(--w-ink); box-shadow:inset 0 -2px 0 var(--w-accent)}
+.d-wabi .term-meta{color:var(--w-work); font-family:'Cormorant Garamond',serif; font-style:italic; font-size:13px}
+.d-wabi .term-body{font-family:'JetBrains Mono',monospace; color:var(--w-ink)}
+.d-wabi .t-prompt{color:var(--w-accent)}
+.d-wabi .t-ok{color:var(--w-work)}
+.d-wabi .t-url{color:var(--w-accent)}
+.d-wabi .t-info{color:var(--w-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>04 / Wabi — 侘寂留白</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s4">
+    <div class="s-head">
+      <div class="s-num" style="color:#C8442B">04</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Cormorant Garamond',serif">Wabi — 侘寂留白</h2>
+        <div class="s-sub">Japanese Zen Minimal</div>
+        <div class="s-tag">大量留白、细如发丝的分割线、一抹朱砂——把工作台变成一间安静的书房。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Cormorant Garamond',serif">Cormorant</span>高对比衬线</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Jost',sans-serif">Jost</span>几何无衬</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F7F6F2"></span><span style="background:#1F1D1A"></span><span style="background:#C8442B"></span><span style="background:#15130E"></span><span style="background:#E0724E"></span></div></div>
+      <div class="vibes"><b>留白</b><b>侘寂</b><b>朱砂</b><b>禅</b></div>
+      <button class="pick" data-design="Wabi">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-wabi light"><div class="cap"><span class="tag">04 · Wabi</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-wabi dark"><div class="cap"><span class="tag">04 · Wabi</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"任务工作台","brandHtml":"","windowText":"","windowHtml":"taskai · workbench","extraClass":"","extraText":"","fallback":"Wabi — 侘寂留白","number":"04"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

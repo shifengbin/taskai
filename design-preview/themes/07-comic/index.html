@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>07 COMIC — 漫画风 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   07 · COMIC — manga / comic book
+   ========================================================================= */
+.d-comic .stage{border:3px solid var(--c-ink); border-radius:14px; background:var(--c-bg); overflow:hidden; box-shadow:7px 7px 0 var(--c-ink)}
+.d-comic.light{--c-bg:#FFFDF5;--c-surface:#FFFFFF;--c-surface2:#FFF1B8;--c-ink:#14110F;--c-mut:#6E6356;--c-accent:#E63027;--c-accent2:#2D6CDF;--c-dots:rgba(20,17,15,.10);
+  --c-work:#1FA85A;--c-idle:#9A9081;--c-unread:#2D6CDF;--c-error:#E63027}
+.d-comic.dark{--c-bg:#14110F;--c-surface:#1F1B16;--c-surface2:#2A2417;--c-ink:#F5F0E6;--c-mut:#8A7E6E;--c-accent:#FF4136;--c-accent2:#4D8DEE;--c-dots:rgba(245,240,230,.10);
+  --c-work:#37D378;--c-idle:#5E5747;--c-unread:#4D8DEE;--c-error:#FF4136}
+.d-comic{font-family:'Comic Neue',sans-serif}
+.d-comic .stage-bar{background-color:var(--c-accent); background-image:radial-gradient(var(--c-dots) 1.5px,transparent 1.5px); background-size:9px 9px; border-bottom:3px solid var(--c-ink); justify-content:flex-start}
+.d-comic .tl i{border:2px solid var(--c-ink); background:var(--c-surface)}
+.d-comic .tl i:nth-child(1){background:var(--c-accent)}
+.d-comic .win-title{font-family:'Bangers',cursive; font-weight:400; font-size:19px; letter-spacing:.05em; text-transform:uppercase; color:#fff}
+.d-comic .appbar{border-bottom:3px solid var(--c-ink); background:var(--c-surface)}
+.d-comic .brand-name{font-family:'Bangers',cursive; font-weight:400; font-size:27px; letter-spacing:.03em; text-transform:uppercase; line-height:1}
+.d-comic .brand-name em{font-style:normal; color:var(--c-accent)}
+.d-comic .brand-mark{background:var(--c-accent); border:2.5px solid var(--c-ink); border-radius:7px; color:#fff}
+.d-comic .brand-mark svg{width:14px;height:14px;stroke-width:3.5}
+.d-comic .iconbtn{border:2.5px solid var(--c-ink); border-radius:8px; background:var(--c-surface); box-shadow:2.5px 2.5px 0 var(--c-ink)}
+.d-comic .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--c-ink)}
+.d-comic .iconbtn svg{stroke-width:2.5}
+.d-comic .sidebar{border-right:3px solid var(--c-ink); background:var(--c-surface)}
+.d-comic .side-head{border-bottom:2.5px solid var(--c-ink)}
+.d-comic .side-label{font-family:'Bangers'; font-weight:400; font-size:16px; letter-spacing:.05em; text-transform:uppercase; color:var(--c-ink)}
+.d-comic .tabs{border-bottom:3px solid var(--c-ink)}
+.d-comic .tab{font-family:'Bangers'; font-weight:400; font-size:15px; letter-spacing:.04em; text-transform:uppercase; color:var(--c-ink); border-right:2.5px solid var(--c-ink)}
+.d-comic .tab:last-child{border-right:none}
+.d-comic .tab.active{background:var(--c-ink); color:var(--c-bg)}
+.d-comic .tab.active em{color:var(--c-accent)}
+.d-comic .task{border-left:none}
+.d-comic .task-row{border:2.5px solid var(--c-ink); border-radius:11px; margin:7px 8px; box-shadow:3px 3px 0 var(--c-ink), inset 5px 0 0 var(--c)}
+.d-comic .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--c-ink), inset 5px 0 0 var(--c)}
+.d-comic .task-title{font-family:'Comic Neue'; font-weight:700; font-size:14px}
+.d-comic .task-sub{color:var(--c-mut)}
+.d-comic .term{border:2px solid var(--c-ink); border-radius:8px; margin:4px 10px; box-shadow:2px 2px 0 var(--c-ink); background:var(--c-surface2); color:var(--c-ink)}
+.d-comic .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--c-ink)}
+.d-comic .dot.idle{background:var(--c-idle)}
+.d-comic .dot.working{background:var(--c-work)}.d-comic .dot.working::before{border-color:var(--c-work)}
+.d-comic .dot.unread{background:var(--c-unread)}.d-comic .dot.unread::before{border-color:var(--c-unread)}
+.d-comic .dot.error{background:var(--c-error)}
+.d-comic .pane{background-color:var(--c-bg); background-image:radial-gradient(var(--c-dots) 1.3px,transparent 1.3px); background-size:13px 13px}
+.d-comic .term-head{border-bottom:3px solid var(--c-ink); background:var(--c-surface)}
+.d-comic .term-tab{font-family:'Comic Neue'; font-weight:700; color:var(--c-ink); border:2.5px solid var(--c-ink); border-bottom:none; background:var(--c-surface2); border-radius:9px 9px 0 0}
+.d-comic .term-tab.active{background:var(--c-accent); color:#fff}
+.d-comic .term-meta{font-family:'Bangers'; font-size:14px; color:var(--c-work)}
+.d-comic .term-body{font-family:'JetBrains Mono',monospace; color:var(--c-ink)}
+.d-comic .t-prompt{color:var(--c-accent)}
+.d-comic .t-ok{color:var(--c-work)}
+.d-comic .t-key{color:var(--c-accent2)}
+.d-comic .t-url{color:var(--c-accent)}
+.d-comic .t-info{color:var(--c-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>07 / COMIC — 漫画风</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s7">
+    <div class="s-head">
+      <div class="s-num" style="color:#E63027">07</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Bangers',cursive;letter-spacing:.03em">COMIC — 漫画风</h2>
+        <div class="s-sub">Manga / Comic Book</div>
+        <div class="s-tag">粗墨描边、网点、错位投影、爆炸感标题——把任务面板画成一格格漫画，自带戏剧张力。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Bangers',cursive">BANGERS!</span>漫画标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Comic Neue',sans-serif">Comic Neue</span>手写正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FFFDF5"></span><span style="background:#14110F"></span><span style="background:#E63027"></span><span style="background:#2D6CDF"></span><span style="background:#FFF1B8"></span></div></div>
+      <div class="vibes"><b>墨线</b><b>网点</b><b>戏剧感</b><b>俏皮</b></div>
+      <button class="pick" data-design="Comic">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-comic light"><div class="cap"><span class="tag">07 · Comic</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-comic dark"><div class="cap"><span class="tag">07 · Comic</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"★ TASKAI ★","windowHtml":"","extraClass":"","extraText":"","fallback":"COMIC — 漫画风","number":"07"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

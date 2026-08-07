@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>29 Snap — 快门波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   29 · SNAP — clean editorial pop (Pop family)
+   ========================================================================= */
+.d-snap .stage{border:3px solid var(--sn-outline); border-radius:6px; background:var(--sn-bg); overflow:hidden; box-shadow:8px 8px 0 var(--sn-outline)}
+.d-snap.light{--sn-bg:#F1F5F4;--sn-surface:#FFFFFF;--sn-surface2:#E3EAE9;--sn-ink:#10212B;--sn-mut:#5A6E78;--sn-outline:#10212B;--sn-accent:#FF5A4E;--sn-accent2:#1E66F5;--sn-accent3:#F5B700;--sn-accent4:#8B5CF6;--sn-dots:rgba(16,33,43,.06);
+  --sn-work:#16A34A;--sn-idle:#9CB0B6;--sn-unread:#8B5CF6;--sn-error:#FF5A4E}
+.d-snap.dark{--sn-bg:#0B151A;--sn-surface:#16242B;--sn-surface2:#1F3038;--sn-ink:#E6EEF1;--sn-mut:#8AA0A8;--sn-outline:#E6EEF1;--sn-accent:#FF7A6E;--sn-accent2:#5C8CFF;--sn-accent3:#FFCD33;--sn-accent4:#A98CFF;--sn-dots:rgba(230,238,241,.06);
+  --sn-work:#34D36B;--sn-idle:#4E6068;--sn-unread:#A98CFF;--sn-error:#FF7A6E}
+.d-snap{font-family:'Plus Jakarta Sans',sans-serif}
+.d-snap .stage-bar{background:var(--sn-accent); border-bottom:3px solid var(--sn-outline); justify-content:flex-start}
+.d-snap .tl i{border:2px solid var(--sn-outline); background:var(--sn-surface)}
+.d-snap .tl i:nth-child(1){background:var(--sn-accent)}.d-snap .tl i:nth-child(2){background:var(--sn-accent2)}
+.d-snap .win-title{font-family:'Hanken Grotesk',sans-serif; font-weight:800; font-size:13px; color:#10212B}
+.d-snap .appbar{border-bottom:3px solid var(--sn-outline); background:var(--sn-surface)}
+.d-snap .brand-name{font-family:'Hanken Grotesk',sans-serif; font-weight:800; font-size:22px; letter-spacing:-.02em}
+.d-snap .brand-name em{font-style:normal; color:var(--sn-accent)}
+.d-snap .brand-mark{background:var(--sn-accent); border:2.5px solid var(--sn-outline); border-radius:6px; color:#fff}
+.d-snap .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-snap .iconbtn{border:2px solid var(--sn-outline); border-radius:7px; background:var(--sn-surface); color:var(--sn-ink); box-shadow:2px 2px 0 var(--sn-outline)}
+.d-snap .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--sn-outline)}
+.d-snap .iconbtn svg{stroke-width:2.2}
+.d-snap .sidebar{border-right:3px solid var(--sn-outline); background:var(--sn-surface)}
+.d-snap .side-head{border-bottom:2px solid var(--sn-outline)}
+.d-snap .side-label{font-family:'Hanken Grotesk'; font-weight:800; font-size:12px; text-transform:uppercase; color:var(--sn-ink)}
+.d-snap .tabs{border-bottom:3px solid var(--sn-outline)}
+.d-snap .tab{font-family:'Hanken Grotesk'; font-weight:700; font-size:12.5px; color:var(--sn-ink); border-right:2px solid var(--sn-outline)}
+.d-snap .tab:last-child{border-right:none}
+.d-snap .tab.active{background:var(--sn-accent2); color:#fff}
+.d-snap .tab.active em{color:#fff}
+.d-snap .task{border-left:none}
+.d-snap .task-row{border:2.5px solid var(--sn-outline); border-radius:9px; margin:7px 8px; box-shadow:3px 3px 0 var(--sn-outline), inset 5px 0 0 var(--c); background:var(--sn-surface)}
+.d-snap .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--sn-outline), inset 5px 0 0 var(--c)}
+.d-snap .task-title{font-family:'Hanken Grotesk'; font-weight:800}
+.d-snap .task-sub{color:var(--sn-mut); font-weight:500}
+.d-snap .term{border:2px solid var(--sn-outline); border-radius:7px; margin:4px 10px; box-shadow:2px 2px 0 var(--sn-outline); background:var(--sn-surface2); color:var(--sn-ink)}
+.d-snap .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--sn-outline)}
+.d-snap .dot.idle{background:var(--sn-idle)}
+.d-snap .dot.working{background:var(--sn-work)}.d-snap .dot.working::before{border-color:var(--sn-work)}
+.d-snap .dot.unread{background:var(--sn-unread)}.d-snap .dot.unread::before{border-color:var(--sn-unread)}
+.d-snap .dot.error{background:var(--sn-error)}
+.d-snap .pane{background:var(--sn-bg)}
+.d-snap .term-head{border-bottom:3px solid var(--sn-outline); background:var(--sn-surface2)}
+.d-snap .term-tab{font-family:'Hanken Grotesk'; font-weight:700; color:var(--sn-ink); border:2px solid var(--sn-outline); border-bottom:none; background:var(--sn-surface); border-radius:8px 8px 0 0}
+.d-snap .term-tab.active{background:var(--sn-accent); color:#fff}
+.d-snap .term-meta{font-family:'Hanken Grotesk'; font-weight:800; font-size:11px; text-transform:uppercase; color:var(--sn-work)}
+.d-snap .term-body{font-family:'JetBrains Mono',monospace; color:var(--sn-ink); background-color:var(--sn-surface); background-image:radial-gradient(var(--sn-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-snap .t-prompt{color:var(--sn-accent)}
+.d-snap .t-ok{color:var(--sn-work)}
+.d-snap .t-key{color:var(--sn-accent4)}
+.d-snap .t-url{color:var(--sn-accent2)}
+.d-snap .t-info{color:var(--sn-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>29 / Snap — 快门波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s29">
+    <div class="s-head">
+      <div class="s-num" style="color:#1E66F5">29</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Hanken Grotesk',sans-serif;font-weight:800">Snap — 快门波普</h2>
+        <div class="s-sub">Clean Editorial Pop</div>
+        <div class="s-tag">快门波普：明快干净的粗描边 + 硬投影，珊瑚与钴蓝撞色、紧凑几何字——像杂志封面的清爽版面。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Hanken Grotesk',sans-serif;font-weight:800">Hanken</span>紧凑黑体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Plus Jakarta Sans',sans-serif">Jakarta</span>几何正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F1F5F4"></span><span style="background:#10212B"></span><span style="background:#FF5A4E"></span><span style="background:#1E66F5"></span><span style="background:#F5B700"></span></div></div>
+      <div class="vibes"><b>明快</b><b>描边</b><b>编辑</b><b>简练</b></div>
+      <button class="pick" data-design="Snap">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-snap light"><div class="cap"><span class="tag">29 · Snap</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-snap dark"><div class="cap"><span class="tag">29 · Snap</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"task<em>ai</em>","windowText":"taskai · snap","windowHtml":"","extraClass":"","extraText":"","fallback":"Snap — 快门波普","number":"29"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

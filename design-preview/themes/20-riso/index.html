@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>20 Riso — 孔版印刷 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   20 · RISO — risograph duotone (hard-shadow family; misregister overprint)
+   ========================================================================= */
+.d-riso .stage{border:2.5px solid var(--ri-frame); border-radius:13px; background:var(--ri-bg); overflow:hidden; box-shadow:5px 5px 0 var(--ri-accent), 9px 9px 0 var(--ri-frame)}
+.d-riso.light{--ri-bg:#F4EFE6;--ri-surface:#FBF7F0;--ri-surface2:#E7DCCB;--ri-ink:#1B3A8B;--ri-mut:#5E6E8C;--ri-line:rgba(27,58,139,.16);--ri-frame:#1B3A8B;--ri-accent:#FF5A5F;--ri-accent2:#2E6BD0;--ri-accent3:#FF8A6B;
+  --ri-work:#1F9D55;--ri-idle:#B7AE9B;--ri-unread:#2E6BD0;--ri-error:#FF5A5F}
+.d-riso.dark{--ri-bg:#10182E;--ri-surface:#18223F;--ri-surface2:#202D4E;--ri-ink:#E7EEFF;--ri-mut:#94A2C2;--ri-line:rgba(231,238,255,.16);--ri-frame:#E7EEFF;--ri-accent:#FF7A7F;--ri-accent2:#5C8CF0;--ri-accent3:#FF9E84;
+  --ri-work:#39D97E;--ri-idle:#4A5675;--ri-unread:#5C8CF0;--ri-error:#FF7A7F}
+.d-riso{font-family:'Work Sans',sans-serif}
+.d-riso .stage-bar{background:var(--ri-accent); border-bottom:2.5px solid var(--ri-frame); justify-content:flex-start}
+.d-riso .tl i{border:2px solid rgba(255,255,255,.7); background:#fff}
+.d-riso .tl i:nth-child(1){background:var(--ri-accent)}.d-riso .tl i:nth-child(2){background:var(--ri-accent2)}.d-riso .tl i:nth-child(3){background:#FFD24A}
+.d-riso .win-title{font-family:'Fraunces',serif; font-weight:600; font-size:14px; color:#fff; letter-spacing:.01em}
+.d-riso .appbar{border-bottom:2.5px solid var(--ri-frame); background:var(--ri-surface)}
+.d-riso .brand-name{font-family:'Fraunces',serif; font-weight:700; font-size:22px; letter-spacing:-.01em}
+.d-riso .brand-name em{font-style:italic; color:var(--ri-accent)}
+.d-riso .brand-mark{background:var(--ri-accent2); border-radius:8px; color:#fff}
+.d-riso .brand-mark svg{width:15px;height:15px;stroke-width:2.6}
+.d-riso .iconbtn{border:2px solid var(--ri-frame); border-radius:9px; background:var(--ri-surface); color:var(--ri-ink); box-shadow:2.5px 2.5px 0 var(--ri-frame)}
+.d-riso .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--ri-frame)}
+.d-riso .iconbtn svg{stroke-width:2.4}
+.d-riso .sidebar{border-right:2.5px solid var(--ri-frame); background:var(--ri-surface)}
+.d-riso .side-head{border-bottom:1.5px solid var(--ri-line)}
+.d-riso .side-label{font-family:'Fraunces',serif; font-weight:600; font-size:12.5px; letter-spacing:.02em; text-transform:uppercase; color:var(--ri-ink)}
+.d-riso .tabs{border-bottom:2.5px solid var(--ri-frame)}
+.d-riso .tab{font-family:'Work Sans'; font-weight:600; font-size:12.5px; color:var(--ri-mut); border-right:1.5px solid var(--ri-line)}
+.d-riso .tab:last-child{border-right:none}
+.d-riso .tab.active{background:var(--ri-frame); color:var(--ri-bg)}
+.d-riso .tab.active em{color:var(--ri-accent)}
+.d-riso .task{border-left:none}
+.d-riso .task-row{border:1.5px solid var(--ri-line); border-radius:10px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--ri-surface2)}
+.d-riso .task-row:hover{border-color:var(--ri-frame)}
+.d-riso .task-title{font-family:'Work Sans'; font-weight:600; font-size:14px}
+.d-riso .task-sub{color:var(--ri-mut)}
+.d-riso .term{color:var(--ri-mut); border-radius:7px}
+.d-riso .term:hover{background:var(--ri-surface2)}
+.d-riso .dot.idle{background:var(--ri-idle)}
+.d-riso .dot.working{background:var(--ri-work)}.d-riso .dot.working::before{border-color:var(--ri-work)}
+.d-riso .dot.unread{background:var(--ri-unread)}.d-riso .dot.unread::before{border-color:var(--ri-unread)}
+.d-riso .dot.error{background:var(--ri-error)}
+.d-riso .pane{background:var(--ri-bg)}
+.d-riso .term-head{border-bottom:2px solid var(--ri-frame); background:var(--ri-surface)}
+.d-riso .term-tab{font-family:'Work Sans'; font-weight:600; color:var(--ri-mut); border:1.5px solid var(--ri-line); border-bottom:none; background:var(--ri-surface2)}
+.d-riso .term-tab.active{background:var(--ri-accent); color:#fff}
+.d-riso .term-meta{font-family:'Fraunces',serif; font-weight:600; font-size:11.5px; text-transform:uppercase; color:var(--ri-work)}
+.d-riso .term-body{font-family:'JetBrains Mono',monospace; color:var(--ri-ink)}
+.d-riso .t-prompt{color:var(--ri-accent)}
+.d-riso .t-ok{color:var(--ri-work)}
+.d-riso .t-key{color:var(--ri-accent2)}
+.d-riso .t-url{color:var(--ri-accent)}
+.d-riso .t-info{color:var(--ri-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>20 / Riso — 孔版印刷</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s20">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF6B6B">20</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Fraunces',serif;font-weight:700">Riso — 孔版印刷</h2>
+        <div class="s-sub">Risograph Print</div>
+        <div class="s-tag">粗框硬投影的另一种气质：靛蓝与珊瑚橙的"错位叠印"双投影，模拟孔版印刷的套色偏差——柔纸底色配高饱和填充标签，复古鲜活又不失清晰。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Fraunces',serif;font-weight:700">Fraunces</span>衬线标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Work Sans',sans-serif;font-weight:600">Work Sans</span>利落正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#1B3A8B"></span><span style="background:#FF5A5F"></span><span style="background:#F4EFE6"></span><span style="background:#2E6BD0"></span><span style="background:#1F9D55"></span></div></div>
+      <div class="vibes"><b>双色</b><b>错印</b><b>复古</b><b>硬投影</b></div>
+      <button class="pick" data-design="Riso">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-riso light"><div class="cap"><span class="tag">20 · Riso</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-riso dark"><div class="cap"><span class="tag">20 · Riso</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"task<em>ai</em>","windowText":"taskai · riso","windowHtml":"","extraClass":"","extraText":"","fallback":"Riso — 孔版印刷","number":"20"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

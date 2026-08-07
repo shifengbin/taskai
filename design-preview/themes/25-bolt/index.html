@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>25 Bolt — 电光波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   25 · BOLT — electric tech-pop (Pop family)
+   ========================================================================= */
+.d-bolt .stage{border:3px solid var(--bt-outline); border-radius:8px; background:var(--bt-bg); overflow:hidden; box-shadow:9px 9px 0 var(--bt-outline)}
+.d-bolt.light{--bt-bg:#EEF2EC;--bt-surface:#FFFFFF;--bt-surface2:#E2EAE2;--bt-ink:#08120F;--bt-mut:#5A6B62;--bt-outline:#08120F;--bt-accent:#A6FF3C;--bt-accent2:#2B6FFF;--bt-accent3:#FF7A1A;--bt-accent4:#FF2E93;--bt-dots:rgba(8,18,15,.06);
+  --bt-work:#1FAA4F;--bt-idle:#9AA8A2;--bt-unread:#FF2E93;--bt-error:#E63946}
+.d-bolt.dark{--bt-bg:#0A1411;--bt-surface:#13201A;--bt-surface2:#1B2C24;--bt-ink:#E8F0EA;--bt-mut:#8FA59A;--bt-outline:#E8F0EA;--bt-accent:#BFFF5C;--bt-accent2:#2B6FFF;--bt-accent3:#FF8A3A;--bt-accent4:#FF5CAD;--bt-dots:rgba(232,240,234,.06);
+  --bt-work:#3DD97A;--bt-idle:#5C6B64;--bt-unread:#FF5CAD;--bt-error:#FF5C5C}
+.d-bolt{font-family:'Hanken Grotesk',sans-serif}
+.d-bolt .stage-bar{background-color:var(--bt-accent2); background-image:repeating-linear-gradient(45deg, var(--bt-accent3) 0 9px, transparent 9px 18px); border-bottom:3px solid var(--bt-outline); justify-content:flex-start}
+.d-bolt .tl i{border:2px solid var(--bt-outline); background:var(--bt-surface)}
+.d-bolt .tl i:nth-child(1){background:var(--bt-accent)}.d-bolt .tl i:nth-child(2){background:var(--bt-accent2)}
+.d-bolt .win-title{font-family:'Sora',sans-serif; font-weight:700; font-size:13px; color:#06120A}
+.d-bolt .appbar{border-bottom:3px solid var(--bt-outline); background:var(--bt-surface)}
+.d-bolt .brand-name{font-family:'Sora',sans-serif; font-weight:800; font-size:22px; letter-spacing:-.02em}
+.d-bolt .brand-name em{font-style:normal; color:var(--bt-accent2)}
+.d-bolt .brand-mark{background:var(--bt-accent); border:2.5px solid var(--bt-outline); border-radius:7px; color:#06120A}
+.d-bolt .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-bolt .iconbtn{border:2px solid var(--bt-outline); border-radius:8px; background:var(--bt-surface); color:var(--bt-ink); box-shadow:2px 2px 0 var(--bt-outline)}
+.d-bolt .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--bt-outline)}
+.d-bolt .iconbtn svg{stroke-width:2.2}
+.d-bolt .sidebar{border-right:3px solid var(--bt-outline); background:var(--bt-surface)}
+.d-bolt .side-head{border-bottom:2px solid var(--bt-outline)}
+.d-bolt .side-label{font-family:'Sora'; font-weight:700; font-size:12px; text-transform:uppercase; color:var(--bt-ink)}
+.d-bolt .tabs{border-bottom:3px solid var(--bt-outline)}
+.d-bolt .tab{font-family:'Sora'; font-weight:700; font-size:12.5px; color:var(--bt-ink); border-right:2px solid var(--bt-outline)}
+.d-bolt .tab:last-child{border-right:none}
+.d-bolt .tab.active{background:var(--bt-accent); color:#06120A}
+.d-bolt .tab.active em{color:#06120A}
+.d-bolt .task{border-left:none}
+.d-bolt .task-row{border:2.5px solid var(--bt-outline); border-radius:9px; margin:7px 8px; box-shadow:3px 3px 0 var(--bt-outline), inset 5px 0 0 var(--c); background:var(--bt-surface)}
+.d-bolt .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--bt-outline), inset 5px 0 0 var(--c)}
+.d-bolt .task-title{font-family:'Sora'; font-weight:700}
+.d-bolt .task-sub{color:var(--bt-mut); font-weight:500}
+.d-bolt .term{border:2px solid var(--bt-outline); border-radius:8px; margin:4px 10px; box-shadow:2px 2px 0 var(--bt-outline); background:var(--bt-surface2); color:var(--bt-ink)}
+.d-bolt .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--bt-outline)}
+.d-bolt .dot.idle{background:var(--bt-idle)}
+.d-bolt .dot.working{background:var(--bt-work)}.d-bolt .dot.working::before{border-color:var(--bt-work)}
+.d-bolt .dot.unread{background:var(--bt-unread)}.d-bolt .dot.unread::before{border-color:var(--bt-unread)}
+.d-bolt .dot.error{background:var(--bt-error)}
+.d-bolt .pane{background:var(--bt-bg)}
+.d-bolt .term-head{border-bottom:3px solid var(--bt-outline); background:var(--bt-surface2)}
+.d-bolt .term-tab{font-family:'Sora'; font-weight:700; color:var(--bt-ink); border:2px solid var(--bt-outline); border-bottom:none; background:var(--bt-surface); border-radius:9px 9px 0 0}
+.d-bolt .term-tab.active{background:var(--bt-accent2); color:#fff}
+.d-bolt .term-meta{font-family:'Sora'; font-weight:700; font-size:11px; text-transform:uppercase; color:var(--bt-work)}
+.d-bolt .term-body{font-family:'JetBrains Mono',monospace; color:var(--bt-ink); background-color:var(--bt-surface); background-image:radial-gradient(var(--bt-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-bolt .t-prompt{color:var(--bt-accent2)}
+.d-bolt .t-ok{color:var(--bt-work)}
+.d-bolt .t-key{color:var(--bt-accent4)}
+.d-bolt .t-url{color:var(--bt-accent3)}
+.d-bolt .t-info{color:var(--bt-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>25 / Bolt — 电光波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s25">
+    <div class="s-head">
+      <div class="s-num" style="color:#2B6FFF">25</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Sora',sans-serif;font-weight:800">Bolt — 电光波普</h2>
+        <div class="s-sub">Electric Tech-Pop</div>
+        <div class="s-tag">电光科技波普：粗黑描边 + 错位硬投影 + 警示斜纹标题栏，电光绿与电光蓝撞色——像一块带电的电路贴纸。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Sora',sans-serif;font-weight:800">Sora</span>几何黑体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Hanken Grotesk',sans-serif">Hanken</span>紧凑无衬</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#EEF2EC"></span><span style="background:#08120F"></span><span style="background:#A6FF3C"></span><span style="background:#2B6FFF"></span><span style="background:#FF7A1A"></span></div></div>
+      <div class="vibes"><b>电光</b><b>描边</b><b>警示</b><b>赛博</b></div>
+      <button class="pick" data-design="Bolt">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-bolt light"><div class="cap"><span class="tag">25 · Bolt</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-bolt dark"><div class="cap"><span class="tag">25 · Bolt</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"⚡ taskai ⚡","windowHtml":"","extraClass":"","extraText":"","fallback":"Bolt — 电光波普","number":"25"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

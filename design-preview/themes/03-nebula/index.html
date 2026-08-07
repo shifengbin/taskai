@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 Nebula — 指挥中枢 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   03 · NEBULA — cyber mission control
+   ========================================================================= */
+.d-nebula .stage{border-radius:16px; overflow:hidden; background:var(--n-bg); position:relative; border:1px solid var(--n-line)}
+.d-nebula .stage::before{ /* mesh glow */
+  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(440px 320px at 78% 8%, var(--n-glow1), transparent 70%),
+    radial-gradient(520px 360px at 8% 96%, var(--n-glow2), transparent 70%);
+}
+.d-nebula.light{--n-bg:#EDF1FB;--n-surface:rgba(255,255,255,.72);--n-surface2:rgba(255,255,255,.5);--n-ink:#0E1730;--n-mut:#5A6588;--n-line:rgba(20,40,90,.12);--n-accent:#0BA5BE;--n-accent2:#7C3AED;
+  --n-glow1:rgba(11,165,190,.20);--n-glow2:rgba(124,58,237,.16);
+  --n-work:#0E9F6E;--n-idle:#94A0BF;--n-unread:#7C3AED;--n-error:#E0413E}
+.d-nebula.dark{--n-bg:#070A16;--n-surface:rgba(22,29,54,.62);--n-surface2:rgba(33,42,74,.5);--n-ink:#E8ECFF;--n-mut:#8A93C2;--n-line:rgba(124,140,210,.18);--n-accent:#2DE2E6;--n-accent2:#B06BFF;
+  --n-glow1:rgba(45,226,230,.22);--n-glow2:rgba(176,107,255,.22);
+  --n-work:#34F5C5;--n-idle:#56669E;--n-unread:#C08BFF;--n-error:#FF5D73}
+.d-nebula{font-family:'Sora',sans-serif}
+.d-nebula .stage-bar{position:relative; z-index:1; background:var(--n-surface); backdrop-filter:blur(12px); border-bottom:1px solid var(--n-line); justify-content:flex-start}
+.d-nebula .tl i{background:var(--n-mut); opacity:.5}
+.d-nebula .tl i:nth-child(1){background:var(--n-error)}
+.d-nebula .tl i:nth-child(2){background:var(--n-accent)}
+.d-nebula .tl i:nth-child(3){background:var(--n-work)}
+.d-nebula .win-title{font-family:'Chakra Petch',sans-serif; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--n-mut)}
+.d-nebula .win-title b{color:var(--n-ink); font-weight:600}
+.d-nebula .live{margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.16em; color:var(--n-accent); display:flex; align-items:center; gap:6px}
+.d-nebula .live::before{content:""; width:6px;height:6px;border-radius:50%;background:var(--n-accent);box-shadow:0 0 8px var(--n-accent);animation:dpulse2 1.6s infinite}
+@keyframes dpulse2{0%,100%{opacity:1}50%{opacity:.3}}
+.d-nebula .appbar,.d-nebula .sidebar,.d-nebula .term-head,.d-nebula .pane{position:relative; z-index:1}
+.d-nebula .appbar{border-bottom:1px solid var(--n-line); background:var(--n-surface); backdrop-filter:blur(12px)}
+.d-nebula .brand-name{font-family:'Chakra Petch',sans-serif; font-weight:600; font-size:17px; letter-spacing:.02em}
+.d-nebula .brand-name em{font-style:normal; color:var(--n-accent)}
+.d-nebula .brand-mark{color:var(--n-accent); filter:drop-shadow(0 0 6px var(--n-glow1))}
+.d-nebula .brand-mark svg{width:22px;height:22px;stroke-width:1.6}
+.d-nebula .iconbtn{border-radius:9px; color:var(--n-mut); border:1px solid transparent}
+.d-nebula .iconbtn:hover{color:var(--n-accent); border-color:var(--n-line); background:var(--n-surface2)}
+.d-nebula .iconbtn svg{stroke-width:1.6}
+.d-nebula .sidebar{border-right:1px solid var(--n-line); background:var(--n-surface); backdrop-filter:blur(12px)}
+.d-nebula .side-head{border-bottom:1px solid var(--n-line)}
+.d-nebula .side-label{font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--n-mut)}
+.d-nebula .tabs{border-bottom:1px solid var(--n-line)}
+.d-nebula .tab{font-family:'Chakra Petch',sans-serif; font-size:12px; letter-spacing:.03em; color:var(--n-mut); position:relative}
+.d-nebula .tab.active{color:var(--n-ink)}
+.d-nebula .tab.active::after{content:""; position:absolute; left:25%; right:25%; bottom:-1px; height:2px; background:var(--n-accent); border-radius:2px; box-shadow:0 0 10px var(--n-accent)}
+.d-nebula .tab.active em{color:var(--n-accent)}
+.d-nebula .task-row{border-radius:10px; margin:4px 8px; border:1px solid transparent; box-shadow: inset 3px 0 0 var(--c)}
+.d-nebula .task-row:hover{background:var(--n-surface2); border-color:var(--n-line)}
+.d-nebula .task-title{font-weight:600}
+.d-nebula .task-sub{color:var(--n-mut)}
+.d-nebula .term{border-radius:8px; margin:2px 10px; color:var(--n-mut)}
+.d-nebula .term:hover{background:var(--n-surface2)}
+.d-nebula .dot.idle{background:var(--n-idle)}
+.d-nebula .dot.working{background:var(--n-work); box-shadow:0 0 8px var(--n-work)}.d-nebula .dot.working::before{border-color:var(--n-work)}
+.d-nebula .dot.unread{background:var(--n-unread); box-shadow:0 0 8px var(--n-unread)}.d-nebula .dot.unread::before{border-color:var(--n-unread)}
+.d-nebula .dot.error{background:var(--n-error); box-shadow:0 0 8px var(--n-error)}
+.d-nebula .pane{background:transparent}
+.d-nebula .term-head{border-bottom:1px solid var(--n-line); background:var(--n-surface); backdrop-filter:blur(12px)}
+.d-nebula .term-tab{color:var(--n-mut); font-family:'Chakra Petch',sans-serif}
+.d-nebula .term-tab.active{color:var(--n-ink); background:var(--n-surface2)}
+.d-nebula .term-meta{font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--n-work)}
+.d-nebula .term-body{font-family:'JetBrains Mono',monospace; color:var(--n-ink); background:var(--n-surface); backdrop-filter:blur(6px)}
+.d-nebula .t-prompt{color:var(--n-accent)}
+.d-nebula .t-ok{color:var(--n-work)}
+.d-nebula .t-key{color:var(--n-accent)}
+.d-nebula .t-url{color:var(--n-accent)}
+.d-nebula .t-info{color:var(--n-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>03 / Nebula — 指挥中枢</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s3">
+    <div class="s-head">
+      <div class="s-num" style="color:#2DE2E6">03</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Chakra Petch',sans-serif">Nebula — 指挥中枢</h2>
+        <div class="s-sub">Cyber Mission Control</div>
+        <div class="s-tag">把工作台变成控制台：玻璃面板、霓虹辉光、动态状态指示，为同时盯紧多个进程的人而生。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Chakra Petch',sans-serif;font-weight:600">Chakra Petch</span>科幻几何</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Sora',sans-serif">Sora</span>几何无衬</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#070A16"></span><span style="background:#2DE2E6"></span><span style="background:#B06BFF"></span><span style="background:#EDF1FB"></span><span style="background:#0BA5BE"></span></div></div>
+      <div class="vibes"><b>霓虹</b><b>玻璃拟态</b><b>辉光</b><b>动态</b></div>
+      <button class="pick" data-design="Nebula">选择此方案</button>
+    </div>
+
+    <div class="scroll-x">
+      <div class="mockup d-nebula light">
+        <div class="cap"><span class="tag">03 · Nebula</span> 亮色 / Light</div>
+        <div class="stage" data-variant></div>
+      </div>
+      <div class="mockup d-nebula dark">
+        <div class="cap"><span class="tag">03 · Nebula</span> 暗色 / Dark</div>
+        <div class="stage" data-variant></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"任务<em>工作台</em>","windowText":"","windowHtml":"<b>taskai</b> // workbench","extraClass":"","extraText":"","fallback":"Nebula — 指挥中枢","number":"03"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

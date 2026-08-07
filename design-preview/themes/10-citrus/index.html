@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>10 Citrus — 阳光柑橘 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   10 · CITRUS — tropical cheerful (rounded, high-contrast)
+   ========================================================================= */
+.d-citrus .stage{border:1px solid var(--x-line); border-radius:22px; background:var(--x-bg); overflow:hidden; box-shadow:0 30px 70px -36px rgba(80,50,10,.4)}
+.d-citrus.light{--x-bg:#FFF7EC;--x-surface:#FFFFFF;--x-surface2:#FFEFD3;--x-ink:#2A1F12;--x-mut:#7A6A52;--x-line:#F0E1C6;--x-accent:#FF6B4A;--x-accent2:#0EA89A;--x-accent3:#FFB02E;
+  --x-work:#16A34A;--x-idle:#C2B59B;--x-unread:#8B5CF6;--x-error:#E11D48}
+.d-citrus.dark{--x-bg:#1C1710;--x-surface:#27211A;--x-surface2:#322A21;--x-ink:#FBF3E4;--x-mut:#A39682;--x-line:#3C3328;--x-accent:#FF7A5C;--x-accent2:#1FCDB8;--x-accent3:#FFC04D;
+  --x-work:#22C55E;--x-idle:#5E5645;--x-unread:#A78BFA;--x-error:#FB4869}
+.d-citrus{font-family:'Nunito',sans-serif}
+.d-citrus .stage-bar{background:var(--x-surface); border-bottom:1px solid var(--x-line); justify-content:center; position:relative}
+.d-citrus .tl{position:absolute; left:18px}
+.d-citrus.light .tl i{background:#F0E1C6}.d-citrus.light .tl i:nth-child(1){background:#FF6B4A}.d-citrus.light .tl i:nth-child(2){background:#FFB02E}.d-citrus.light .tl i:nth-child(3){background:#0EA89A}
+.d-citrus.dark .tl i{background:#3C3328}.d-citrus.dark .tl i:nth-child(1){background:#FF7A5C}.d-citrus.dark .tl i:nth-child(2){background:#FFC04D}.d-citrus.dark .tl i:nth-child(3){background:#1FCDB8}
+.d-citrus .win-title{font-family:'Fredoka',sans-serif; font-weight:500; font-size:13px; color:var(--x-mut)}
+.d-citrus .appbar{border-bottom:1px solid var(--x-line); background:var(--x-surface)}
+.d-citrus .brand-name{font-family:'Fredoka'; font-weight:600; font-size:21px; letter-spacing:-.01em}
+.d-citrus .brand-name em{font-style:normal; color:var(--x-accent)}
+.d-citrus .brand-mark{background:var(--x-accent); border-radius:10px; color:#fff}
+.d-citrus .brand-mark svg{width:15px;height:15px;stroke-width:2.6}
+.d-citrus .iconbtn{border-radius:12px; color:var(--x-ink); border:1.5px solid var(--x-line); background:var(--x-surface)}
+.d-citrus .iconbtn:hover{background:var(--x-surface2); border-color:var(--x-accent); color:var(--x-accent)}
+.d-citrus .iconbtn svg{stroke-width:2}
+.d-citrus .sidebar{border-right:1px solid var(--x-line); background:var(--x-surface)}
+.d-citrus .side-head{border-bottom:1px solid var(--x-line)}
+.d-citrus .side-label{font-family:'Fredoka'; font-weight:600; font-size:13px; color:var(--x-mut)}
+.d-citrus .tabs{border-bottom:1px solid var(--x-line)}
+.d-citrus .tab{font-family:'Nunito'; font-weight:700; font-size:13px; color:var(--x-mut); position:relative}
+.d-citrus .tab.active{color:var(--x-ink)}
+.d-citrus .tab.active em{color:var(--x-accent)}
+.d-citrus .tab.active::after{content:""; position:absolute; left:30%; right:30%; bottom:-1px; height:3px; background:var(--x-accent); border-radius:3px}
+.d-citrus .task{border-left:none}
+.d-citrus .task-row{border-radius:14px; margin:4px 8px; box-shadow:inset 4px 0 0 var(--c); background:var(--x-surface2)}
+.d-citrus .task-row:hover{background:var(--x-surface)}
+.d-citrus .task-title{font-family:'Nunito'; font-weight:800; font-size:14px}
+.d-citrus .task-sub{color:var(--x-mut)}
+.d-citrus .term{color:var(--x-mut); border-radius:10px}
+.d-citrus .term:hover{background:var(--x-surface2)}
+.d-citrus .dot.idle{background:var(--x-idle)}
+.d-citrus .dot.working{background:var(--x-work)}.d-citrus .dot.working::before{border-color:var(--x-work)}
+.d-citrus .dot.unread{background:var(--x-unread)}.d-citrus .dot.unread::before{border-color:var(--x-unread)}
+.d-citrus .dot.error{background:var(--x-error)}
+.d-citrus .pane{background:var(--x-bg)}
+.d-citrus .term-head{border-bottom:1px solid var(--x-line); background:var(--x-surface)}
+.d-citrus .term-tab{font-family:'Nunito'; font-weight:700; color:var(--x-mut)}
+.d-citrus .term-tab.active{color:var(--x-ink); background:var(--x-surface2); border-radius:8px 8px 0 0}
+.d-citrus .term-meta{font-family:'Fredoka'; font-weight:500; font-size:12px; color:var(--x-work)}
+.d-citrus .term-body{font-family:'JetBrains Mono',monospace; color:var(--x-ink)}
+.d-citrus .t-prompt{color:var(--x-accent)}
+.d-citrus .t-ok{color:var(--x-work)}
+.d-citrus .t-key{color:var(--x-accent2)}
+.d-citrus .t-url{color:var(--x-accent)}
+.d-citrus .t-info{color:var(--x-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>10 / Citrus — 阳光柑橘</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s10">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF6B4A">10</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Fredoka',sans-serif;font-weight:600">Citrus — 阳光柑橘</h2>
+        <div class="s-sub">Tropical Cheerful · 高对比</div>
+        <div class="s-tag">珊瑚橘 + 阳光黄 + 热带青，圆润饱满的字形与大圆角——开朗又清爽，按钮与文字对比强烈、一眼看清。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Fredoka',sans-serif;font-weight:600">Fredoka</span>圆润粗体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Nunito',sans-serif;font-weight:700">Nunito</span>圆润正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FFF7EC"></span><span style="background:#2A1F12"></span><span style="background:#FF6B4A"></span><span style="background:#FFB02E"></span><span style="background:#0EA89A"></span></div></div>
+      <div class="vibes"><b>阳光</b><b>圆润</b><b>高对比</b><b>清爽</b></div>
+      <button class="pick" data-design="Citrus">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-citrus light"><div class="cap"><span class="tag">10 · Citrus</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-citrus dark"><div class="cap"><span class="tag">10 · Citrus</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"task<em>ai</em>","windowText":"taskai · workbench","windowHtml":"","extraClass":"","extraText":"","fallback":"Citrus — 阳光柑橘","number":"10"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

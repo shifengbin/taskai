@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>21 Memphis — 孟菲斯派 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   21 · MEMPHIS — 80s memphis pop (hard-shadow family; dotted bar)
+   ========================================================================= */
+.d-memphis .stage{border:2.5px solid var(--me-frame); border-radius:14px; background:var(--me-bg); overflow:hidden; box-shadow:6px 6px 0 var(--me-frame)}
+.d-memphis.light{--me-bg:#FBFBF7;--me-surface:#FFFFFF;--me-surface2:#F0F0E8;--me-ink:#141414;--me-mut:#6A6A6A;--me-line:rgba(20,20,20,.14);--me-frame:#141414;--me-accent:#FFD400;--me-accent2:#FF4FA3;--me-accent3:#36D6E7;
+  --me-work:#2BB673;--me-idle:#B7B7A8;--me-unread:#FF4FA3;--me-error:#FF5A3D}
+.d-memphis.dark{--me-bg:#0F0F12;--me-surface:#1A1A1F;--me-surface2:#24242C;--me-ink:#F4F4EE;--me-mut:#9A9AA2;--me-line:rgba(244,244,238,.16);--me-frame:#F4F4EE;--me-accent:#FFE03A;--me-accent2:#FF6FB8;--me-accent3:#54E0EE;
+  --me-work:#45E08C;--me-idle:#4C4C56;--me-unread:#FF6FB8;--me-error:#FF7556}
+.d-memphis{font-family:'Outfit',sans-serif}
+.d-memphis .stage-bar{background-color:var(--me-accent); background-image:radial-gradient(var(--me-accent2) 2px, transparent 2.2px); background-size:13px 13px; border-bottom:2.5px solid var(--me-frame); justify-content:flex-start}
+.d-memphis .tl i{border:2px solid var(--me-frame); background:#fff}
+.d-memphis .tl i:nth-child(1){background:var(--me-accent2)}.d-memphis .tl i:nth-child(2){background:var(--me-accent3)}.d-memphis .tl i:nth-child(3){background:var(--me-accent)}
+.d-memphis .win-title{font-family:'Bungee',cursive; font-weight:400; font-size:13px; color:var(--me-ink); letter-spacing:.04em}
+.d-memphis .appbar{border-bottom:2.5px solid var(--me-frame); background:var(--me-surface)}
+.d-memphis .brand-name{font-family:'Bungee',cursive; font-weight:400; font-size:21px; letter-spacing:0}
+.d-memphis .brand-name em{font-style:normal; color:var(--me-accent2)}
+.d-memphis .brand-mark{background:var(--me-accent3); border-radius:8px; color:#0E0E12}
+.d-memphis .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-memphis .iconbtn{border:2px solid var(--me-frame); border-radius:9px; background:var(--me-surface); color:var(--me-ink); box-shadow:2.5px 2.5px 0 var(--me-frame)}
+.d-memphis .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--me-frame)}
+.d-memphis .iconbtn svg{stroke-width:2.4}
+.d-memphis .sidebar{border-right:2.5px solid var(--me-frame); background:var(--me-surface)}
+.d-memphis .side-head{border-bottom:1.5px solid var(--me-line)}
+.d-memphis .side-label{font-family:'Bungee',cursive; font-weight:400; font-size:12px; letter-spacing:.02em; color:var(--me-ink)}
+.d-memphis .tabs{border-bottom:2.5px solid var(--me-frame)}
+.d-memphis .tab{font-family:'Outfit'; font-weight:700; font-size:12.5px; color:var(--me-mut); border-right:1.5px solid var(--me-line)}
+.d-memphis .tab:last-child{border-right:none}
+.d-memphis .tab.active{background:var(--me-accent); color:var(--me-ink)}
+.d-memphis .tab.active em{color:var(--me-accent2)}
+.d-memphis .task{border-left:none}
+.d-memphis .task-row{border:1.5px solid var(--me-line); border-radius:11px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--me-surface2)}
+.d-memphis .task-row:hover{border-color:var(--me-frame)}
+.d-memphis .task-title{font-family:'Outfit'; font-weight:700; font-size:14px}
+.d-memphis .task-sub{color:var(--me-mut)}
+.d-memphis .term{color:var(--me-mut); border-radius:8px}
+.d-memphis .term:hover{background:var(--me-surface2)}
+.d-memphis .dot.idle{background:var(--me-idle)}
+.d-memphis .dot.working{background:var(--me-work)}.d-memphis .dot.working::before{border-color:var(--me-work)}
+.d-memphis .dot.unread{background:var(--me-unread)}.d-memphis .dot.unread::before{border-color:var(--me-unread)}
+.d-memphis .dot.error{background:var(--me-error)}
+.d-memphis .pane{background:var(--me-bg)}
+.d-memphis .term-head{border-bottom:2px solid var(--me-frame); background:var(--me-surface)}
+.d-memphis .term-tab{font-family:'Outfit'; font-weight:700; color:var(--me-mut); border:1.5px solid var(--me-line); border-bottom:none; background:var(--me-surface2)}
+.d-memphis .term-tab.active{background:var(--me-accent2); color:#fff}
+.d-memphis .term-meta{font-family:'Bungee',cursive; font-size:11px; color:var(--me-work)}
+.d-memphis .term-body{font-family:'JetBrains Mono',monospace; color:var(--me-ink)}
+.d-memphis .t-prompt{color:var(--me-accent2)}
+.d-memphis .t-ok{color:var(--me-work)}
+.d-memphis .t-key{color:var(--me-accent3)}
+.d-memphis .t-url{color:var(--me-accent2)}
+.d-memphis .t-info{color:var(--me-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>21 / Memphis — 孟菲斯派</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s21">
+    <div class="s-head">
+      <div class="s-num" style="color:#FFD400">21</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Bungee',cursive;font-weight:400">Memphis — 孟菲斯派</h2>
+        <div class="s-sub">Memphis 80s</div>
+        <div class="s-tag">80 年代孟菲斯派的玩心：黑粗框 + 硬投影 + 点点标题栏，明黄、桃粉、青蓝三色撞色——黑色描边文字确保每个按钮与标签都看得清。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Bungee',cursive">Bungee</span>方块标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Outfit',sans-serif;font-weight:700">Outfit</span>现代正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FFD400"></span><span style="background:#FF4FA3"></span><span style="background:#36D6E7"></span><span style="background:#141414"></span><span style="background:#FBFBF7"></span></div></div>
+      <div class="vibes"><b>派对</b><b>撞色</b><b>点点</b><b>硬投影</b></div>
+      <button class="pick" data-design="Memphis">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-memphis light"><div class="cap"><span class="tag">21 · Memphis</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-memphis dark"><div class="cap"><span class="tag">21 · Memphis</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"★ TASKAI ★","windowHtml":"","extraClass":"","extraText":"","fallback":"Memphis — 孟菲斯派","number":"21"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

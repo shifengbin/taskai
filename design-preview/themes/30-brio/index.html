@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>30 Brio — 热带波普 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   30 · BRIO — tropical pop (Pop family)
+   ========================================================================= */
+.d-brio .stage{border:3px solid var(--br-outline); border-radius:12px; background:var(--br-bg); overflow:hidden; box-shadow:9px 9px 0 var(--br-outline)}
+.d-brio.light{--br-bg:#EAF6F4;--br-surface:#FFFFFF;--br-surface2:#D7EBE7;--br-ink:#1A0F2E;--br-mut:#5E5670;--br-outline:#1A0F2E;--br-accent:#06A77D;--br-accent2:#FF3CAC;--br-accent3:#FF9E1B;--br-accent4:#1FB6FF;--br-dots:rgba(26,15,46,.06);
+  --br-work:#06A77D;--br-idle:#A8A2BA;--br-unread:#FF3CAC;--br-error:#FF4D4D}
+.d-brio.dark{--br-bg:#0E1320;--br-surface:#182033;--br-surface2:#212B42;--br-ink:#E8F0EF;--br-mut:#8E96A8;--br-outline:#E8F0EF;--br-accent:#2EE6A8;--br-accent2:#FF5CB8;--br-accent3:#FFB44A;--br-accent4:#4FC8FF;--br-dots:rgba(232,240,239,.06);
+  --br-work:#2EE6A8;--br-idle:#4E5670;--br-unread:#FF5CB8;--br-error:#FF5C5C}
+.d-brio{font-family:'Sora',sans-serif}
+.d-brio .stage-bar{background:var(--br-accent2); border-bottom:3px solid var(--br-outline); justify-content:flex-start}
+.d-brio .tl i{border:2px solid var(--br-outline); background:var(--br-surface)}
+.d-brio .tl i:nth-child(1){background:var(--br-accent)}.d-brio .tl i:nth-child(2){background:var(--br-accent3)}
+.d-brio .win-title{font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:13px; color:#fff}
+.d-brio .appbar{border-bottom:3px solid var(--br-outline); background:var(--br-surface)}
+.d-brio .brand-name{font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:22px; letter-spacing:-.02em}
+.d-brio .brand-name em{font-style:normal; color:var(--br-accent2)}
+.d-brio .brand-mark{background:var(--br-accent); border:2.5px solid var(--br-outline); border-radius:7px; color:#fff}
+.d-brio .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-brio .iconbtn{border:2px solid var(--br-outline); border-radius:8px; background:var(--br-surface); color:var(--br-ink); box-shadow:2px 2px 0 var(--br-outline)}
+.d-brio .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--br-outline)}
+.d-brio .iconbtn svg{stroke-width:2.2}
+.d-brio .sidebar{border-right:3px solid var(--br-outline); background:var(--br-surface)}
+.d-brio .side-head{border-bottom:2px solid var(--br-outline)}
+.d-brio .side-label{font-family:'Plus Jakarta Sans'; font-weight:800; font-size:12px; text-transform:uppercase; color:var(--br-ink)}
+.d-brio .tabs{border-bottom:3px solid var(--br-outline)}
+.d-brio .tab{font-family:'Plus Jakarta Sans'; font-weight:700; font-size:12.5px; color:var(--br-ink); border-right:2px solid var(--br-outline)}
+.d-brio .tab:last-child{border-right:none}
+.d-brio .tab.active{background:var(--br-accent); color:#fff}
+.d-brio.dark .tab.active{color:#0E1320}
+.d-brio .tab.active em{color:#fff}
+.d-brio.dark .tab.active em{color:#0E1320}
+.d-brio .task{border-left:none}
+.d-brio .task-row{border:2.5px solid var(--br-outline); border-radius:11px; margin:7px 8px; box-shadow:3px 3px 0 var(--br-outline), inset 5px 0 0 var(--c); background:var(--br-surface)}
+.d-brio .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--br-outline), inset 5px 0 0 var(--c)}
+.d-brio .task-title{font-family:'Plus Jakarta Sans'; font-weight:800}
+.d-brio .task-sub{color:var(--br-mut); font-weight:500}
+.d-brio .term{border:2px solid var(--br-outline); border-radius:8px; margin:4px 10px; box-shadow:2px 2px 0 var(--br-outline); background:var(--br-surface2); color:var(--br-ink)}
+.d-brio .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--br-outline)}
+.d-brio .dot.idle{background:var(--br-idle)}
+.d-brio .dot.working{background:var(--br-work)}.d-brio .dot.working::before{border-color:var(--br-work)}
+.d-brio .dot.unread{background:var(--br-unread)}.d-brio .dot.unread::before{border-color:var(--br-unread)}
+.d-brio .dot.error{background:var(--br-error)}
+.d-brio .pane{background:var(--br-bg)}
+.d-brio .term-head{border-bottom:3px solid var(--br-outline); background:var(--br-surface2)}
+.d-brio .term-tab{font-family:'Plus Jakarta Sans'; font-weight:700; color:var(--br-ink); border:2px solid var(--br-outline); border-bottom:none; background:var(--br-surface); border-radius:9px 9px 0 0}
+.d-brio .term-tab.active{background:var(--br-accent4); color:#0E1320}
+.d-brio .term-meta{font-family:'Plus Jakarta Sans'; font-weight:800; font-size:11px; text-transform:uppercase; color:var(--br-work)}
+.d-brio .term-body{font-family:'JetBrains Mono',monospace; color:var(--br-ink); background-color:var(--br-surface); background-image:radial-gradient(var(--br-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-brio .t-prompt{color:var(--br-accent2)}
+.d-brio .t-ok{color:var(--br-work)}
+.d-brio .t-key{color:var(--br-ink)}
+.d-brio .t-url{color:var(--br-accent2)}
+.d-brio .t-info{color:var(--br-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>30 / Brio — 热带波普</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s30">
+    <div class="s-head">
+      <div class="s-num" style="color:#06A77D">30</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:800">Brio — 热带波普</h2>
+        <div class="s-sub">Tropical Pop</div>
+        <div class="s-tag">热带波普：热带绿、热粉、芒果黄、天青四色撞色，圆润粗框 + 硬投影——明亮的夏日色块。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:800">Jakarta</span>几何黑体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Sora',sans-serif">Sora</span>现代正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#EAF6F4"></span><span style="background:#1A0F2E"></span><span style="background:#06A77D"></span><span style="background:#FF3CAC"></span><span style="background:#FF9E1B"></span></div></div>
+      <div class="vibes"><b>热带</b><b>撞色</b><b>圆润</b><b>活力</b></div>
+      <button class="pick" data-design="Brio">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-brio light"><div class="cap"><span class="tag">30 · Brio</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-brio dark"><div class="cap"><span class="tag">30 · Brio</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"◆ taskai ◆","windowHtml":"","extraClass":"","extraText":"","fallback":"Brio — 热带波普","number":"30"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>05 Pop — 活力印刷 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   05 · POP — risograph / memphis maximalist
+   ========================================================================= */
+.d-pop .stage{border:3px solid var(--p-outline); border-radius:20px; background:var(--p-bg); overflow:hidden; box-shadow:9px 9px 0 var(--p-outline)}
+.d-pop.light{--p-bg:#FBF6EC;--p-surface:#FFFFFF;--p-surface2:#FFF1D6;--p-ink:#1B1A2E;--p-mut:#6E6E86;--p-outline:#1B1A2E;--p-accent:#FF5470;--p-accent2:#2EC4B6;--p-accent3:#FFB13B;--p-accent4:#5D5FEF;--p-dots:rgba(27,26,46,.06);
+  --p-work:#2EC4B6;--p-idle:#B9B5C9;--p-unread:#5D5FEF;--p-error:#FF5470}
+.d-pop.dark{--p-bg:#1B1A2E;--p-surface:#27254A;--p-surface2:#2F2C50;--p-ink:#F4F1FF;--p-mut:#9C98C0;--p-outline:#0B0A16;--p-accent:#FF5470;--p-accent2:#2EC4B6;--p-accent3:#FFB13B;--p-accent4:#8A8CFF;--p-dots:rgba(244,241,255,.06);
+  --p-work:#38E6D6;--p-idle:#565279;--p-unread:#8A8CFF;--p-error:#FF6B85}
+.d-pop{font-family:'DM Sans',sans-serif}
+.d-pop .stage-bar{background:var(--p-accent3); border-bottom:3px solid var(--p-outline); justify-content:flex-start}
+.d-pop .tl i{border:2px solid var(--p-outline); background:var(--p-surface)}
+.d-pop .tl i:nth-child(1){background:var(--p-accent)}
+.d-pop .tl i:nth-child(2){background:var(--p-accent2)}
+.d-pop .win-title{font-family:'Bricolage Grotesque'; font-weight:700; font-size:14px; color:#1B1A2E}
+.d-pop .appbar{border-bottom:3px solid var(--p-outline); background:var(--p-surface)}
+.d-pop .brand-name{font-family:'Bricolage Grotesque'; font-weight:800; font-size:23px; letter-spacing:-.02em}
+.d-pop .brand-name em{font-style:normal; color:var(--p-accent)}
+.d-pop .brand-mark{background:var(--p-accent); border:2.5px solid var(--p-outline); border-radius:8px; color:#fff}
+.d-pop .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-pop .iconbtn{border:2px solid var(--p-outline); border-radius:9px; background:var(--p-surface); box-shadow:2px 2px 0 var(--p-outline)}
+.d-pop .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--p-outline)}
+.d-pop .iconbtn svg{stroke-width:2.2}
+.d-pop .sidebar{border-right:3px solid var(--p-outline); background:var(--p-surface)}
+.d-pop .side-head{border-bottom:2px solid var(--p-outline)}
+.d-pop .side-label{font-family:'Bricolage Grotesque'; font-weight:700; font-size:12px; text-transform:uppercase; color:var(--p-ink)}
+.d-pop .tabs{border-bottom:3px solid var(--p-outline)}
+.d-pop .tab{font-family:'Bricolage Grotesque'; font-weight:700; font-size:12.5px; color:var(--p-ink); border-right:2px solid var(--p-outline)}
+.d-pop .tab:last-child{border-right:none}
+.d-pop .tab.active{background:var(--p-accent); color:#fff}
+.d-pop .tab.active em{color:#fff}
+.d-pop .task{border-left:none}
+.d-pop .task-row{border:2.5px solid var(--p-outline); border-radius:13px; margin:7px 8px; box-shadow:3px 3px 0 var(--p-outline), inset 5px 0 0 var(--c)}
+.d-pop .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--p-outline), inset 5px 0 0 var(--c)}
+.d-pop .task-title{font-family:'Bricolage Grotesque'; font-weight:700}
+.d-pop .task-sub{color:var(--p-mut); font-weight:500}
+.d-pop .term{border:2px solid var(--p-outline); border-radius:9px; margin:4px 10px; box-shadow:2px 2px 0 var(--p-outline); background:var(--p-surface2); color:var(--p-ink)}
+.d-pop .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--p-outline)}
+.d-pop .dot.idle{background:var(--p-idle)}
+.d-pop .dot.working{background:var(--p-work)}.d-pop .dot.working::before{border-color:var(--p-work)}
+.d-pop .dot.unread{background:var(--p-unread)}.d-pop .dot.unread::before{border-color:var(--p-unread)}
+.d-pop .dot.error{background:var(--p-error)}
+.d-pop .pane{background:var(--p-bg)}
+.d-pop .term-head{border-bottom:3px solid var(--p-outline); background:var(--p-surface2)}
+.d-pop .term-tab{font-family:'Bricolage Grotesque'; font-weight:700; color:var(--p-ink); border:2px solid var(--p-outline); border-bottom:none; background:var(--p-surface); border-radius:11px 11px 0 0}
+.d-pop .term-tab.active{background:var(--p-accent2); color:#07322d}
+.d-pop .term-meta{font-family:'Bricolage Grotesque'; font-weight:700; font-size:11px; text-transform:uppercase; color:var(--p-work)}
+.d-pop .term-body{font-family:'JetBrains Mono',monospace; color:var(--p-ink); background-color:var(--p-surface); background-image:radial-gradient(var(--p-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-pop .t-prompt{color:var(--p-accent)}
+.d-pop .t-ok{color:var(--p-work)}
+.d-pop .t-key{color:var(--p-accent4)}
+.d-pop .t-url{color:var(--p-accent)}
+.d-pop .t-info{color:var(--p-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>05 / Pop — 活力印刷</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s5">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF5470">05</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800">Pop — 活力印刷</h2>
+        <div class="s-sub">Risograph / Memphis Maximalist</div>
+        <div class="s-tag">粗黑描边、错位投影、半色网点、贴纸卡片——把任务管理做得像一本快乐的小册子。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800">Bricolage</span>个性黑体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'DM Sans',sans-serif">DM Sans</span>圆润无衬</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FBF6EC"></span><span style="background:#1B1A2E"></span><span style="background:#FF5470"></span><span style="background:#2EC4B6"></span><span style="background:#FFB13B"></span></div></div>
+      <div class="vibes"><b>撞色</b><b>描边</b><b>网点</b><b>俏皮</b></div>
+      <button class="pick" data-design="Pop">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-pop light"><div class="cap"><span class="tag">05 · Pop</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-pop dark"><div class="cap"><span class="tag">05 · Pop</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI!</em>","windowText":"★ taskai ★","windowHtml":"","extraClass":"","extraText":"","fallback":"Pop — 活力印刷","number":"05"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

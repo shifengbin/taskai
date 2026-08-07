@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>28 Punch — 重拳出击 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   28 · PUNCH — impact poster pop (Pop family)
+   ========================================================================= */
+.d-punch .stage{border:3.5px solid var(--pu-outline); border-radius:6px; background:var(--pu-bg); overflow:hidden; box-shadow:11px 11px 0 var(--pu-outline)}
+.d-punch.light{--pu-bg:#F7F5EE;--pu-surface:#FFFFFF;--pu-surface2:#ECE8DA;--pu-ink:#0A0A0A;--pu-mut:#5E5E5E;--pu-outline:#0A0A0A;--pu-accent:#FF3D2E;--pu-accent2:#2D5BFF;--pu-accent3:#FFD23F;--pu-accent4:#16A34A;--pu-dots:rgba(10,10,10,.06);
+  --pu-work:#16A34A;--pu-idle:#A8A8A8;--pu-unread:#2D5BFF;--pu-error:#FF3D2E}
+.d-punch.dark{--pu-bg:#0E0E10;--pu-surface:#1A1A1E;--pu-surface2:#242429;--pu-ink:#F2F0E6;--pu-mut:#8E8E94;--pu-outline:#F2F0E6;--pu-accent:#FF5C50;--pu-accent2:#5C82FF;--pu-accent3:#FFDF5C;--pu-accent4:#34D36B;--pu-dots:rgba(242,240,230,.06);
+  --pu-work:#34D36B;--pu-idle:#4E4E56;--pu-unread:#5C82FF;--pu-error:#FF5C50}
+.d-punch{font-family:'Plus Jakarta Sans',sans-serif}
+.d-punch .stage-bar{background:var(--pu-accent3); border-bottom:3.5px solid var(--pu-outline); justify-content:flex-start}
+.d-punch .tl i{border:2px solid var(--pu-outline); background:var(--pu-surface)}
+.d-punch .tl i:nth-child(1){background:var(--pu-accent)}.d-punch .tl i:nth-child(2){background:var(--pu-accent2)}
+.d-punch .win-title{font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:13px; color:#0A0A0A; letter-spacing:.02em}
+.d-punch .appbar{border-bottom:3.5px solid var(--pu-outline); background:var(--pu-surface)}
+.d-punch .brand-name{font-family:'Climate Crisis',sans-serif; font-weight:400; font-size:21px; letter-spacing:0; line-height:1; text-transform:uppercase}
+.d-punch .brand-name em{font-style:normal; color:var(--pu-accent)}
+.d-punch .brand-mark{background:var(--pu-accent); border:3px solid var(--pu-outline); border-radius:4px; color:#fff}
+.d-punch .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-punch .iconbtn{border:2.5px solid var(--pu-outline); border-radius:6px; background:var(--pu-surface); color:var(--pu-ink); box-shadow:2.5px 2.5px 0 var(--pu-outline)}
+.d-punch .iconbtn:hover{transform:translate(-1.5px,-1.5px); box-shadow:4px 4px 0 var(--pu-outline)}
+.d-punch .iconbtn svg{stroke-width:2.4}
+.d-punch .sidebar{border-right:3.5px solid var(--pu-outline); background:var(--pu-surface)}
+.d-punch .side-head{border-bottom:2.5px solid var(--pu-outline)}
+.d-punch .side-label{font-family:'Plus Jakarta Sans'; font-weight:800; font-size:12px; text-transform:uppercase; color:var(--pu-ink)}
+.d-punch .tabs{border-bottom:3.5px solid var(--pu-outline)}
+.d-punch .tab{font-family:'Plus Jakarta Sans'; font-weight:800; font-size:12.5px; color:var(--pu-ink); border-right:2.5px solid var(--pu-outline)}
+.d-punch .tab:last-child{border-right:none}
+.d-punch .tab.active{background:var(--pu-accent); color:#fff}
+.d-punch .tab.active em{color:#fff}
+.d-punch .task{border-left:none}
+.d-punch .task-row{border:3px solid var(--pu-outline); border-radius:8px; margin:7px 8px; box-shadow:4px 4px 0 var(--pu-outline), inset 6px 0 0 var(--c); background:var(--pu-surface)}
+.d-punch .task-row:hover{transform:translate(-1.5px,-1.5px); box-shadow:5.5px 5.5px 0 var(--pu-outline), inset 6px 0 0 var(--c)}
+.d-punch .task-title{font-family:'Plus Jakarta Sans'; font-weight:800}
+.d-punch .task-sub{color:var(--pu-mut); font-weight:600}
+.d-punch .term{border:2.5px solid var(--pu-outline); border-radius:6px; margin:4px 10px; box-shadow:2.5px 2.5px 0 var(--pu-outline); background:var(--pu-surface2); color:var(--pu-ink)}
+.d-punch .term:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--pu-outline)}
+.d-punch .dot.idle{background:var(--pu-idle)}
+.d-punch .dot.working{background:var(--pu-work)}.d-punch .dot.working::before{border-color:var(--pu-work)}
+.d-punch .dot.unread{background:var(--pu-unread)}.d-punch .dot.unread::before{border-color:var(--pu-unread)}
+.d-punch .dot.error{background:var(--pu-error)}
+.d-punch .pane{background:var(--pu-bg)}
+.d-punch .term-head{border-bottom:3.5px solid var(--pu-outline); background:var(--pu-surface2)}
+.d-punch .term-tab{font-family:'Plus Jakarta Sans'; font-weight:800; color:var(--pu-ink); border:2.5px solid var(--pu-outline); border-bottom:none; background:var(--pu-surface); border-radius:7px 7px 0 0}
+.d-punch .term-tab.active{background:var(--pu-accent2); color:#fff}
+.d-punch .term-meta{font-family:'Plus Jakarta Sans'; font-weight:800; font-size:11px; text-transform:uppercase; color:var(--pu-work)}
+.d-punch .term-body{font-family:'JetBrains Mono',monospace; color:var(--pu-ink); background-color:var(--pu-surface); background-image:radial-gradient(var(--pu-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-punch .t-prompt{color:var(--pu-accent)}
+.d-punch .t-ok{color:var(--pu-work)}
+.d-punch .t-key{color:var(--pu-accent2)}
+.d-punch .t-url{color:var(--pu-accent)}
+.d-punch .t-info{color:var(--pu-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>28 / Punch — 重拳出击</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s28">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF3D2E">28</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Climate Crisis',sans-serif;text-transform:uppercase">Punch — 重拳出击</h2>
+        <div class="s-sub">Impact Poster Pop</div>
+        <div class="s-tag">重拳出击：最粗的黑框 + 最大的错位投影 + 角度凌厉的超粗标题字，红黄蓝绿四色硬撞——视觉上的一记重拳。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Climate Crisis',sans-serif">CLIMATE</span>超粗角体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700">Jakarta</span>几何正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F7F5EE"></span><span style="background:#0A0A0A"></span><span style="background:#FF3D2E"></span><span style="background:#2D5BFF"></span><span style="background:#FFD23F"></span></div></div>
+      <div class="vibes"><b>重拳</b><b>撞色</b><b>粗框</b><b>张扬</b></div>
+      <button class="pick" data-design="Punch">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-punch light"><div class="cap"><span class="tag">28 · Punch</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-punch dark"><div class="cap"><span class="tag">28 · Punch</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"TASKAI / PUNCH","windowHtml":"","extraClass":"","extraText":"","fallback":"Punch — 重拳出击","number":"28"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

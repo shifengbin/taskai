@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>26 Gummy — 软糖气泡 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   26 · GUMMY — gummy bubble pop (Pop family)
+   ========================================================================= */
+.d-gummy .stage{border:3px solid var(--gu-outline); border-radius:22px; background:var(--gu-bg); overflow:hidden; box-shadow:9px 9px 0 var(--gu-outline)}
+.d-gummy.light{--gu-bg:#F5F0FB;--gu-surface:#FFFFFF;--gu-surface2:#ECE2F7;--gu-ink:#2A1B3D;--gu-mut:#6E5E86;--gu-outline:#2A1B3D;--gu-accent:#9B5DE5;--gu-accent2:#FF9F68;--gu-accent3:#36D39E;--gu-accent4:#48BFE3;--gu-dots:rgba(42,27,61,.07);
+  --gu-work:#1FA377;--gu-idle:#B6AACB;--gu-unread:#9B5DE5;--gu-error:#FF6B8B}
+.d-gummy.dark{--gu-bg:#1B1426;--gu-surface:#271E36;--gu-surface2:#302643;--gu-ink:#F3EDFB;--gu-mut:#9C8FB3;--gu-outline:#F3EDFB;--gu-accent:#B47CFF;--gu-accent2:#FFB58A;--gu-accent3:#54E6B0;--gu-accent4:#6FCCF0;--gu-dots:rgba(243,237,251,.06);
+  --gu-work:#54E6B0;--gu-idle:#5C4F73;--gu-unread:#B47CFF;--gu-error:#FF7E9A}
+.d-gummy{font-family:'Nunito',sans-serif}
+.d-gummy .stage-bar{background:var(--gu-accent); border-bottom:3px solid var(--gu-outline); justify-content:flex-start}
+.d-gummy .tl i{border:2px solid var(--gu-outline); background:var(--gu-surface); border-radius:50%}
+.d-gummy .tl i:nth-child(1){background:var(--gu-accent2)}.d-gummy .tl i:nth-child(2){background:var(--gu-accent3)}
+.d-gummy .win-title{font-family:'Nunito',sans-serif; font-weight:800; font-size:13px; color:#fff}
+.d-gummy .appbar{border-bottom:3px solid var(--gu-outline); background:var(--gu-surface)}
+.d-gummy .brand-name{font-family:'M PLUS Rounded 1c',sans-serif; font-weight:700; font-size:22px; letter-spacing:-.01em}
+.d-gummy .brand-name em{font-style:normal; color:var(--gu-accent)}
+.d-gummy .brand-mark{background:var(--gu-accent); border:2.5px solid var(--gu-outline); border-radius:999px; color:#fff}
+.d-gummy .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-gummy .iconbtn{border:2px solid var(--gu-outline); border-radius:999px; background:var(--gu-surface); color:var(--gu-ink); box-shadow:2px 2px 0 var(--gu-outline)}
+.d-gummy .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--gu-outline)}
+.d-gummy .iconbtn svg{stroke-width:2.2}
+.d-gummy .sidebar{border-right:3px solid var(--gu-outline); background:var(--gu-surface)}
+.d-gummy .side-head{border-bottom:2px solid var(--gu-outline)}
+.d-gummy .side-label{font-family:'M PLUS Rounded 1c'; font-weight:700; font-size:12px; text-transform:uppercase; color:var(--gu-ink)}
+.d-gummy .tabs{border-bottom:3px solid var(--gu-outline)}
+.d-gummy .tab{font-family:'M PLUS Rounded 1c'; font-weight:700; font-size:12.5px; color:var(--gu-ink); border-right:2px solid var(--gu-outline)}
+.d-gummy .tab:last-child{border-right:none}
+.d-gummy .tab.active{background:var(--gu-accent2); color:#2A1B3D}
+.d-gummy .tab.active em{color:#2A1B3D}
+.d-gummy .task{border-left:none}
+.d-gummy .task-row{border:2.5px solid var(--gu-outline); border-radius:16px; margin:7px 8px; box-shadow:3px 3px 0 var(--gu-outline), inset 6px 0 0 var(--c); background:var(--gu-surface)}
+.d-gummy .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--gu-outline), inset 6px 0 0 var(--c)}
+.d-gummy .task-title{font-family:'M PLUS Rounded 1c'; font-weight:700}
+.d-gummy .task-sub{color:var(--gu-mut); font-weight:600}
+.d-gummy .term{border:2px solid var(--gu-outline); border-radius:14px; margin:4px 10px; box-shadow:2px 2px 0 var(--gu-outline); background:var(--gu-surface2); color:var(--gu-ink)}
+.d-gummy .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--gu-outline)}
+.d-gummy .dot.idle{background:var(--gu-idle)}
+.d-gummy .dot.working{background:var(--gu-work)}.d-gummy .dot.working::before{border-color:var(--gu-work)}
+.d-gummy .dot.unread{background:var(--gu-unread)}.d-gummy .dot.unread::before{border-color:var(--gu-unread)}
+.d-gummy .dot.error{background:var(--gu-error)}
+.d-gummy .pane{background:var(--gu-bg)}
+.d-gummy .term-head{border-bottom:3px solid var(--gu-outline); background:var(--gu-surface2)}
+.d-gummy .term-tab{font-family:'M PLUS Rounded 1c'; font-weight:700; color:var(--gu-ink); border:2px solid var(--gu-outline); border-bottom:none; background:var(--gu-surface); border-radius:14px 14px 0 0}
+.d-gummy .term-tab.active{background:var(--gu-accent); color:#fff}
+.d-gummy .term-meta{font-family:'M PLUS Rounded 1c'; font-weight:700; font-size:11px; text-transform:uppercase; color:var(--gu-work)}
+.d-gummy .term-body{font-family:'JetBrains Mono',monospace; color:var(--gu-ink); background-color:var(--gu-surface); background-image:radial-gradient(var(--gu-dots) 1.3px, transparent 1.3px); background-size:15px 15px}
+.d-gummy .t-prompt{color:var(--gu-accent)}
+.d-gummy .t-ok{color:var(--gu-work)}
+.d-gummy .t-key{color:var(--gu-ink)}
+.d-gummy .t-url{color:var(--gu-accent)}
+.d-gummy .t-info{color:var(--gu-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>26 / Gummy — 软糖气泡</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s26">
+    <div class="s-head">
+      <div class="s-num" style="color:#9B5DE5">26</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'M PLUS Rounded 1c',sans-serif;font-weight:700">Gummy — 软糖气泡</h2>
+        <div class="s-sub">Gummy Bubble Pop</div>
+        <div class="s-tag">软糖气泡波普：圆润的胶囊描边、葡萄紫与蜜桃粉撞色、半色网点——把任务管理做成一罐软糖。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'M PLUS Rounded 1c',sans-serif;font-weight:700">M+ Rounded</span>圆润粗体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Nunito',sans-serif;font-weight:600">Nunito</span>圆润正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F5F0FB"></span><span style="background:#2A1B3D"></span><span style="background:#9B5DE5"></span><span style="background:#FF9F68"></span><span style="background:#36D39E"></span></div></div>
+      <div class="vibes"><b>软糖</b><b>圆润</b><b>撞色</b><b>甜美</b></div>
+      <button class="pick" data-design="Gummy">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-gummy light"><div class="cap"><span class="tag">26 · Gummy</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-gummy dark"><div class="cap"><span class="tag">26 · Gummy</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"task<em>ai</em>","windowText":"taskai · gummy","windowHtml":"","extraClass":"","extraText":"","fallback":"Gummy — 软糖气泡","number":"26"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

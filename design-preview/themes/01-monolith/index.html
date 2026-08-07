@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 Monolith — 原始工能 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   01 · MONOLITH — brutalist dev console
+   ========================================================================= */
+.d-mono .stage{border:2px solid var(--m-ink,#14110C); background:var(--m-bg)}
+.d-mono.light{--m-bg:#EFEBE1;--m-surface:#FBFAF5;--m-surface2:#F3EFE5;--m-ink:#14110C;--m-mut:#7C766A;--m-line:#14110C;--m-accent:#E8431A;
+  --m-work:#1F9D55;--m-idle:#9A9388;--m-unread:#7C4DE0;--m-error:#D63A2F}
+.d-mono.dark{--m-bg:#0A0B0A;--m-surface:#121413;--m-surface2:#1A1D1B;--m-ink:#ECEFE8;--m-mut:#7D857A;--m-line:#2C302C;--m-accent:#C6F24E;
+  --m-work:#7EE787;--m-idle:#6B7A6B;--m-unread:#B39BFF;--m-error:#FF6B5E}
+.d-mono{font-family:'JetBrains Mono',monospace}
+.d-mono .stage-bar{border-bottom:2px solid var(--m-ink); background:var(--m-surface2); justify-content:flex-start}
+.d-mono.light .tl i:nth-child(1){background:#E8431A}.d-mono.light .tl i:nth-child(2){background:#14110C}.d-mono.light .tl i:nth-child(3){background:transparent;border:1.5px solid #14110C}
+.d-mono.dark .tl i{border:1px solid var(--m-line)!important;background:var(--m-surface)!important}
+.d-mono .win-title{font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--m-mut)}
+.d-mono .win-title b{color:var(--m-ink); font-weight:700}
+.d-mono .sys-tag{margin-left:auto; font-size:10px; letter-spacing:.16em; color:var(--m-accent); border:1px solid var(--m-accent); padding:3px 7px; text-transform:uppercase}
+.d-mono .appbar{border-bottom:2px solid var(--m-ink); background:var(--m-surface)}
+.d-mono .brand-name{font-family:'Anton',sans-serif; font-weight:400; font-size:22px; letter-spacing:.02em; text-transform:uppercase; line-height:1}
+.d-mono .brand-mark{border:2px solid var(--m-ink); background:var(--m-accent); color:var(--m-ink)}
+.d-mono .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-mono .iconbtn{border:1.5px solid transparent}
+.d-mono .iconbtn:hover{border-color:var(--m-ink); background:var(--m-surface2)}
+.d-mono .iconbtn svg{stroke-width:2}
+.d-mono .sidebar{border-right:2px solid var(--m-ink); background:var(--m-surface)}
+.d-mono .side-head{border-bottom:1px solid var(--m-line)}
+.d-mono.light .side-head{border-bottom:1px solid rgba(20,17,12,.2)}
+.d-mono .side-label{font-size:10px; letter-spacing:.22em; text-transform:uppercase; font-weight:700}
+.d-mono .tabs{border-bottom:2px solid var(--m-ink)}
+.d-mono .tab{border-right:1px solid var(--m-line); font-size:11px; letter-spacing:.04em; text-transform:uppercase; font-weight:700}
+.d-mono.light .tab{border-right-color:rgba(20,17,12,.2)}
+.d-mono .tab:last-child{border-right:none}
+.d-mono .tab.active{background:var(--m-ink); color:var(--m-bg)}
+.d-mono .tab.active em{color:var(--m-accent); opacity:1; font-weight:700}
+.d-mono .task{border-left-width:5px}
+.d-mono.light .task-row{border-bottom:1px solid rgba(20,17,12,.12)}
+.d-mono.dark .task-row{border-bottom:1px solid rgba(255,255,255,.05)}
+.d-mono .task-row:hover{background:var(--m-surface2)}
+.d-mono .task-title{font-weight:700}
+.d-mono .term{font-family:'JetBrains Mono',monospace}
+.d-mono.light .term{border-bottom:1px dashed rgba(20,17,12,.18)}
+.d-mono.dark .term{border-bottom:1px dashed rgba(255,255,255,.08)}
+.d-mono .term:hover{background:var(--m-surface2)}
+.d-mono .dot.idle{background:var(--m-idle)}
+.d-mono .dot.working{background:var(--m-work)}.d-mono .dot.working::before{border-color:var(--m-work)}
+.d-mono .dot.unread{background:var(--m-unread)}.d-mono .dot.unread::before{border-color:var(--m-unread)}
+.d-mono .dot.error{background:var(--m-error)}
+.d-mono .pane{background:var(--m-bg)}
+.d-mono .term-head{border-bottom:2px solid var(--m-ink); background:var(--m-surface)}
+.d-mono .term-tab{border:1.5px solid var(--m-ink); border-bottom:none; background:var(--m-surface2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; border-radius:0}
+.d-mono .term-tab.active{background:var(--m-accent); color:var(--m-ink)}
+.d-mono .term-meta{font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--m-work)}
+.d-mono .term-body{color:var(--m-ink)}
+.d-mono .t-prompt{color:var(--m-accent); font-weight:700}
+.d-mono .t-ok{color:var(--m-work); font-weight:700}
+.d-mono .t-key{color:var(--m-ink)}
+.d-mono .t-url{color:var(--m-accent)}
+.d-mono .t-info{color:var(--m-unread)}
+.d-mono .crop{position:absolute; width:14px;height:14px; border:2px solid var(--m-ink); opacity:.0}
+/* corner crops on stage */
+.d-mono .stage{position:relative}
+.d-mono .stage::before,.d-mono .stage::after{content:"+"; position:absolute; font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--m-mut); line-height:1}
+.d-mono .stage::before{top:-9px; left:-9px}
+.d-mono .stage::after{bottom:-9px; right:-9px}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>01 / Monolith — 原始工能</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s1">
+    <div class="s-head">
+      <div class="s-num" style="color:#E8431A">01</div>
+      <div class="s-titles">
+        <h2 class="s-name">Monolith — 原始工能</h2>
+        <div class="s-sub">Brutalist Dev Console</div>
+        <div class="s-tag">把终端的粗粝感做成设计语言：等宽字、裸露边框、栅格与裁切标记。诚实、硬核、零废话。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Anton',sans-serif">ANTON</span>浓缩标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'JetBrains Mono',monospace">JetBrains Mono</span>等宽正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#EFEBE1"></span><span style="background:#14110C"></span><span style="background:#E8431A"></span><span style="background:#0A0B0A"></span><span style="background:#C6F24E"></span></div></div>
+      <div class="vibes"><b>工业</b><b>等宽</b><b>高对比</b><b>零圆角</b></div>
+      <button class="pick" data-design="Monolith">选择此方案</button>
+    </div>
+
+    <div class="scroll-x">
+      <!-- LIGHT -->
+      <div class="mockup d-mono light">
+        <div class="cap"><span class="tag">01 · Monolith</span> 亮色 / Light</div>
+        <div class="stage" data-variant></div>
+      </div>
+      <!-- DARK -->
+      <div class="mockup d-mono dark">
+        <div class="cap"><span class="tag">01 · Monolith</span> 暗色 / Dark</div>
+        <div class="stage" data-variant></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"TASKAI","brandHtml":"","windowText":"","windowHtml":"<b>taskai</b> ▸ 工作台","extraClass":"sys-tag","extraText":"3 RUN","fallback":"Monolith — 原始工能","number":"01"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

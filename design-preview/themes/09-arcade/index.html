@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>09 ARCADE | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   09 · ARCADE — 8-bit pixel retro
+   ========================================================================= */
+.d-arcade .stage{border:4px solid var(--a-line); border-radius:0; background:var(--a-bg); overflow:hidden; box-shadow:8px 8px 0 var(--a-line)}
+.d-arcade.light{--a-bg:#ECE7F7;--a-surface:#FFFFFF;--a-surface2:#DED6F2;--a-ink:#161235;--a-mut:#5E5788;--a-line:#161235;--a-scan:rgba(20,15,40,.06);
+  --a-work:#1FA85A;--a-idle:#9A90C2;--a-unread:#3D7EFF;--a-error:#F02E2E}
+.d-arcade.dark{--a-bg:#13112A;--a-surface:#1E1B3A;--a-surface2:#272350;--a-ink:#F5F3FF;--a-mut:#8F88C2;--a-line:#070617;--a-scan:rgba(255,255,255,.05);
+  --a-work:#3DDC97;--a-idle:#565090;--a-unread:#4D8DFF;--a-error:#FF4D4D}
+.d-arcade{font-family:'Silkscreen',monospace}
+.d-arcade .stage-bar{background:var(--a-ink); border-bottom:4px solid var(--a-line); justify-content:flex-start}
+.d-arcade .tl i{background:var(--a-error); width:10px;height:10px; border-radius:0}
+.d-arcade .tl i:nth-child(2){background:#FFD23F}
+.d-arcade .tl i:nth-child(3){background:var(--a-work)}
+.d-arcade .win-title{font-family:'Press Start 2P',monospace; font-size:10px; letter-spacing:.05em; color:#FFD23F}
+.d-arcade .win-title b{color:#fff}
+.d-arcade .appbar{border-bottom:4px solid var(--a-line); background:var(--a-surface)}
+.d-arcade .brand-name{font-family:'Press Start 2P'; font-size:14px; letter-spacing:.02em; color:var(--a-ink)}
+.d-arcade .brand-name em{font-style:normal; color:var(--a-error)}
+.d-arcade .brand-mark{background:#FFD23F; border:3px solid var(--a-line); border-radius:0; color:var(--a-line); box-shadow:inset -3px -3px 0 rgba(0,0,0,.18)}
+.d-arcade .brand-mark svg{width:13px;height:13px;stroke-width:3}
+.d-arcade .iconbtn{border:3px solid var(--a-line); border-radius:0; background:var(--a-surface); box-shadow:3px 3px 0 var(--a-line); color:var(--a-ink)}
+.d-arcade .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--a-line)}
+.d-arcade .iconbtn svg{stroke-width:2.4}
+.d-arcade .sidebar{border-right:4px solid var(--a-line); background:var(--a-surface)}
+.d-arcade .side-head{border-bottom:3px solid var(--a-line)}
+.d-arcade .side-label{font-family:'Press Start 2P'; font-size:9px; letter-spacing:.03em; color:var(--a-mut)}
+.d-arcade .tabs{border-bottom:4px solid var(--a-line)}
+.d-arcade .tab{font-family:'Press Start 2P'; font-size:8px; letter-spacing:.02em; color:var(--a-mut); border-right:3px solid var(--a-line)}
+.d-arcade .tab:last-child{border-right:none}
+.d-arcade .tab.active{background:#FFD23F; color:var(--a-line)}
+.d-arcade .tab.active em{color:var(--a-line)}
+.d-arcade .task{border-left:none}
+.d-arcade .task-row{border:3px solid var(--a-line); border-radius:0; margin:7px 8px; box-shadow:3px 3px 0 var(--a-line), inset 6px 0 0 var(--c)}
+.d-arcade .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--a-line), inset 6px 0 0 var(--c)}
+.d-arcade .task-title{font-family:'Silkscreen'; font-weight:700; font-size:13px}
+.d-arcade .task-sub{font-family:'Silkscreen'; color:var(--a-mut); font-size:11px}
+.d-arcade .term{border:2px solid var(--a-line); border-radius:0; margin:4px 10px; box-shadow:2px 2px 0 var(--a-line); background:var(--a-surface2); color:var(--a-ink)}
+.d-arcade .term:hover{transform:translate(-1px,-1px)}
+.d-arcade .dot{border-radius:0}
+.d-arcade .dot.working::before,.d-arcade .dot.unread::before{border-radius:0}
+.d-arcade .dot.idle{background:var(--a-idle)}
+.d-arcade .dot.working{background:var(--a-work)}.d-arcade .dot.working::before{border-color:var(--a-work)}
+.d-arcade .dot.unread{background:var(--a-unread)}.d-arcade .dot.unread::before{border-color:var(--a-unread)}
+.d-arcade .dot.error{background:var(--a-error)}
+.d-arcade .pane{background-color:var(--a-bg); background-image:repeating-linear-gradient(0deg,var(--a-scan) 0,var(--a-scan) 1px,transparent 1px,transparent 3px)}
+.d-arcade .term-head{border-bottom:4px solid var(--a-line); background:var(--a-surface)}
+.d-arcade .term-tab{font-family:'Silkscreen'; font-weight:700; font-size:11px; color:var(--a-mut); border:3px solid var(--a-line); border-bottom:none; background:var(--a-surface2)}
+.d-arcade .term-tab.active{background:var(--a-work); color:var(--a-line)}
+.d-arcade .term-meta{font-family:'Press Start 2P'; font-size:8px; letter-spacing:.03em; color:var(--a-work)}
+.d-arcade .term-body{font-family:'JetBrains Mono',monospace; color:var(--a-ink); background:var(--a-surface)}
+.d-arcade .t-prompt{color:var(--a-error)}
+.d-arcade .t-ok{color:var(--a-work)}
+.d-arcade .t-key{color:var(--a-unread)}
+.d-arcade .t-url{color:#FFD23F}
+.d-arcade .t-info{color:var(--a-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>09 / ARCADE</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s9">
+    <div class="s-head">
+      <div class="s-num" style="color:#FFD23F;-webkit-text-stroke:1.5px #161235">09</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Press Start 2P',monospace;font-size:24px;letter-spacing:.02em">ARCADE</h2>
+        <div class="s-sub">8-bit Pixel Retro</div>
+        <div class="s-tag">像素字、方块描边、扫描线、街机配色——像在 Game Boy 上管理任务，复古又上头。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Press Start 2P',monospace;font-size:13px">PRESS START</span>像素体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Silkscreen',monospace">Silkscreen</span>像素正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#13112A"></span><span style="background:#FFD23F"></span><span style="background:#F02E2E"></span><span style="background:#3DDC97"></span><span style="background:#3D7EFF"></span></div></div>
+      <div class="vibes"><b>像素</b><b>方块</b><b>扫描线</b><b>怀旧</b></div>
+      <button class="pick" data-design="Arcade">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-arcade light"><div class="cap"><span class="tag">09 · Arcade</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-arcade dark"><div class="cap"><span class="tag">09 · Arcade</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"","windowHtml":"<b>P1</b> READY","extraClass":"","extraText":"","fallback":"ARCADE","number":"09"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

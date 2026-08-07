@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>12 Sunny — 渐变明媚 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   12 · SUNNY — vibrant gradient consumer (bright, readable)
+   ========================================================================= */
+.d-sunny .stage{border:1px solid var(--g-line); border-radius:20px; background:var(--g-bg); overflow:hidden; box-shadow:0 30px 70px -34px rgba(80,40,140,.4)}
+.d-sunny.light{--g-bg:#FBF6FF;--g-surface:#FFFFFF;--g-surface2:#F4EEFF;--g-ink:#241B3A;--g-mut:#6E6488;--g-line:#ECE3FA;--g-accent:#FF3D8B;--g-accent2:#6D5EF5;
+  --g-grad-sun:linear-gradient(135deg,#FF7A45,#FF3D8B);--g-grad-ocean:linear-gradient(135deg,#3B82F6,#06B6D4);
+  --g-work:#16A34A;--g-idle:#C3BBD6;--g-unread:#6D5EF5;--g-error:#F43F5E}
+.d-sunny.dark{--g-bg:#15111F;--g-surface:#1F1830;--g-surface2:#291F3E;--g-ink:#F4EFFE;--g-mut:#9C93BE;--g-line:#332A4B;--g-accent:#FF5C9C;--g-accent2:#8B7CFF;
+  --g-grad-sun:linear-gradient(135deg,#FF8A5C,#FF4D94);--g-grad-ocean:linear-gradient(135deg,#4D8DFF,#1FCDE0);
+  --g-work:#22C55E;--g-idle:#564C72;--g-unread:#8B7CFF;--g-error:#FB4869}
+.d-sunny{font-family:'Plus Jakarta Sans',sans-serif}
+.d-sunny .stage-bar{background:var(--g-surface); border-bottom:1px solid var(--g-line); justify-content:center; position:relative}
+.d-sunny .tl{position:absolute; left:18px}
+.d-sunny .tl i{background:#ECE3FA}.d-sunny .tl i:nth-child(1){background:var(--g-accent)}.d-sunny .tl i:nth-child(2){background:var(--g-accent2)}.d-sunny .tl i:nth-child(3){background:#06B6D4}
+.d-sunny.dark .tl i{background:#332A4B}
+.d-sunny .win-title{font-family:'Lexend'; font-weight:500; font-size:13px; color:var(--g-mut)}
+.d-sunny .appbar{border-bottom:1px solid var(--g-line); background:var(--g-surface)}
+.d-sunny .brand-name{font-family:'Lexend'; font-weight:700; font-size:21px; letter-spacing:-.02em; background:var(--g-grad-sun); -webkit-background-clip:text; background-clip:text; color:transparent}
+.d-sunny .brand-mark{background:var(--g-grad-sun); border-radius:10px; color:#fff; box-shadow:0 6px 16px -4px rgba(255,61,139,.5)}
+.d-sunny .brand-mark svg{width:15px;height:15px;stroke-width:2.6}
+.d-sunny .iconbtn{border-radius:11px; color:var(--g-ink); border:1px solid var(--g-line); background:var(--g-surface)}
+.d-sunny .iconbtn:hover{border-color:var(--g-accent); color:var(--g-accent)}
+.d-sunny .iconbtn svg{stroke-width:2}
+.d-sunny .sidebar{border-right:1px solid var(--g-line); background:var(--g-surface)}
+.d-sunny .side-head{border-bottom:1px solid var(--g-line)}
+.d-sunny .side-label{font-family:'Lexend'; font-weight:600; font-size:12px; color:var(--g-mut)}
+.d-sunny .tabs{border-bottom:1px solid var(--g-line)}
+.d-sunny .tab{font-family:'Plus Jakarta Sans'; font-weight:700; font-size:13px; color:var(--g-mut); position:relative}
+.d-sunny .tab.active{color:var(--g-ink)}
+.d-sunny .tab.active em{color:var(--g-accent)}
+.d-sunny .tab.active::after{content:""; position:absolute; left:28%; right:28%; bottom:-1px; height:3px; background:var(--g-grad-sun); border-radius:3px}
+.d-sunny .task{border-left:none}
+.d-sunny .task-row{border-radius:13px; margin:4px 8px; box-shadow:inset 4px 0 0 var(--c); background:var(--g-surface2)}
+.d-sunny .task-row:hover{background:var(--g-surface)}
+.d-sunny .task-title{font-family:'Plus Jakarta Sans'; font-weight:700; font-size:14px}
+.d-sunny .task-sub{color:var(--g-mut)}
+.d-sunny .term{color:var(--g-mut); border-radius:9px}
+.d-sunny .term:hover{background:var(--g-surface2)}
+.d-sunny .dot.idle{background:var(--g-idle)}
+.d-sunny .dot.working{background:var(--g-work)}.d-sunny .dot.working::before{border-color:var(--g-work)}
+.d-sunny .dot.unread{background:var(--g-unread)}.d-sunny .dot.unread::before{border-color:var(--g-unread)}
+.d-sunny .dot.error{background:var(--g-error)}
+.d-sunny .pane{background:var(--g-bg)}
+.d-sunny .term-head{border-bottom:1px solid var(--g-line); background:var(--g-surface)}
+.d-sunny .term-tab{font-family:'Plus Jakarta Sans'; font-weight:700; color:var(--g-mut)}
+.d-sunny .term-tab.active{color:#fff; background:var(--g-grad-ocean); border-radius:8px 8px 0 0}
+.d-sunny .term-meta{font-family:'Lexend'; font-weight:600; font-size:12px; color:var(--g-work)}
+.d-sunny .term-body{font-family:'JetBrains Mono',monospace; color:var(--g-ink)}
+.d-sunny .t-prompt{color:var(--g-accent)}
+.d-sunny .t-ok{color:var(--g-work)}
+.d-sunny .t-key{color:var(--g-accent2)}
+.d-sunny .t-url{color:var(--g-accent)}
+.d-sunny .t-info{color:var(--g-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>12 / Sunny — 渐变明媚</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s12">
+    <div class="s-head">
+      <div class="s-num" style="background:linear-gradient(135deg,#FF7A45,#FF3D8B);-webkit-background-clip:text;background-clip:text;color:transparent">12</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Lexend',sans-serif;font-weight:700;background:linear-gradient(135deg,#FF7A45,#FF3D8B,#6D5EF5);-webkit-background-clip:text;background-clip:text;color:transparent">Sunny — 渐变明媚</h2>
+        <div class="s-sub">Vibrant Gradient Consumer</div>
+        <div class="s-tag">落日橘粉与海洋蓝青的渐变点缀，白色卡片 + 柔和阴影——明媚又不失专业，关键操作用渐变实心按钮，醒目好认。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Lexend',sans-serif;font-weight:700">Lexend</span>易读标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:600">Plus Jakarta</span>现代正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:linear-gradient(135deg,#FF7A45,#FF3D8B)"></span><span style="background:linear-gradient(135deg,#3B82F6,#06B6D4)"></span><span style="background:#6D5EF5"></span><span style="background:#FBF6FF"></span><span style="background:#15111F"></span></div></div>
+      <div class="vibes"><b>渐变</b><b>明媚</b><b>现代</b><b>易读</b></div>
+      <button class="pick" data-design="Sunny">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-sunny light"><div class="cap"><span class="tag">12 · Sunny</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-sunny dark"><div class="cap"><span class="tag">12 · Sunny</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"taskai","brandHtml":"","windowText":"taskai · sunny","windowHtml":"","extraClass":"","extraText":"","fallback":"Sunny — 渐变明媚","number":"12"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>15 Y2K — 千禧泡泡 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   15 · Y2K — bubble chrome 2000s
+   ========================================================================= */
+.d-y2k .stage{border:2px solid var(--y-line); border-radius:22px; background:var(--y-bg); overflow:hidden; box-shadow:0 30px 70px -34px rgba(255,46,147,.4)}
+.d-y2k.light{--y-bg:#FDF2FB;--y-surface:#FFFFFF;--y-surface2:#FBE2F5;--y-ink:#2A0F2E;--y-mut:#8A6E86;--y-line:#F5CFE8;--y-accent:#FF2E93;--y-accent2:#00B8C2;
+  --y-work:#16A34A;--y-idle:#CDA6C9;--y-unread:#9B5DE5;--y-error:#E11D48}
+.d-y2k.dark{--y-bg:#160A1A;--y-surface:#221229;--y-surface2:#2C1834;--y-ink:#FCEAF6;--y-mut:#A98EA6;--y-line:#3D2645;--y-accent:#FF4DAE;--y-accent2:#2DD4D4;
+  --y-work:#22C55E;--y-idle:#5E4864;--y-unread:#B07CFF;--y-error:#FB4869}
+.d-y2k{font-family:'M PLUS Rounded 1c',sans-serif}
+.d-y2k .stage-bar{background:linear-gradient(90deg,#FF2E93,#9B5DE5,#00B8C2); border-bottom:2px solid var(--y-line); justify-content:flex-start}
+.d-y2k .tl i{border:2px solid #fff; background:rgba(255,255,255,.6)}
+.d-y2k .win-title{font-family:'Bagel Fat One',sans-serif; font-weight:400; font-size:16px; color:#fff; letter-spacing:.02em}
+.d-y2k .appbar{border-bottom:2px solid var(--y-line); background:var(--y-surface)}
+.d-y2k .brand-name{font-family:'Bagel Fat One'; font-weight:400; font-size:23px; letter-spacing:-.01em; background:linear-gradient(180deg,#fff 0%,#E8E8F0 45%,#9B5DE5 100%); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-stroke:1px var(--y-ink)}
+.d-y2k .brand-mark{background:linear-gradient(135deg,#FF2E93,#9B5DE5); border-radius:11px; color:#fff}
+.d-y2k .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-y2k .iconbtn{border-radius:13px; color:var(--y-ink); border:2px solid var(--y-line); background:var(--y-surface); box-shadow:inset 0 2px 0 rgba(255,255,255,.6)}
+.d-y2k.dark .iconbtn{box-shadow:inset 0 2px 0 rgba(255,255,255,.06)}
+.d-y2k .iconbtn:hover{border-color:var(--y-accent); color:var(--y-accent)}
+.d-y2k .iconbtn svg{stroke-width:2.2}
+.d-y2k .sidebar{border-right:2px solid var(--y-line); background:var(--y-surface)}
+.d-y2k .side-head{border-bottom:2px solid var(--y-line)}
+.d-y2k .side-label{font-family:'Bagel Fat One'; font-weight:400; font-size:14px; color:var(--y-mut)}
+.d-y2k .tabs{border-bottom:2px solid var(--y-line)}
+.d-y2k .tab{font-family:'M PLUS Rounded 1c'; font-weight:700; font-size:13px; color:var(--y-mut); position:relative}
+.d-y2k .tab.active{color:var(--y-ink)}
+.d-y2k .tab.active em{color:var(--y-accent)}
+.d-y2k .tab.active::after{content:""; position:absolute; left:26%; right:26%; bottom:-1px; height:3px; background:linear-gradient(90deg,#FF2E93,#9B5DE5,#00B8C2); border-radius:3px}
+.d-y2k .task{border-left:none}
+.d-y2k .task-row{border-radius:15px; margin:4px 8px; box-shadow:inset 4px 0 0 var(--c); background:var(--y-surface2)}
+.d-y2k .task-row:hover{background:var(--y-surface)}
+.d-y2k .task-title{font-family:'M PLUS Rounded 1c'; font-weight:700; font-size:14px}
+.d-y2k .task-sub{color:var(--y-mut)}
+.d-y2k .term{color:var(--y-mut); border-radius:11px}
+.d-y2k .term:hover{background:var(--y-surface2)}
+.d-y2k .dot.idle{background:var(--y-idle)}
+.d-y2k .dot.working{background:var(--y-work)}.d-y2k .dot.working::before{border-color:var(--y-work)}
+.d-y2k .dot.unread{background:var(--y-unread)}.d-y2k .dot.unread::before{border-color:var(--y-unread)}
+.d-y2k .dot.error{background:var(--y-error)}
+.d-y2k .pane{background:var(--y-bg)}
+.d-y2k .term-head{border-bottom:2px solid var(--y-line); background:var(--y-surface)}
+.d-y2k .term-tab{font-family:'M PLUS Rounded 1c'; font-weight:700; color:var(--y-mut)}
+.d-y2k .term-tab.active{color:#fff; background:linear-gradient(135deg,#9B5DE5,#00B8C2); border-radius:9px 9px 0 0}
+.d-y2k .term-meta{font-family:'Bagel Fat One'; font-size:12px; color:var(--y-work)}
+.d-y2k .term-body{font-family:'JetBrains Mono',monospace; color:var(--y-ink)}
+.d-y2k .t-prompt{color:var(--y-accent)}
+.d-y2k .t-ok{color:var(--y-work)}
+.d-y2k .t-key{color:var(--y-accent2)}
+.d-y2k .t-url{color:var(--y-accent)}
+.d-y2k .t-info{color:var(--y-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>15 / Y2K — 千禧泡泡</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s15">
+    <div class="s-head">
+      <div class="s-num" style="background:linear-gradient(90deg,#FF2E93,#9B5DE5,#00B8C2);-webkit-background-clip:text;background-clip:text;color:transparent">15</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Bagel Fat One',sans-serif;font-weight:400;background:linear-gradient(180deg,#FF2E93,#9B5DE5);-webkit-background-clip:text;background-clip:text;color:transparent">Y2K — 千禧泡泡</h2>
+        <div class="s-sub">Bubble Chrome 2000s</div>
+        <div class="s-tag">千禧年的亮粉与电光青，金属渐变标题、镀铬高光按钮——复古未来感十足，关键交互用饱和实心色填充，醒目易点。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Bagel Fat One',sans-serif">Bagel Fat One</span>胖体标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'M PLUS Rounded 1c',sans-serif;font-weight:700">M PLUS Rounded</span>圆体正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FF2E93"></span><span style="background:#9B5DE5"></span><span style="background:#00B8C2"></span><span style="background:#FDF2FB"></span><span style="background:#160A1A"></span></div></div>
+      <div class="vibes"><b>千禧</b><b>镀铬</b><b>饱和</b><b>梦幻</b></div>
+      <button class="pick" data-design="Y2K">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-y2k light"><div class="cap"><span class="tag">15 · Y2K</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-y2k dark"><div class="cap"><span class="tag">15 · Y2K</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"TASKAI","brandHtml":"","windowText":"✦ TASKAI ✦","windowHtml":"","extraClass":"","extraText":"","fallback":"Y2K — 千禧泡泡","number":"15"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

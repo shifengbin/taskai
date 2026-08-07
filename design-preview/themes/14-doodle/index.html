@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>14 Doodle — 手绘涂鸦 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   14 · DOODLE — hand-drawn marker craft
+   ========================================================================= */
+.d-doodle .stage{border:3px solid var(--o-ink); border-radius:20px 9px 24px 10px/10px 22px 9px 20px; background:var(--o-bg); overflow:hidden; box-shadow:5px 5px 0 var(--o-ink)}
+.d-doodle.light{--o-bg:#FFFBF0;--o-surface:#FFFFFF;--o-surface2:#FFF4D6;--o-ink:#1F1B16;--o-mut:#7A6F5E;--o-accent:#E53935;--o-accent2:#1E88E5;--o-accent3:#43A047;
+  --o-work:#43A047;--o-idle:#B3A892;--o-unread:#1E88E5;--o-error:#E53935}
+.d-doodle.dark{--o-bg:#15120D;--o-surface:#1F1B15;--o-surface2:#28231A;--o-ink:#F6EFDF;--o-mut:#8A7E6A;--o-accent:#FF5A52;--o-accent2:#4D9DEE;--o-accent3:#4FBF57;
+  --o-work:#4FBF57;--o-idle:#5E5644;--o-unread:#4D9DEE;--o-error:#FF5A52}
+.d-doodle{font-family:'Patrick Hand',cursive}
+.d-doodle .stage-bar{background:var(--o-accent); border-bottom:3px solid var(--o-ink); justify-content:flex-start}
+.d-doodle .tl i{border:2px solid var(--o-ink); background:var(--o-surface)}
+.d-doodle .tl i:nth-child(1){background:var(--o-accent)}.d-doodle .tl i:nth-child(2){background:var(--o-accent2)}.d-doodle .tl i:nth-child(3){background:var(--o-accent3)}
+.d-doodle .win-title{font-family:'Caveat',cursive; font-weight:700; font-size:20px; color:#fff}
+.d-doodle .appbar{border-bottom:3px solid var(--o-ink); background:var(--o-surface)}
+.d-doodle .brand-name{font-family:'Caveat'; font-weight:700; font-size:28px; line-height:1}
+.d-doodle .brand-name em{font-style:normal; color:var(--o-accent)}
+.d-doodle .brand-mark{background:var(--o-accent3); border:2.5px solid var(--o-ink); border-radius:8px 4px 9px 5px; color:#fff}
+.d-doodle .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-doodle .iconbtn{border:2.5px solid var(--o-ink); border-radius:9px 5px 11px 6px; background:var(--o-surface); color:var(--o-ink)}
+.d-doodle .iconbtn:hover{background:var(--o-accent2); color:#fff}
+.d-doodle .iconbtn svg{stroke-width:2.2}
+.d-doodle .sidebar{border-right:3px solid var(--o-ink); background:var(--o-surface)}
+.d-doodle .side-head{border-bottom:2.5px solid var(--o-ink)}
+.d-doodle .side-label{font-family:'Caveat'; font-weight:700; font-size:20px; color:var(--o-ink)}
+.d-doodle .tabs{border-bottom:3px solid var(--o-ink)}
+.d-doodle .tab{font-family:'Patrick Hand'; font-size:16px; color:var(--o-ink); border-right:2px dashed var(--o-ink)}
+.d-doodle .tab:last-child{border-right:none}
+.d-doodle .tab.active{background:var(--o-accent); color:#fff}
+.d-doodle .tab.active em{color:#fff}
+.d-doodle .task{border-left:none}
+.d-doodle .task-row{border:2.5px solid var(--o-ink); border-radius:14px 6px 16px 8px/8px 14px 6px 14px; margin:7px 8px; box-shadow:3px 3px 0 var(--o-ink); background:var(--o-surface2)}
+.d-doodle .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--o-ink)}
+.d-doodle .task-title{font-family:'Patrick Hand'; font-size:16px; color:var(--o-ink)}
+.d-doodle .task-sub{font-family:'Patrick Hand'; color:var(--o-mut)}
+.d-doodle .term{font-family:'Patrick Hand'; color:var(--o-ink); border:2px solid var(--o-ink); border-radius:10px 5px 12px 6px; margin:4px 10px; background:var(--o-surface)}
+.d-doodle .term:hover{background:var(--o-surface2)}
+.d-doodle .dot.idle{background:var(--o-idle)}
+.d-doodle .dot.working{background:var(--o-work)}.d-doodle .dot.working::before{border-color:var(--o-work)}
+.d-doodle .dot.unread{background:var(--o-unread)}.d-doodle .dot.unread::before{border-color:var(--o-unread)}
+.d-doodle .dot.error{background:var(--o-error)}
+.d-doodle .pane{background:var(--o-bg)}
+.d-doodle .term-head{border-bottom:3px solid var(--o-ink); background:var(--o-surface)}
+.d-doodle .term-tab{font-family:'Patrick Hand'; font-size:15px; color:var(--o-ink); border:2px solid var(--o-ink); border-bottom:none; background:var(--o-surface2); border-radius:8px 5px 0 0}
+.d-doodle .term-tab.active{background:var(--o-accent2); color:#fff}
+.d-doodle .term-meta{font-family:'Caveat'; font-weight:700; font-size:18px; color:var(--o-work)}
+.d-doodle .term-body{font-family:'JetBrains Mono',monospace; color:var(--o-ink)}
+.d-doodle .t-prompt{color:var(--o-accent)}
+.d-doodle .t-ok{color:var(--o-work)}
+.d-doodle .t-key{color:var(--o-accent2)}
+.d-doodle .t-url{color:var(--o-accent)}
+.d-doodle .t-info{color:var(--o-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>14 / Doodle — 手绘涂鸦</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s14">
+    <div class="s-head">
+      <div class="s-num" style="color:#E53935">14</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Caveat',cursive;font-weight:700">Doodle — 手绘涂鸦</h2>
+        <div class="s-sub">Hand-drawn Marker Craft</div>
+        <div class="s-tag">马克笔手绘风：歪歪扭扭的圆角边框、粗黑描边、硬投影，搭配手写体——像在笔记本上画出来的工作台，童趣但不影响辨识。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Caveat',cursive;font-weight:700">Caveat</span>手写标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Patrick Hand',cursive">Patrick Hand</span>手绘正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#E53935"></span><span style="background:#1E88E5"></span><span style="background:#43A047"></span><span style="background:#FFFBF0"></span><span style="background:#1F1B16"></span></div></div>
+      <div class="vibes"><b>手绘</b><b>描边</b><b>童趣</b><b>粗投影</b></div>
+      <button class="pick" data-design="Doodle">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-doodle light"><div class="cap"><span class="tag">14 · Doodle</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-doodle dark"><div class="cap"><span class="tag">14 · Doodle</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"任务<em>工作台</em>","windowText":"★ 任务工作台 ★","windowHtml":"","extraClass":"","extraText":"","fallback":"Doodle — 手绘涂鸦","number":"14"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>27 Stamp — 孔版印章 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   27 · STAMP — riso poster pop (Pop family)
+   ========================================================================= */
+.d-stamp .stage{border:3px solid var(--st-outline); border-radius:6px; background:var(--st-bg); overflow:hidden; box-shadow:9px 9px 0 var(--st-outline)}
+.d-stamp.light{--st-bg:#F2EBD9;--st-surface:#FBF6E8;--st-surface2:#E9DFC4;--st-ink:#161616;--st-mut:#6B6453;--st-outline:#161616;--st-accent:#E63946;--st-accent2:#2A9D8F;--st-accent3:#E9C46A;--st-accent4:#1D3557;--st-dots:rgba(22,22,22,.09);
+  --st-work:#2A9D8F;--st-idle:#A89F88;--st-unread:#1D3557;--st-error:#E63946}
+.d-stamp.dark{--st-bg:#1A1813;--st-surface:#24211A;--st-surface2:#2E2A21;--st-ink:#F0E9D6;--st-mut:#9C937D;--st-outline:#F0E9D6;--st-accent:#FF5A66;--st-accent2:#2BB89E;--st-accent3:#F0CB6E;--st-accent4:#6FA0D8;--st-dots:rgba(240,233,214,.08);
+  --st-work:#2BB89E;--st-idle:#5C5446;--st-unread:#6FA0D8;--st-error:#FF5A66}
+.d-stamp{font-family:'Be Vietnam Pro',sans-serif}
+.d-stamp .stage-bar{background:var(--st-accent3); border-bottom:3px solid var(--st-outline); justify-content:flex-start}
+.d-stamp .tl i{border:2px solid var(--st-outline); background:var(--st-surface)}
+.d-stamp .tl i:nth-child(1){background:var(--st-accent)}.d-stamp .tl i:nth-child(2){background:var(--st-accent2)}
+.d-stamp .win-title{font-family:'Rubik',sans-serif; font-weight:700; font-size:13px; color:#161616}
+.d-stamp .appbar{border-bottom:3px solid var(--st-outline); background:var(--st-surface)}
+.d-stamp .brand-name{font-family:'Rubik',sans-serif; font-weight:700; font-size:22px; letter-spacing:-.01em}
+.d-stamp .brand-name em{font-style:normal; color:var(--st-accent)}
+.d-stamp .brand-mark{background:var(--st-accent); border:2.5px solid var(--st-outline); border-radius:6px; color:#fff}
+.d-stamp .brand-mark svg{width:14px;height:14px;stroke-width:3}
+.d-stamp .iconbtn{border:2px solid var(--st-outline); border-radius:7px; background:var(--st-surface); color:var(--st-ink); box-shadow:2px 2px 0 var(--st-outline)}
+.d-stamp .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--st-outline)}
+.d-stamp .iconbtn svg{stroke-width:2.2}
+.d-stamp .sidebar{border-right:3px solid var(--st-outline); background:var(--st-surface)}
+.d-stamp .side-head{border-bottom:2px solid var(--st-outline)}
+.d-stamp .side-label{font-family:'Rubik'; font-weight:700; font-size:12px; text-transform:uppercase; color:var(--st-ink)}
+.d-stamp .tabs{border-bottom:3px solid var(--st-outline)}
+.d-stamp .tab{font-family:'Rubik'; font-weight:700; font-size:12.5px; color:var(--st-ink); border-right:2px solid var(--st-outline)}
+.d-stamp .tab:last-child{border-right:none}
+.d-stamp .tab.active{background:var(--st-accent); color:#fff}
+.d-stamp .tab.active em{color:#fff}
+.d-stamp .task{border-left:none}
+.d-stamp .task-row{border:2.5px solid var(--st-outline); border-radius:8px; margin:7px 8px; box-shadow:3px 3px 0 var(--st-outline), inset 5px 0 0 var(--c); background:var(--st-surface)}
+.d-stamp .task-row:hover{transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--st-outline), inset 5px 0 0 var(--c)}
+.d-stamp .task-title{font-family:'Rubik'; font-weight:700}
+.d-stamp .task-sub{color:var(--st-mut); font-weight:500}
+.d-stamp .term{border:2px solid var(--st-outline); border-radius:7px; margin:4px 10px; box-shadow:2px 2px 0 var(--st-outline); background:var(--st-surface2); color:var(--st-ink)}
+.d-stamp .term:hover{transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--st-outline)}
+.d-stamp .dot.idle{background:var(--st-idle)}
+.d-stamp .dot.working{background:var(--st-work)}.d-stamp .dot.working::before{border-color:var(--st-work)}
+.d-stamp .dot.unread{background:var(--st-unread)}.d-stamp .dot.unread::before{border-color:var(--st-unread)}
+.d-stamp .dot.error{background:var(--st-error)}
+.d-stamp .pane{background:var(--st-bg)}
+.d-stamp .term-head{border-bottom:3px solid var(--st-outline); background:var(--st-surface2)}
+.d-stamp .term-tab{font-family:'Rubik'; font-weight:700; color:var(--st-ink); border:2px solid var(--st-outline); border-bottom:none; background:var(--st-surface); border-radius:8px 8px 0 0}
+.d-stamp .term-tab.active{background:var(--st-accent2); color:#fff}
+.d-stamp .term-meta{font-family:'Rubik'; font-weight:700; font-size:11px; text-transform:uppercase; color:var(--st-work)}
+.d-stamp .term-body{font-family:'JetBrains Mono',monospace; color:var(--st-ink); background-color:var(--st-surface); background-image:radial-gradient(var(--st-dots) 1.4px, transparent 1.4px); background-size:14px 14px}
+.d-stamp .t-prompt{color:var(--st-accent)}
+.d-stamp .t-ok{color:var(--st-work)}
+.d-stamp .t-key{color:var(--st-accent4)}
+.d-stamp .t-url{color:var(--st-accent)}
+.d-stamp .t-info{color:var(--st-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>27 / Stamp — 孔版印章</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s27">
+    <div class="s-head">
+      <div class="s-num" style="color:#E63946">27</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Rubik',sans-serif;font-weight:700">Stamp — 孔版印章</h2>
+        <div class="s-sub">Riso Poster Pop</div>
+        <div class="s-tag">孔版印章波普：朱砂红、孔雀绿、芥末黄三色撞色，强半色网点 + 邮票般的粗框错位投影——一张快乐的海报。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Rubik',sans-serif;font-weight:700">Rubik</span>几何粗体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Be Vietnam Pro',sans-serif">Be Vietnam</span>清晰正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F2EBD9"></span><span style="background:#161616"></span><span style="background:#E63946"></span><span style="background:#2A9D8F"></span><span style="background:#E9C46A"></span></div></div>
+      <div class="vibes"><b>印章</b><b>网点</b><b>撞色</b><b>版画</b></div>
+      <button class="pick" data-design="Stamp">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-stamp light"><div class="cap"><span class="tag">27 · Stamp</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-stamp dark"><div class="cap"><span class="tag">27 · Stamp</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"✶ TASKAI ✶","windowHtml":"","extraClass":"","extraText":"","fallback":"Stamp — 孔版印章","number":"27"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

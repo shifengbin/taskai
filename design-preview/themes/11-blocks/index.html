@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>11 BLOCKS — 大胆色块 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   11 · BLOCKS — bold geometric primary (max legibility)
+   ========================================================================= */
+.d-blocks .stage{border:2.5px solid var(--k-frame); border-radius:6px; background:var(--k-bg); overflow:hidden; box-shadow:7px 7px 0 var(--k-frame)}
+.d-blocks.light{--k-bg:#F6F4EE;--k-surface:#FFFFFF;--k-surface2:#EFEADF;--k-ink:#111111;--k-mut:#6E6A60;--k-line:rgba(17,17,17,.14);--k-frame:#111111;--k-red:#FF3B30;--k-blue:#2D5BFF;--k-yellow:#FFD60A;--k-green:#00B86B;
+  --k-work:#00B86B;--k-idle:#B8B2A4;--k-unread:#2D5BFF;--k-error:#FF3B30}
+.d-blocks.dark{--k-bg:#131210;--k-surface:#1F1C1A;--k-surface2:#28241F;--k-ink:#F7F4EC;--k-mut:#9A9488;--k-line:rgba(247,244,236,.16);--k-frame:#F7F4EC;--k-red:#FF5C52;--k-blue:#4D7BFF;--k-yellow:#FFD60A;--k-green:#1FD688;
+  --k-work:#1FD688;--k-idle:#5E584C;--k-unread:#4D7BFF;--k-error:#FF5C52}
+.d-blocks{font-family:'Figtree',sans-serif}
+.d-blocks .stage-bar{background:var(--k-yellow); border-bottom:2.5px solid var(--k-frame); justify-content:flex-start}
+.d-blocks .tl i{border:2px solid var(--k-frame); background:var(--k-surface)}
+.d-blocks .tl i:nth-child(1){background:var(--k-red)}.d-blocks .tl i:nth-child(2){background:var(--k-blue)}.d-blocks .tl i:nth-child(3){background:var(--k-green)}
+.d-blocks .win-title{font-family:'Archivo'; font-weight:800; font-size:13px; color:#111; letter-spacing:-.01em}
+.d-blocks .appbar{border-bottom:2.5px solid var(--k-frame); background:var(--k-surface)}
+.d-blocks .brand-name{font-family:'Archivo'; font-weight:900; font-size:22px; letter-spacing:-.03em}
+.d-blocks .brand-name em{font-style:normal; color:var(--k-red)}
+.d-blocks .brand-mark{background:var(--k-blue); border-radius:7px; color:#fff}
+.d-blocks .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-blocks .iconbtn{border:2px solid var(--k-frame); border-radius:8px; background:var(--k-surface); color:var(--k-ink); box-shadow:2.5px 2.5px 0 var(--k-frame)}
+.d-blocks .iconbtn:hover{transform:translate(-1px,-1px); box-shadow:3.5px 3.5px 0 var(--k-frame)}
+.d-blocks .iconbtn svg{stroke-width:2.4}
+.d-blocks .sidebar{border-right:2.5px solid var(--k-frame); background:var(--k-surface)}
+.d-blocks .side-head{border-bottom:1.5px solid var(--k-line)}
+.d-blocks .side-label{font-family:'Archivo'; font-weight:800; font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--k-ink)}
+.d-blocks .tabs{border-bottom:2.5px solid var(--k-frame)}
+.d-blocks .tab{font-family:'Archivo'; font-weight:800; font-size:12.5px; color:var(--k-mut); border-right:1.5px solid var(--k-line)}
+.d-blocks .tab:last-child{border-right:none}
+.d-blocks .tab.active{background:var(--k-yellow); color:#111}
+.d-blocks .tab.active em{color:var(--k-red)}
+.d-blocks .task{border-left:none}
+.d-blocks .task-row{border:1.5px solid var(--k-line); border-radius:10px; margin:6px 8px; box-shadow:inset 5px 0 0 var(--c); background:var(--k-surface2)}
+.d-blocks .task-row:hover{border-color:var(--k-frame)}
+.d-blocks .task-title{font-family:'Figtree'; font-weight:700; font-size:14px}
+.d-blocks .task-sub{color:var(--k-mut)}
+.d-blocks .term{color:var(--k-mut); border-radius:7px}
+.d-blocks .term:hover{background:var(--k-surface2)}
+.d-blocks .dot.idle{background:var(--k-idle)}
+.d-blocks .dot.working{background:var(--k-work)}.d-blocks .dot.working::before{border-color:var(--k-work)}
+.d-blocks .dot.unread{background:var(--k-unread)}.d-blocks .dot.unread::before{border-color:var(--k-unread)}
+.d-blocks .dot.error{background:var(--k-error)}
+.d-blocks .pane{background:var(--k-bg)}
+.d-blocks .term-head{border-bottom:2px solid var(--k-frame); background:var(--k-surface)}
+.d-blocks .term-tab{font-family:'Archivo'; font-weight:700; color:var(--k-mut); border:1.5px solid var(--k-line); border-bottom:none; background:var(--k-surface2)}
+.d-blocks .term-tab.active{background:var(--k-green); color:#082A1A}
+.d-blocks .term-meta{font-family:'Archivo'; font-weight:700; font-size:11px; text-transform:uppercase; color:var(--k-work)}
+.d-blocks .term-body{font-family:'JetBrains Mono',monospace; color:var(--k-ink)}
+.d-blocks .t-prompt{color:var(--k-red)}
+.d-blocks .t-ok{color:var(--k-work)}
+.d-blocks .t-key{color:var(--k-blue)}
+.d-blocks .t-url{color:var(--k-blue)}
+.d-blocks .t-info{color:var(--k-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>11 / BLOCKS — 大胆色块</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s11">
+    <div class="s-head">
+      <div class="s-num" style="color:#2D5BFF">11</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Archivo',sans-serif;font-weight:900;letter-spacing:-.03em">BLOCKS — 大胆色块</h2>
+        <div class="s-sub">Bold Geometric Primary</div>
+        <div class="s-tag">红蓝黄绿四原色 + 纯黑描边 + 实心底色，超粗黑体标题——最大胆、最直白，所有按钮都是清晰的色块。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Archivo',sans-serif;font-weight:900">ARCHIVO</span>超粗黑体</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Figtree',sans-serif;font-weight:600">Figtree</span>清晰无衬</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#F6F4EE"></span><span style="background:#111111"></span><span style="background:#FF3B30"></span><span style="background:#2D5BFF"></span><span style="background:#FFD60A"></span><span style="background:#00B86B"></span></div></div>
+      <div class="vibes"><b>撞色</b><b>色块</b><b>极清晰</b><b>直接</b></div>
+      <button class="pick" data-design="Blocks">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-blocks light"><div class="cap"><span class="tag">11 · Blocks</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-blocks dark"><div class="cap"><span class="tag">11 · Blocks</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"TASK<em>AI</em>","windowText":"TASKAI","windowHtml":"","extraClass":"","extraText":"","fallback":"BLOCKS — 大胆色块","number":"11"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

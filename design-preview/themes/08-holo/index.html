@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>08 HOLO — 全息科技 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   08 · HOLO — holographic / prismatic tech
+   ========================================================================= */
+.d-holo .stage{border:1.5px solid transparent; border-radius:20px; overflow:hidden;
+  background:linear-gradient(var(--h-bg),var(--h-bg)) padding-box,linear-gradient(135deg,#FF6EC4,#B06BFF,#4ADEDE,#7C8CFF,#FF6EC4) border-box;
+  box-shadow:0 30px 80px -34px rgba(120,80,220,.5)}
+.d-holo.light{--h-bg:rgba(248,249,253,.86);--h-surface:rgba(255,255,255,.7);--h-surface2:rgba(246,243,255,.6);--h-ink:#241A4A;--h-mut:#6F6797;--h-line:rgba(124,92,220,.20);
+  --h-work:#0E9F6E;--h-idle:#A39CC4;--h-unread:#8B5CF6;--h-error:#E0457E}
+.d-holo.dark{--h-bg:rgba(13,9,24,.72);--h-surface:rgba(28,22,48,.6);--h-surface2:rgba(40,32,66,.5);--h-ink:#F1ECFF;--h-mut:#9C94C9;--h-line:rgba(150,120,255,.22);
+  --h-work:#34E0A4;--h-idle:#5A5280;--h-unread:#B89AFF;--h-error:#FF5C8A}
+.d-holo{font-family:'Outfit',sans-serif}
+.d-holo .stage-bar{background:var(--h-surface); backdrop-filter:blur(12px); border-bottom:1px solid var(--h-line); justify-content:flex-start}
+.d-holo .tl i{background:#fff; opacity:.9}
+.d-holo .tl i:nth-child(1){background:#FF6EC4}.d-holo .tl i:nth-child(2){background:#4ADEDE}.d-holo .tl i:nth-child(3){background:#B06BFF}
+.d-holo .win-title{font-family:'Unbounded',sans-serif; font-weight:600; font-size:12px; letter-spacing:.04em; color:var(--h-mut)}
+.d-holo .win-title b{background:linear-gradient(90deg,#FF6EC4,#B06BFF,#4ADEDE); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:700}
+.d-holo .appbar{border-bottom:1px solid var(--h-line); background:var(--h-surface); backdrop-filter:blur(12px)}
+.d-holo .brand-name{font-family:'Unbounded'; font-weight:800; font-size:20px; letter-spacing:-.01em; background:linear-gradient(110deg,#FF6EC4,#B06BFF 35%,#4ADEDE 70%,#7C8CFF); -webkit-background-clip:text; background-clip:text; color:transparent}
+.d-holo .brand-mark{color:#fff; background:linear-gradient(135deg,#FF6EC4,#B06BFF,#4ADEDE); border-radius:8px; box-shadow:0 0 16px rgba(176,107,255,.5)}
+.d-holo .brand-mark svg{width:14px;height:14px;stroke-width:2.4}
+.d-holo .iconbtn{border-radius:10px; color:var(--h-mut); border:1px solid transparent; background:var(--h-surface2)}
+.d-holo .iconbtn:hover{color:var(--h-ink); border-color:var(--h-line)}
+.d-holo .iconbtn svg{stroke-width:1.7}
+.d-holo .sidebar{border-right:1px solid var(--h-line); background:var(--h-surface); backdrop-filter:blur(12px)}
+.d-holo .side-head{border-bottom:1px solid var(--h-line)}
+.d-holo .side-label{font-family:'Unbounded'; font-weight:600; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--h-mut)}
+.d-holo .tabs{border-bottom:1px solid var(--h-line)}
+.d-holo .tab{font-family:'Outfit'; font-weight:600; font-size:12.5px; color:var(--h-mut); position:relative}
+.d-holo .tab.active{color:var(--h-ink)}
+.d-holo .tab.active em{background:linear-gradient(90deg,#FF6EC4,#4ADEDE); -webkit-background-clip:text; background-clip:text; color:transparent}
+.d-holo .tab.active::after{content:""; position:absolute; left:25%; right:25%; bottom:-1px; height:2px; background:linear-gradient(90deg,#FF6EC4,#B06BFF,#4ADEDE); border-radius:2px}
+.d-holo .task{border-left:none}
+.d-holo .task-row{border-radius:12px; margin:4px 8px; border:1px solid var(--h-line); box-shadow:inset 3px 0 0 var(--c); background:var(--h-surface2)}
+.d-holo .task-row:hover{border-color:rgba(176,107,255,.45)}
+.d-holo .task-title{font-family:'Outfit'; font-weight:600}
+.d-holo .task-sub{color:var(--h-mut)}
+.d-holo .term{color:var(--h-mut); border-radius:8px}
+.d-holo .term:hover{background:var(--h-surface2)}
+.d-holo .dot.idle{background:var(--h-idle)}
+.d-holo .dot.working{background:var(--h-work); box-shadow:0 0 8px var(--h-work)}.d-holo .dot.working::before{border-color:var(--h-work)}
+.d-holo .dot.unread{background:var(--h-unread); box-shadow:0 0 8px var(--h-unread)}.d-holo .dot.unread::before{border-color:var(--h-unread)}
+.d-holo .dot.error{background:var(--h-error); box-shadow:0 0 8px var(--h-error)}
+.d-holo .pane{position:relative; background:transparent}
+.d-holo .pane::before{content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:radial-gradient(420px 300px at 75% 12%,rgba(255,110,196,.22),transparent 70%),radial-gradient(460px 320px at 18% 90%,rgba(74,222,222,.20),transparent 70%),radial-gradient(380px 280px at 60% 55%,rgba(140,110,255,.18),transparent 70%)}
+.d-holo .term-head{position:relative; z-index:1; border-bottom:1px solid var(--h-line); background:var(--h-surface); backdrop-filter:blur(10px)}
+.d-holo .term-tab{font-family:'Outfit'; font-weight:600; color:var(--h-mut)}
+.d-holo .term-tab.active{color:var(--h-ink); background:var(--h-surface2)}
+.d-holo .term-meta{font-family:'Unbounded'; font-weight:600; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--h-work)}
+.d-holo .term-body{position:relative; z-index:1; font-family:'JetBrains Mono',monospace; color:var(--h-ink); background:var(--h-surface); backdrop-filter:blur(8px)}
+.d-holo .t-prompt{background:linear-gradient(90deg,#FF6EC4,#B06BFF); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:700}
+.d-holo .t-ok{color:var(--h-work)}
+.d-holo .t-key{background:linear-gradient(90deg,#B06BFF,#4ADEDE); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:700}
+.d-holo .t-url{background:linear-gradient(90deg,#FF6EC4,#4ADEDE); -webkit-background-clip:text; background-clip:text; color:transparent}
+.d-holo .t-info{color:var(--h-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>08 / HOLO — 全息科技</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s8">
+    <div class="s-head">
+      <div class="s-num" style="background:linear-gradient(135deg,#FF6EC4,#4ADEDE);-webkit-background-clip:text;background-clip:text;color:transparent">08</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Unbounded',sans-serif;font-weight:800;background:linear-gradient(110deg,#FF6EC4,#B06BFF,#4ADEDE);-webkit-background-clip:text;background-clip:text;color:transparent">HOLO — 全息科技</h2>
+        <div class="s-sub">Holographic / Prismatic Tech</div>
+        <div class="s-tag">彩虹镀铬、棱镜渐变描边、极光光晕、金属字效——一种会"流动"的科技感，明亮又未来。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Unbounded',sans-serif;font-weight:800">Unbounded</span>现代几何</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Outfit',sans-serif">Outfit</span>简洁无衬</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:linear-gradient(135deg,#FF6EC4,#B06BFF)"></span><span style="background:#4ADEDE"></span><span style="background:#7C8CFF"></span><span style="background:#0D0918"></span><span style="background:#F8F9FD"></span></div></div>
+      <div class="vibes"><b>全息</b><b>棱镜</b><b>镀铬</b><b>未来感</b></div>
+      <button class="pick" data-design="Holo">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-holo light"><div class="cap"><span class="tag">08 · Holo</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-holo dark"><div class="cap"><span class="tag">08 · Holo</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"taskai","brandHtml":"","windowText":"","windowHtml":"<b>taskai</b> · holo","extraClass":"","extraText":"","fallback":"HOLO — 全息科技","number":"08"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>

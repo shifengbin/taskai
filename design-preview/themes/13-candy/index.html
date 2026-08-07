@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>13 Candy — 甜蜜糖果 | 设计预览</title>
+<link rel="stylesheet" href="../../_shared/preview.css">
+<style>
+/* =========================================================================
+   13 · CANDY — kawaii bubblegum (glossy, high-contrast)
+   ========================================================================= */
+.d-candy .stage{border:1px solid var(--cd-line); border-radius:24px; background:var(--cd-bg); overflow:hidden; box-shadow:0 30px 70px -36px rgba(155,93,229,.4)}
+.d-candy.light{--cd-bg:#FFF5FB;--cd-surface:#FFFFFF;--cd-surface2:#FFE3F2;--cd-ink:#2A1830;--cd-mut:#8A6E86;--cd-line:#FAD9EC;--cd-accent:#FF4DAE;--cd-accent2:#9B5DE5;--cd-accent3:#12B5A5;
+  --cd-work:#16A34A;--cd-idle:#C9AECB;--cd-unread:#9B5DE5;--cd-error:#E11D48}
+.d-candy.dark{--cd-bg:#1A1320;--cd-surface:#251A2E;--cd-surface2:#302239;--cd-ink:#FBEAF6;--cd-mut:#A98EA6;--cd-line:#3D2B47;--cd-accent:#FF66BB;--cd-accent2:#B07CFF;--cd-accent3:#2DD4BF;
+  --cd-work:#22C55E;--cd-idle:#564258;--cd-unread:#B07CFF;--cd-error:#FB4869}
+.d-candy{font-family:'Quicksand',sans-serif}
+.d-candy .stage-bar{background:var(--cd-surface); border-bottom:1px solid var(--cd-line); justify-content:center; position:relative}
+.d-candy .tl{position:absolute; left:18px}
+.d-candy.light .tl i{background:#FAD9EC}.d-candy.light .tl i:nth-child(1){background:#FF4DAE}.d-candy.light .tl i:nth-child(2){background:#9B5DE5}.d-candy.light .tl i:nth-child(3){background:#12B5A5}
+.d-candy.dark .tl i{background:#3D2B47}.d-candy.dark .tl i:nth-child(1){background:#FF66BB}.d-candy.dark .tl i:nth-child(2){background:#B07CFF}.d-candy.dark .tl i:nth-child(3){background:#2DD4BF}
+.d-candy .win-title{font-family:'Baloo 2',sans-serif; font-weight:600; font-size:13px; color:var(--cd-mut)}
+.d-candy .appbar{border-bottom:1px solid var(--cd-line); background:var(--cd-surface)}
+.d-candy .brand-name{font-family:'Baloo 2'; font-weight:800; font-size:21px; letter-spacing:-.01em}
+.d-candy .brand-name em{font-style:normal; color:var(--cd-accent)}
+.d-candy .brand-mark{background:var(--cd-accent); border-radius:11px; color:#fff; box-shadow:inset 0 2px 0 rgba(255,255,255,.4)}
+.d-candy .brand-mark svg{width:15px;height:15px;stroke-width:2.8}
+.d-candy .iconbtn{border-radius:13px; color:var(--cd-ink); border:1.5px solid var(--cd-line); background:var(--cd-surface); box-shadow:inset 0 2px 0 rgba(255,255,255,.5)}
+.d-candy.dark .iconbtn{box-shadow:inset 0 2px 0 rgba(255,255,255,.06)}
+.d-candy .iconbtn:hover{border-color:var(--cd-accent); color:var(--cd-accent)}
+.d-candy .iconbtn svg{stroke-width:2.2}
+.d-candy .sidebar{border-right:1px solid var(--cd-line); background:var(--cd-surface)}
+.d-candy .side-head{border-bottom:1px solid var(--cd-line)}
+.d-candy .side-label{font-family:'Baloo 2'; font-weight:600; font-size:13px; color:var(--cd-mut)}
+.d-candy .tabs{border-bottom:1px solid var(--cd-line)}
+.d-candy .tab{font-family:'Quicksand'; font-weight:700; font-size:13px; color:var(--cd-mut); position:relative}
+.d-candy .tab.active{color:var(--cd-ink)}
+.d-candy .tab.active em{color:var(--cd-accent)}
+.d-candy .tab.active::after{content:""; position:absolute; left:28%; right:28%; bottom:-1px; height:3px; background:var(--cd-accent); border-radius:3px}
+.d-candy .task{border-left:none}
+.d-candy .task-row{border-radius:16px; margin:4px 8px; box-shadow:inset 4px 0 0 var(--c); background:var(--cd-surface2)}
+.d-candy .task-row:hover{background:var(--cd-surface)}
+.d-candy .task-title{font-family:'Quicksand'; font-weight:700; font-size:14px}
+.d-candy .task-sub{color:var(--cd-mut)}
+.d-candy .term{color:var(--cd-mut); border-radius:11px}
+.d-candy .term:hover{background:var(--cd-surface2)}
+.d-candy .dot.idle{background:var(--cd-idle)}
+.d-candy .dot.working{background:var(--cd-work)}.d-candy .dot.working::before{border-color:var(--cd-work)}
+.d-candy .dot.unread{background:var(--cd-unread)}.d-candy .dot.unread::before{border-color:var(--cd-unread)}
+.d-candy .dot.error{background:var(--cd-error)}
+.d-candy .pane{background:var(--cd-bg)}
+.d-candy .term-head{border-bottom:1px solid var(--cd-line); background:var(--cd-surface)}
+.d-candy .term-tab{font-family:'Quicksand'; font-weight:700; color:var(--cd-mut)}
+.d-candy .term-tab.active{color:#fff; background:var(--cd-accent2); border-radius:9px 9px 0 0}
+.d-candy .term-meta{font-family:'Baloo 2'; font-weight:600; font-size:12px; color:var(--cd-work)}
+.d-candy .term-body{font-family:'JetBrains Mono',monospace; color:var(--cd-ink)}
+.d-candy .t-prompt{color:var(--cd-accent)}
+.d-candy .t-ok{color:var(--cd-work)}
+.d-candy .t-key{color:var(--cd-accent2)}
+.d-candy .t-url{color:var(--cd-accent)}
+.d-candy .t-info{color:var(--cd-unread)}
+
+
+</style>
+</head>
+<body>
+<header class="theme-page-head"><a href="../../index.html">设计主题库</a><span>13 / Candy — 甜蜜糖果</span><a href="design.md">设计文档</a></header>
+<div class="theme-choice" id="themeChoice" role="status" aria-live="polite">尚未选择，点击“选择此方案”可标记当前主题。</div>
+<main class="theme-page-main">
+<section class="study reveal in" id="s13">
+    <div class="s-head">
+      <div class="s-num" style="color:#FF4DAE">13</div>
+      <div class="s-titles">
+        <h2 class="s-name" style="font-family:'Baloo 2',sans-serif;font-weight:800">Candy — 甜蜜糖果</h2>
+        <div class="s-sub">Kawaii Bubblegum</div>
+        <div class="s-tag">粉紫薄荷的卡哇伊糖果色，超圆的泡泡按钮、光泽高光、放大圆角——又甜又清晰，高对比墨色文字保证按钮一眼能看清。</div>
+      </div>
+    </div>
+    <div class="notes">
+      <div><div class="nlab">Display</div><div class="fontchip"><span class="ff" style="font-family:'Baloo 2',sans-serif;font-weight:800">Baloo 2</span>圆润标题</div></div>
+      <div><div class="nlab">Body</div><div class="fontchip"><span class="ff" style="font-family:'Quicksand',sans-serif;font-weight:700">Quicksand</span>柔和正文</div></div>
+      <div><div class="nlab">Palette</div><div class="swatches"><span style="background:#FF4DAE"></span><span style="background:#9B5DE5"></span><span style="background:#2DD4BF"></span><span style="background:#FFF5FB"></span><span style="background:#1A1320"></span></div></div>
+      <div class="vibes"><b>甜美</b><b>圆润</b><b>高光</b><b>清晰</b></div>
+      <button class="pick" data-design="Candy">选择此方案</button>
+    </div>
+    <div class="scroll-x">
+      <div class="mockup d-candy light"><div class="cap"><span class="tag">13 · Candy</span> 亮色 / Light</div><div class="stage" data-variant></div></div>
+      <div class="mockup d-candy dark"><div class="cap"><span class="tag">13 · Candy</span> 暗色 / Dark</div><div class="stage" data-variant></div></div>
+    </div>
+  </section>
+</main>
+<footer class="theme-page-foot">TaskAI Design Preview</footer>
+<script>window.taskaiPreviewConfig={"brandText":"","brandHtml":"任务<em>工作台</em>","windowText":"taskai · candy","windowHtml":"","extraClass":"","extraText":"","fallback":"Candy — 甜蜜糖果","number":"13"};</script>
+<script src="../../_shared/preview.js"></script>
+</body>
+</html>
