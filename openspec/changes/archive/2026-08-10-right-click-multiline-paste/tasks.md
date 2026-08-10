@@ -19,4 +19,4 @@
 - [x] 4.1 运行受影响前端测试、完整前端测试与构建：`cd frontend && npm test -- --run src/terminal-session.test.ts src/components/TerminalView.test.tsx`、`npm test`、`npm run build`。
 - [x] 4.2 运行 `openspec validate right-click-multiline-paste --strict` 和 `git diff --check`。
 - [x] 4.3 使用项目 Linux 构建脚本编译可执行程序并打开，等待用户确认右键多行粘贴行为。
-- [ ] 4.4 经用户确认后，将开发分支合并回当前项目分支，重新编译验证，归档 OpenSpec 与同步中文实施文档，最后提交 Git 变更。
+- [x] 4.4 经用户确认后，将开发分支合并回当前项目分支，重新编译验证，归档 OpenSpec 与同步中文实施文档，最后提交 Git 变更。
