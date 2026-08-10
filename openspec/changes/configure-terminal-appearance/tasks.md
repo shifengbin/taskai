@@ -24,4 +24,4 @@
 
 - [x] 5.1 确认实现与 `terminal-appearance-settings`、`terminal-font-selection` 和更新后的视觉规格一致。
 - [x] 5.2 将当前分支合并到工作树功能分支，运行相关 Go 与前端测试、`go test -race ./...`、`npm test` 和 `npm run build`。
-- [ ] 5.3 使用 `scripts` 中的编译脚本完成项目编译；验证通过后将工作树功能分支合并回当前分支。
+- [x] 5.3 使用 `scripts` 中的编译脚本完成项目编译；验证通过后将工作树功能分支合并回当前分支。
