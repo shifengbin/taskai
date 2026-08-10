@@ -1006,6 +1006,32 @@ describe('TaskTree', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(description)
   })
 
+  it('悬浮任务条目时按原始换行显示描述', async () => {
+    const user = userEvent.setup()
+    const description = '第一行说明\n  缩进的第二行说明'
+    render(
+      <TaskTree
+        tasks={[{...runningTask, description}]}
+        terminals={[]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+      />,
+    )
+
+    await user.hover(screen.getByText('整理发布说明'))
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip.textContent).toBe(description)
+    expect(tooltip).toHaveClass('whitespace-pre-wrap')
+  })
+
   it('悬浮缺少描述的任务时使用暂无描述作为提示回退', async () => {
     const user = userEvent.setup()
     render(

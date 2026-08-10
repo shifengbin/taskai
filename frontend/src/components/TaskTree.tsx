@@ -658,7 +658,7 @@ export function TaskTree({
       {descTooltip && createPortal(
         <div
           role="tooltip"
-          className="pointer-events-none fixed z-50 max-w-[480px] break-words rounded-snap-sm border border-snap-outline bg-snap-overlay px-2 py-1 text-xs font-bold text-snap-ink shadow-snap"
+          className="pointer-events-none fixed z-50 max-w-[480px] break-words whitespace-pre-wrap rounded-snap-sm border border-snap-outline bg-snap-overlay px-2 py-1 text-xs font-bold text-snap-ink shadow-snap"
           style={{top: descTooltip.top, left: descTooltip.left}}
         >
           {descTooltip.text}
