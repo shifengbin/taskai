@@ -184,7 +184,7 @@ describe('TerminalView', () => {
     expect(terminalInstances[0].focus).toHaveBeenCalledTimes(2)
   })
 
-  it('支持方向键选择、Escape 关闭并将焦点恢复到终端', async () => {
+  it('支持方向键选择、显示当前项、Escape 关闭并将焦点恢复到终端', async () => {
     const registry = new TerminalSessionRegistry(vi.fn())
     render(
       <TerminalView
@@ -202,9 +202,17 @@ describe('TerminalView', () => {
 
     fireEvent.click(screen.getByRole('button', {name: '快捷输入（Ctrl+Shift+P）'}))
     const search = await screen.findByRole('textbox', {name: '搜索快捷输入'})
+    const status = screen.getByRole('option', {name: /状态/})
+    const deploy = screen.getByRole('option', {name: /部署/})
+
+    expect(status).toHaveAttribute('data-quick-input-selected', 'true')
+    expect(deploy).toHaveAttribute('data-quick-input-selected', 'false')
     fireEvent.keyDown(search, {key: 'ArrowDown'})
 
-    expect(screen.getByRole('option', {name: /部署/})).toHaveAttribute('aria-selected', 'true')
+    expect(deploy).toHaveAttribute('aria-selected', 'true')
+    expect(deploy).toHaveAttribute('data-quick-input-selected', 'true')
+    expect(status).toHaveAttribute('data-quick-input-selected', 'false')
+    expect(search).toHaveFocus()
     fireEvent.keyDown(search, {key: 'Escape'})
 
     expect(screen.queryByRole('textbox', {name: '搜索快捷输入'})).not.toBeInTheDocument()

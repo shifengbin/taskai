@@ -228,7 +228,8 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
                       type="button"
                       role="option"
                       aria-selected={index === selectedQuickInputIndex}
-                      className="block w-full border-b border-snap-outline/30 px-2 py-2 text-left last:border-b-0 hover:bg-snap-cobalt/10 focus:bg-snap-cobalt/10 focus:outline-none"
+                      data-quick-input-selected={index === selectedQuickInputIndex}
+                      className="block w-full border-b border-l-2 border-l-transparent border-snap-outline/30 px-2 py-2 text-left last:border-b-0 hover:bg-snap-cobalt/10 focus:bg-snap-cobalt/10 focus:outline-none data-[quick-input-selected=true]:border-l-snap-cobalt data-[quick-input-selected=true]:bg-snap-cobalt/10"
                       onMouseEnter={() => setSelectedQuickInputIndex(index)}
                       onClick={() => insertQuickInput(quickInput)}
                     >
