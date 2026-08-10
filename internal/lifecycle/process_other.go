@@ -4,4 +4,4 @@ package lifecycle
 
 import "os/exec"
 
-func configureBackgroundProcess(*exec.Cmd) {}
+func ConfigureBackgroundProcess(*exec.Cmd) {}

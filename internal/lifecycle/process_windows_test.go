@@ -12,7 +12,7 @@ import (
 func TestConfigureBackgroundProcessHidesWindowsConsole(t *testing.T) {
 	process := exec.Command("example")
 
-	configureBackgroundProcess(process)
+	ConfigureBackgroundProcess(process)
 
 	if process.SysProcAttr == nil {
 		t.Fatal("后台进程未配置 Windows 进程属性")

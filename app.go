@@ -1527,6 +1527,7 @@ func commandProcessForPlatform(platform, shellPath, command string, arguments []
 }
 
 func configureCommandProcess(process *exec.Cmd, directory string, environment []string) {
+	lifecycle.ConfigureBackgroundProcess(process)
 	process.Dir = directory
 	if process.Env == nil {
 		process.Env = os.Environ()
