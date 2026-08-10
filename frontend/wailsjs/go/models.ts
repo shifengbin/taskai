@@ -188,6 +188,7 @@ export namespace settings {
 	    id: string;
 	    kind: string;
 	    name: string;
+	    unshelveName?: string;
 	    command?: string;
 	    arguments?: string[];
 	    showTerminal: boolean;
@@ -204,6 +205,7 @@ export namespace settings {
 	        this.id = source["id"];
 	        this.kind = source["kind"];
 	        this.name = source["name"];
+	        this.unshelveName = source["unshelveName"];
 	        this.command = source["command"];
 	        this.arguments = source["arguments"];
 	        this.showTerminal = source["showTerminal"];

@@ -1,11 +1,21 @@
 import {describe, expect, it} from 'vitest'
 
 import {settings as wailsSettings, task as wailsTask} from '../wailsjs/go/models'
-import {clampTaskTreeWidth} from './types'
+import {clampTaskTreeWidth, defaultTaskMenuItems} from './types'
 
 describe('clampTaskTreeWidth', () => {
   it('将拖拽产生的小数宽度归一化为整数', () => {
     expect(clampTaskTreeWidth(311.25390625, 1280)).toBe(311)
+  })
+
+  it('默认任务菜单包含具有两种名称的搁置切换', () => {
+    expect(defaultTaskMenuItems).toContainEqual({
+      id: 'system.toggle-shelved',
+      kind: 'toggle-shelved',
+      name: '搁置任务',
+      unshelveName: '取消搁置',
+      showTerminal: false,
+    })
   })
 
   it('保留生命周期命令引用参数和系统使用说明', () => {

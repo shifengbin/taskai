@@ -62,11 +62,13 @@ const (
 	TaskMenuItemKindEditTask       TaskMenuItemKind = "edit-task"
 	TaskMenuItemKindCreateTerminal TaskMenuItemKind = "create-terminal"
 	TaskMenuItemKindOpenFolder     TaskMenuItemKind = "open-folder"
+	TaskMenuItemKindToggleShelved  TaskMenuItemKind = "toggle-shelved"
 	TaskMenuItemKindCommand        TaskMenuItemKind = "command"
 
 	TaskMenuItemEditTaskID       = "system.edit-task"
 	TaskMenuItemCreateTerminalID = "system.create-terminal"
 	TaskMenuItemOpenFolderID     = "system.open-folder"
+	TaskMenuItemToggleShelvedID  = "system.toggle-shelved"
 )
 
 type TaskScript struct {
@@ -148,6 +150,7 @@ type TaskMenuItem struct {
 	ID                          string           `json:"id"`
 	Kind                        TaskMenuItemKind `json:"kind"`
 	Name                        string           `json:"name"`
+	UnshelveName                *string          `json:"unshelveName,omitempty"`
 	Command                     string           `json:"command,omitempty"`
 	Arguments                   []string         `json:"arguments,omitempty"`
 	ShowTerminal                bool             `json:"showTerminal"`
@@ -246,6 +249,7 @@ func DefaultTaskMenuItems() []TaskMenuItem {
 		fixedTaskMenuItem(TaskMenuItemEditTaskID),
 		fixedTaskMenuItem(TaskMenuItemCreateTerminalID),
 		fixedTaskMenuItem(TaskMenuItemOpenFolderID),
+		fixedTaskMenuItem(TaskMenuItemToggleShelvedID),
 	}
 }
 
@@ -729,6 +733,8 @@ func fixedTaskMenuItem(id string) TaskMenuItem {
 		return TaskMenuItem{ID: id, Kind: TaskMenuItemKindCreateTerminal, Name: "新增终端"}
 	case TaskMenuItemOpenFolderID:
 		return TaskMenuItem{ID: id, Kind: TaskMenuItemKindOpenFolder, Name: "打开任务文件夹"}
+	case TaskMenuItemToggleShelvedID:
+		return TaskMenuItem{ID: id, Kind: TaskMenuItemKindToggleShelved, Name: "搁置任务", UnshelveName: stringPointer("取消搁置")}
 	default:
 		return TaskMenuItem{}
 	}
@@ -771,6 +777,17 @@ func normalizeTaskMenuItems(items []TaskMenuItem) ([]TaskMenuItem, error) {
 		seen[item.ID] = true
 
 		if fixed := fixedTaskMenuItem(item.ID); fixed.ID != "" {
+			fixed.Name = strings.TrimSpace(item.Name)
+			if fixed.Name == "" {
+				return nil, fmt.Errorf("系统任务菜单项名称不能为空")
+			}
+			if fixed.ID == TaskMenuItemToggleShelvedID && item.UnshelveName != nil {
+				unshelveName := strings.TrimSpace(*item.UnshelveName)
+				if unshelveName == "" {
+					return nil, fmt.Errorf("取消搁置菜单项名称不能为空")
+				}
+				fixed.UnshelveName = stringPointer(unshelveName)
+			}
 			normalized = append(normalized, fixed)
 			continue
 		}
@@ -800,6 +817,14 @@ func normalizeTaskMenuItems(items []TaskMenuItem) ([]TaskMenuItem, error) {
 		}
 	}
 	return normalized, nil
+}
+
+func NormalizeTaskMenuItems(items []TaskMenuItem) ([]TaskMenuItem, error) {
+	return normalizeTaskMenuItems(items)
+}
+
+func stringPointer(value string) *string {
+	return &value
 }
 
 func normalizeTaskScript(script *TaskScript) *TaskScript {

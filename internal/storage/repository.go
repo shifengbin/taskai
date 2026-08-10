@@ -116,6 +116,14 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 		data.Settings.TerminalTheme = normalizedTerminalTheme
 		changed = true
 	}
+	menuItems, err := settings.NormalizeTaskMenuItems(data.Settings.TaskMenuItems)
+	if err != nil {
+		return Data{}, false, fmt.Errorf("normalize task menu settings: %w", err)
+	}
+	if !sameJSON(data.Settings.TaskMenuItems, menuItems) {
+		changed = true
+	}
+	data.Settings.TaskMenuItems = menuItems
 	templateSettings, err := settings.NormalizeTaskTemplates(data.Settings)
 	if err != nil {
 		return Data{}, false, fmt.Errorf("normalize task template settings: %w", err)

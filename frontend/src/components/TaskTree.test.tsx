@@ -397,6 +397,7 @@ describe('TaskTree', () => {
   it('为执行中任务的操作菜单提供搁置操作', async () => {
     const user = userEvent.setup()
     const onSetTaskShelved = vi.fn()
+    const toggleShelvedItem: TaskMenuItem = {id: 'system.toggle-shelved', kind: 'toggle-shelved', name: '收纳任务', unshelveName: '恢复任务', showTerminal: false}
     render(
       <TaskTree
         tasks={[runningTask]}
@@ -410,26 +411,28 @@ describe('TaskTree', () => {
         onStartTask={vi.fn()}
         onFinishTask={vi.fn()}
         onSetTaskShelved={onSetTaskShelved}
+        menuItems={[toggleShelvedItem]}
         activeStatus="running"
         onChangeStatus={vi.fn()}
       />,
     )
 
     await user.click(screen.getByRole('button', {name: '任务操作'}))
-    const shelveMenuItem = screen.getByRole('menuitem', {name: '搁置任务'})
+    const shelveMenuItem = screen.getByRole('menuitem', {name: '收纳任务'})
     expect(shelveMenuItem).toBeInTheDocument()
     expect(shelveMenuItem.querySelector('svg')).toBeInTheDocument()
     await user.click(shelveMenuItem)
     expect(onSetTaskShelved).toHaveBeenCalledWith('task-1', true)
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
-    expect(screen.getByRole('menuitem', {name: '搁置任务'}).querySelector('svg')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', {name: '收纳任务'}).querySelector('svg')).toBeInTheDocument()
   })
 
   it('为已搁置任务的操作菜单提供取消搁置图标', async () => {
     const user = userEvent.setup()
     const shelvedTask = {...runningTask, shelved: true}
     const onSetTaskShelved = vi.fn()
+    const toggleShelvedItem: TaskMenuItem = {id: 'system.toggle-shelved', kind: 'toggle-shelved', name: '收纳任务', unshelveName: '恢复任务', showTerminal: false}
     render(
       <TaskTree
         tasks={[shelvedTask]}
@@ -443,6 +446,7 @@ describe('TaskTree', () => {
         onStartTask={vi.fn()}
         onFinishTask={vi.fn()}
         onSetTaskShelved={onSetTaskShelved}
+        menuItems={[toggleShelvedItem]}
         activeStatus="running"
         onChangeStatus={vi.fn()}
       />,
@@ -450,13 +454,13 @@ describe('TaskTree', () => {
 
     await user.click(screen.getByRole('button', {name: '展开已搁置任务'}))
     await user.click(screen.getByRole('button', {name: '任务操作'}))
-    const unshelveMenuItem = screen.getByRole('menuitem', {name: '取消搁置'})
+    const unshelveMenuItem = screen.getByRole('menuitem', {name: '恢复任务'})
     expect(unshelveMenuItem.querySelector('svg')).toBeInTheDocument()
     await user.click(unshelveMenuItem)
     expect(onSetTaskShelved).toHaveBeenCalledWith('task-1', false)
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
-    expect(screen.getByRole('menuitem', {name: '取消搁置'}).querySelector('svg')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', {name: '恢复任务'}).querySelector('svg')).toBeInTheDocument()
   })
 
   it('任务操作下拉菜单和右键菜单均可创建终端、打开任务文件夹或编辑任务，并可选择终端子节点', async () => {
@@ -1256,12 +1260,13 @@ describe('TaskTree', () => {
     const user = userEvent.setup()
     const onRunMenuCommand = vi.fn()
     const codexMenuItem: TaskMenuItem = {id: 'custom-codex', kind: 'command', name: 'Codex', command: 'codex', arguments: ['--full-auto'], showTerminal: true}
+    const toggleShelvedItem: TaskMenuItem = {id: 'system.toggle-shelved', kind: 'toggle-shelved', name: '收纳任务', unshelveName: '恢复任务', showTerminal: false}
     render(
       <TaskTree
         tasks={[runningTask]}
         terminals={[]}
         selectedTerminalId={undefined}
-        menuItems={[codexMenuItem, {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false} as TaskMenuItem]}
+        menuItems={[toggleShelvedItem, codexMenuItem, {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false}]}
         onSelectTask={vi.fn()}
         onSelectTerminal={vi.fn()}
         onCreateTerminal={vi.fn()}
@@ -1276,12 +1281,12 @@ describe('TaskTree', () => {
     )
 
     await user.click(screen.getByRole('button', {name: '任务操作'}))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务', '搁置任务'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['收纳任务', 'Codex', '编辑任务'])
     await user.click(screen.getByRole('menuitem', {name: 'Codex'}))
     expect(onRunMenuCommand).toHaveBeenCalledWith('task-1', codexMenuItem.id)
 
     fireEvent.contextMenu(screen.getByText('整理发布说明'))
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Codex', '编辑任务', '搁置任务'])
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['收纳任务', 'Codex', '编辑任务'])
   })
 
   it('显示失败命令链进度、禁用任务操作并允许从首命令重试', async () => {

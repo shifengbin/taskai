@@ -110,6 +110,7 @@ const fixedTaskMenuItems = [
   {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
   {id: 'system.create-terminal', kind: 'create-terminal', name: '新增终端', showTerminal: false},
   {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
+  {id: 'system.toggle-shelved', kind: 'toggle-shelved', name: '搁置任务', unshelveName: '取消搁置', showTerminal: false},
 ]
 
 function dispatchPointerEvent(target: Element, type: string, pointerId: number, clientX: number, clientY: number) {
@@ -2906,6 +2907,52 @@ describe('App confirmation flows', () => {
     })))
   })
 
+  it('菜单管理允许编辑系统项名称并为搁置项提供两种名称', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
+      taskMenuItems: [
+        {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
+        {id: 'system.create-terminal', kind: 'create-terminal', name: '新增终端', showTerminal: false},
+        {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
+        {id: 'system.toggle-shelved', kind: 'toggle-shelved', name: '搁置任务', unshelveName: '取消搁置', showTerminal: false},
+      ],
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '菜单管理'}))
+    await user.click(screen.getByRole('button', {name: '编辑菜单项 编辑任务'}))
+
+    const editDialog = screen.getByRole('dialog', {name: '编辑菜单项'})
+    expect(within(editDialog).getByRole('textbox', {name: '菜单名称'})).toHaveValue('编辑任务')
+    expect(within(editDialog).queryByRole('textbox', {name: '启动命令'})).not.toBeInTheDocument()
+    expect(within(editDialog).queryByRole('button', {name: '删除菜单项'})).not.toBeInTheDocument()
+    await user.clear(within(editDialog).getByRole('textbox', {name: '菜单名称'}))
+    await user.type(within(editDialog).getByRole('textbox', {name: '菜单名称'}), '修改任务')
+    await user.click(within(editDialog).getByRole('button', {name: '保存菜单项'}))
+
+    await user.click(screen.getByRole('button', {name: '编辑菜单项 搁置任务'}))
+    const toggleDialog = screen.getByRole('dialog', {name: '编辑菜单项'})
+    expect(within(toggleDialog).getByRole('textbox', {name: '搁置任务名称'})).toHaveValue('搁置任务')
+    expect(within(toggleDialog).getByRole('textbox', {name: '取消搁置名称'})).toHaveValue('取消搁置')
+    expect(within(toggleDialog).queryByRole('textbox', {name: '启动命令'})).not.toBeInTheDocument()
+    await user.clear(within(toggleDialog).getByRole('textbox', {name: '搁置任务名称'}))
+    await user.type(within(toggleDialog).getByRole('textbox', {name: '搁置任务名称'}), '收纳任务')
+    await user.clear(within(toggleDialog).getByRole('textbox', {name: '取消搁置名称'}))
+    await user.type(within(toggleDialog).getByRole('textbox', {name: '取消搁置名称'}), '恢复任务')
+    await user.click(within(toggleDialog).getByRole('button', {name: '保存菜单项'}))
+
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      taskMenuItems: expect.arrayContaining([
+        expect.objectContaining({id: 'system.edit-task', name: '修改任务'}),
+        expect.objectContaining({id: 'system.toggle-shelved', name: '收纳任务', unshelveName: '恢复任务'}),
+      ]),
+    })))
+  })
+
 	it('设置中通过独立弹窗配置菜单项并调整系统项顺序', async () => {
     const user = userEvent.setup()
     bindings.SaveSettings.mockImplementation(async (next) => next)
@@ -2961,7 +3008,7 @@ describe('App confirmation flows', () => {
     await user.click(within(editDialog).getByRole('button', {name: '保存菜单项'}))
 
     await user.click(screen.getByRole('button', {name: '上移 打开任务文件夹'}))
-    expect(screen.queryByRole('button', {name: '编辑菜单项 编辑任务'})).not.toBeInTheDocument()
+    expect(screen.getByRole('button', {name: '编辑菜单项 编辑任务'})).toBeInTheDocument()
     await user.click(screen.getByRole('button', {name: '保存'}))
 
     const saved = bindings.SaveSettings.mock.calls[0][0]
@@ -2982,6 +3029,6 @@ describe('App confirmation flows', () => {
 		await user.click(await screen.findByRole('button', {name: '设置'}))
 		expect(screen.queryByRole('tab', {name: '任务操作'})).not.toBeInTheDocument()
 		await user.click(screen.getByRole('tab', {name: '菜单管理'}))
-		expect(screen.getByText('右键菜单与“任务操作”下拉菜单共用此顺序。系统项仅可调序。')).toBeInTheDocument()
+		expect(screen.getByText('右键菜单与“任务操作”下拉菜单共用此顺序。系统项可改名与调序，固定操作不可修改。')).toBeInTheDocument()
 	})
 })
