@@ -240,6 +240,48 @@ describe('TerminalView', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法插入快捷输入'}))
   })
 
+  it('将已配置的 Shift+Enter 作为一次有序输入写入终端', () => {
+    const onWrite = vi.fn()
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={new TerminalSessionRegistry(onWrite)}
+        terminalShortcuts={[{id: 'shortcut-1', shortcut: 'Shift+Enter', steps: [{kind: 'text', text: '\\'}, {kind: 'key', key: 'Enter', modifiers: []}]}]}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const handled = terminalInstances[0].triggerCustomKeyEvent(new KeyboardEvent('keydown', {key: 'Enter', shiftKey: true, cancelable: true}))
+
+    expect(handled).toBe(false)
+    expect(onWrite).toHaveBeenCalledOnce()
+    expect(onWrite).toHaveBeenCalledWith('task-1', 'terminal-1', '\\\r')
+  })
+
+  it('快捷键目标终端关闭后停止动作并报告不可用', () => {
+    const onWrite = vi.fn()
+    const onError = vi.fn()
+    const registry = new TerminalSessionRegistry(onWrite)
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        terminalShortcuts={[{id: 'shortcut-1', shortcut: 'Shift+Enter', steps: [{kind: 'text', text: '\\'}, {kind: 'key', key: 'Enter', modifiers: []}]}]}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+        onError={onError}
+      />,
+    )
+    registry.dispose(terminal.taskId, terminal.id)
+
+    const handled = terminalInstances[0].triggerCustomKeyEvent(new KeyboardEvent('keydown', {key: 'Enter', shiftKey: true, cancelable: true}))
+
+    expect(handled).toBe(false)
+    expect(onWrite).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法执行快捷键动作'}))
+  })
+
   it('注入保存的独立终端配色', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
     render(

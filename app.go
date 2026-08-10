@@ -47,6 +47,8 @@ type App struct {
 	scriptStarter          func(string, string, string, []string, []byte, []string) (commandWaiter, error)
 	scriptErrorPublisher   func(string, string)
 	lifecycleCommandRunner *lifecycle.CommandChainRunner
+	windowMaximise         func(context.Context)
+	windowIsMaximised      func(context.Context) bool
 	endingTasks            map[string]bool
 }
 
@@ -77,15 +79,17 @@ func newApp(dataDirectory string) *App {
 	defaults := settings.Default(dataDirectory)
 	repository := storage.New(filepath.Join(dataDirectory, "tasks.json"), defaults)
 	app := &App{
-		repository:       repository,
-		directoryOpener:  openDirectory,
-		homeDirectory:    os.UserHomeDir,
-		commandRunner:    runTaskCommand,
-		commandStarter:   startTaskCommand,
-		scriptRunner:     runTaskScript,
-		scriptStarter:    startTaskScript,
-		endingTasks:      make(map[string]bool),
-		lifecycleTaskMux: make(map[string]*sync.Mutex),
+		repository:        repository,
+		directoryOpener:   openDirectory,
+		homeDirectory:     os.UserHomeDir,
+		commandRunner:     runTaskCommand,
+		commandStarter:    startTaskCommand,
+		scriptRunner:      runTaskScript,
+		scriptStarter:     startTaskScript,
+		endingTasks:       make(map[string]bool),
+		lifecycleTaskMux:  make(map[string]*sync.Mutex),
+		windowMaximise:    runtime.WindowMaximise,
+		windowIsMaximised: runtime.WindowIsMaximised,
 	}
 	app.realtime = realtime.New(realtime.Options{Publish: app.publishRealtimeStatusEvent})
 	app.statusHTTP = realtime.NewHTTPServer(realtime.HTTPServerOptions{
@@ -116,6 +120,9 @@ func (app *App) startup(ctx context.Context) {
 	app.ctx = ctx
 	app.mu.Unlock()
 	if current, err := app.GetSettings(); err == nil {
+		if current.WindowMaximized {
+			app.restoreWindowMaximized(ctx)
+		}
 		if err := app.applyStatusSettings(current); err != nil {
 			app.publishRealtimeStatusError(err.Error())
 		}
@@ -129,6 +136,9 @@ func (app *App) shutdown(context.Context) {
 }
 
 func (app *App) beforeClose(ctx context.Context) bool {
+	if maximized, ok := app.windowMaximized(ctx); ok {
+		_ = app.repository.SaveWindowMaximized(maximized)
+	}
 	app.mu.RLock()
 	allowClose := app.allowClose
 	app.mu.RUnlock()
@@ -137,6 +147,22 @@ func (app *App) beforeClose(ctx context.Context) bool {
 	}
 	runtime.EventsEmit(ctx, "application:close-requested")
 	return true
+}
+
+func (app *App) restoreWindowMaximized(ctx context.Context) {
+	defer func() {
+		_ = recover()
+	}()
+	app.windowMaximise(ctx)
+}
+
+func (app *App) windowMaximized(ctx context.Context) (maximized, ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return app.windowIsMaximised(ctx), true
 }
 
 func (app *App) CreateTask(title, description, color string) (task.Task, error) {

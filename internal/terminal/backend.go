@@ -39,10 +39,17 @@ func sessionID(requestID string) string {
 }
 
 func embeddedTerminalEnvironment(extra []string) []string {
-	environment := append([]string(nil), os.Environ()...)
+	environment := make([]string, 0, len(os.Environ()))
+	for _, entry := range os.Environ() {
+		key, _, found := strings.Cut(entry, "=")
+		if found && key == "NO_COLOR" {
+			continue
+		}
+		environment = append(environment, entry)
+	}
 	for _, entry := range append(append([]string(nil), extra...), "TERM=xterm-256color") {
 		key, _, found := strings.Cut(entry, "=")
-		if !found || key == "" {
+		if !found || key == "" || key == "NO_COLOR" {
 			continue
 		}
 		prefix := key + "="

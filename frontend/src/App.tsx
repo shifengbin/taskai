@@ -1,6 +1,6 @@
 import {type Dispatch, type FormEvent, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState} from 'react'
 
-import {ArrowDown, ArrowUp, CheckCheck, CheckCircle2, FolderOpen, HelpCircle, LogOut, Maximize, Minimize, Plus, RotateCcw, Settings as SettingsIcon, Trash2} from 'lucide-react'
+import {ArrowDown, ArrowUp, CheckCheck, CheckCircle2, FolderOpen, HelpCircle, Maximize, Minimize, Plus, RotateCcw, Settings as SettingsIcon, Trash2} from 'lucide-react'
 
 import {api} from './api'
 import taskAiMark from './assets/task-ai-mark.svg'
@@ -48,6 +48,7 @@ import {
   ToastClose as SnapToastClose,
 } from './components/ui'
 import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
+import {TerminalShortcutSettings} from './components/TerminalShortcutSettings'
 import {TerminalView} from './components/TerminalView'
 import {TerminalSessionRegistry} from './terminal-session'
 import {resolveTerminalFontFamily} from './terminal-font'
@@ -198,7 +199,7 @@ export default function App() {
 	const terminalFontSizeDraft = normalizeTerminalFontSize(settingsDraft?.terminalFontSize)
 	const terminalThemeDraft = normalizeTerminalTheme(settingsDraft?.terminalTheme)
 	const terminalSelectionOpacity = terminalThemeSelectionOpacity(terminalThemeDraft)
-	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
+	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'shortcuts' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
   const [statusHelpOpen, setStatusHelpOpen] = useState(false)
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
@@ -1097,6 +1098,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		terminalFontFamily: current?.terminalFontFamily ?? settings?.terminalFontFamily ?? '',
 		terminalFontSize: normalizeTerminalFontSize(current?.terminalFontSize ?? settings?.terminalFontSize),
 		terminalTheme: normalizeTerminalTheme(current?.terminalTheme ?? settings?.terminalTheme),
+		terminalShortcuts: current?.terminalShortcuts ?? settings?.terminalShortcuts ?? [],
       shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
       taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
 		activeTaskStatus: current?.activeTaskStatus ?? settings?.activeTaskStatus ?? activeTaskStatus,
@@ -1206,6 +1208,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 					terminalFontFamily: settings.terminalFontFamily ?? '',
 						terminalFontSize: normalizeTerminalFontSize(settings.terminalFontSize),
 						terminalTheme: normalizeTerminalTheme(settings.terminalTheme),
+						terminalShortcuts: settings.terminalShortcuts ?? [],
                     shellPath: settings.shellPath || detectedShells[0] || '',
 						taskMenuItems: draftMenuItems,
 						statusManagementMode: settings.statusManagementMode ?? 'title-change',
@@ -1227,14 +1230,6 @@ const closeTerminal = async (terminal: TerminalRecord) => {
               </SnapIconButton>
               </SnapTooltipTrigger>
               <SnapTooltipContent>设置</SnapTooltipContent>
-            </SnapTooltip>
-            <SnapTooltip>
-              <SnapTooltipTrigger asChild>
-                <SnapIconButton aria-label="退出应用" onClick={() => void requestQuit()}>
-                  <LogOut className="h-[18px] w-[18px]" strokeWidth={2.25}/>
-                </SnapIconButton>
-              </SnapTooltipTrigger>
-              <SnapTooltipContent>退出应用</SnapTooltipContent>
             </SnapTooltip>
           </header>
 
@@ -1336,6 +1331,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 quickInputs={quickInputs}
                 fontSize={normalizeTerminalFontSize(settings?.terminalFontSize)}
 				terminalTheme={settings?.terminalTheme}
+				terminalShortcuts={settings?.terminalShortcuts}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onError={(error) => showError(error, setMessage)}
                 onClose={() => void closeTerminal(selectedTerminal)}
@@ -1700,20 +1696,21 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		</SnapDialog>
 
       <SnapDialog open={settingsDialogOpen} onOpenChange={(open) => { if (!open) closeSettingsDialog() }}>
-        <SnapDialogContent className="max-w-2xl">
+        <SnapDialogContent className="max-w-6xl">
           <SnapDialogHeader>
             <SnapDialogTitle>设置</SnapDialogTitle>
           </SnapDialogHeader>
-          <SnapScrollArea className="max-h-[62vh]">
-            <div className="grid gap-4 px-1">
-              <SnapTabs value={settingsTab} onValueChange={(value) => setSettingsTab(value as 'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle' | 'templates')}>
-                <SnapTabsList aria-label="设置分类">
-                  <SnapTabsTrigger value="workspace">工作区与外观</SnapTabsTrigger>
-                  <SnapTabsTrigger value="shell">终端 Shell</SnapTabsTrigger>
-                  <SnapTabsTrigger value="menu">菜单管理</SnapTabsTrigger>
-                  <SnapTabsTrigger value="status">实时状态</SnapTabsTrigger>
-                  <SnapTabsTrigger value="lifecycle">生命周期编排</SnapTabsTrigger>
-                  <SnapTabsTrigger value="templates">任务模板</SnapTabsTrigger>
+          <SnapScrollArea className="max-h-[62vh] min-w-0">
+            <div className="grid min-w-0 gap-4 px-1">
+              <SnapTabs value={settingsTab} onValueChange={(value) => setSettingsTab(value as 'workspace' | 'shell' | 'shortcuts' | 'menu' | 'status' | 'lifecycle' | 'templates')}>
+                <SnapTabsList className="overflow-x-auto snap-no-scrollbar" aria-label="设置分类">
+                  <SnapTabsTrigger className="flex-none min-w-max" value="workspace">工作区与外观</SnapTabsTrigger>
+                  <SnapTabsTrigger className="flex-none min-w-max" value="shell">终端 Shell</SnapTabsTrigger>
+                  <SnapTabsTrigger className="flex-none min-w-max" value="shortcuts">终端快捷键</SnapTabsTrigger>
+                  <SnapTabsTrigger className="flex-none min-w-max" value="menu">菜单管理</SnapTabsTrigger>
+                  <SnapTabsTrigger className="flex-none min-w-max" value="status">实时状态</SnapTabsTrigger>
+                  <SnapTabsTrigger className="flex-none min-w-max" value="lifecycle">生命周期编排</SnapTabsTrigger>
+                  <SnapTabsTrigger className="flex-none min-w-max" value="templates">任务模板</SnapTabsTrigger>
                 </SnapTabsList>
               </SnapTabs>
 
@@ -1863,6 +1860,11 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 </Field>
                 <Field label="Shell 路径" hint="此 Shell 会启动任务终端，并提供自定义命令所需的初始化环境。"><Input required value={settingsDraft?.shellPath ?? ''} onChange={(event) => updateSettingsDraft({shellPath: event.target.value})}/></Field>
               </div>}
+
+              {settingsTab === 'shortcuts' && <TerminalShortcutSettings
+                shortcuts={settingsDraft?.terminalShortcuts ?? []}
+                onChange={(terminalShortcuts) => updateSettingsDraft({terminalShortcuts})}
+              />}
 
               {settingsTab === 'menu' && <div className="grid gap-3">
                 <div className="flex items-center justify-between gap-3">

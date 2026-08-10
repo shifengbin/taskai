@@ -602,21 +602,12 @@ describe('App confirmation flows', () => {
     expect(bindings.SaveSettings).not.toHaveBeenCalledWith(expect.objectContaining({activeTaskStatus: 'running'}))
   })
 
-  it('退出前确认会保留任务状态，只请求关闭终端', async () => {
-    const user = userEvent.setup()
-    bindings.HasRunningTasks.mockResolvedValue(true)
-    bindings.PrepareQuit.mockResolvedValue(undefined)
+  it('顶部工具栏不显示应用退出按钮', async () => {
     render(<App/>)
 
-    await user.click(await screen.findByRole('tab', {name: /执行中/}))
-    await screen.findByText('清理临时文件')
-    await user.click(screen.getByRole('button', {name: '退出应用'}))
-    expect(screen.getByText('仍有执行中的任务')).toBeInTheDocument()
-    expect(bindings.PrepareQuit).not.toHaveBeenCalled()
+    await screen.findByRole('navigation', {name: '任务和终端'})
 
-    await user.click(screen.getByRole('button', {name: '关闭终端并退出'}))
-    expect(bindings.PrepareQuit).toHaveBeenCalledOnce()
-    expect(bindings.FinishTask).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', {name: '退出应用'})).not.toBeInTheDocument()
   })
 
   it('恢复上次选中的任务标签，并在切换后持久化选择', async () => {
@@ -765,6 +756,8 @@ describe('App confirmation flows', () => {
 		terminalFontFamily: '',
 		terminalFontSize: 13,
 		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
+		terminalShortcuts: [],
+		windowMaximized: undefined,
 		shellPath: '/bin/sh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
@@ -966,6 +959,8 @@ describe('App confirmation flows', () => {
 		terminalFontFamily: '',
 		terminalFontSize: 13,
 		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
+		terminalShortcuts: [],
+		windowMaximized: undefined,
 		shellPath: '/bin/zsh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
@@ -995,6 +990,8 @@ describe('App confirmation flows', () => {
 		terminalFontFamily: '',
 		terminalFontSize: 13,
 		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
+		terminalShortcuts: [],
+		windowMaximized: undefined,
 		shellPath: '/custom/shell',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
@@ -1002,6 +999,93 @@ describe('App confirmation flows', () => {
 		statusManagementHTTPPort: 0,
 		httpServiceEnabled: false,
     })
+  })
+
+  it('在设置中捕获终端快捷键并保存有序输入动作', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端快捷键'}))
+    await user.click(screen.getByRole('button', {name: '新增快捷键'}))
+    const capture = screen.getByRole('textbox', {name: '按键组合'})
+    fireEvent.keyDown(capture, {key: 'Enter', shiftKey: true})
+
+    expect(capture).toHaveValue('Shift+Enter')
+    const keyAction = screen.getByRole('textbox', {name: '按键动作录入'})
+    fireEvent.keyDown(keyAction, {key: 'Tab', shiftKey: true})
+    expect(keyAction).toHaveValue('Shift+Tab')
+    await user.click(screen.getByRole('button', {name: '添加按键动作'}))
+    const addedKeyAction = screen.getAllByRole('textbox', {name: '按键动作录入'})[1]
+    fireEvent.keyDown(addedKeyAction, {key: 'C', ctrlKey: true})
+    expect(addedKeyAction).toHaveValue('Ctrl+C')
+
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      terminalShortcuts: [{
+        id: expect.any(String),
+        shortcut: 'Shift+Enter',
+        steps: [
+          {kind: 'text', text: '\\'},
+          {kind: 'key', key: 'Tab', modifiers: ['Shift']},
+          {kind: 'key', key: 'C', modifiers: ['Ctrl']},
+        ],
+      }],
+    }))
+  })
+
+  it('读取未保存修饰键的按键动作时仍可打开快捷键设置', async () => {
+    const user = userEvent.setup()
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+      terminalShortcuts: [{
+        id: 'shortcut-1', shortcut: 'Shift+Enter',
+        steps: [{kind: 'text', text: '\\'}, {kind: 'key', key: 'Enter'}],
+      }],
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端快捷键'}))
+
+    expect(screen.getByRole('textbox', {name: '按键动作录入'})).toHaveValue('Enter')
+  })
+
+  it('取消快捷键草稿不会持久化，重复组合键保存失败时保留设置对话框', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockRejectedValue(new Error('快捷键 "Shift+Enter" 重复'))
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端快捷键'}))
+    await user.click(screen.getByRole('button', {name: '新增快捷键'}))
+    await user.click(screen.getByRole('button', {name: '取消'}))
+    await user.click(screen.getByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端快捷键'}))
+    expect(screen.getByText('尚未配置快捷键')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '新增快捷键'}))
+    const capture = screen.getByRole('textbox', {name: '按键组合'})
+    fireEvent.keyDown(capture, {key: 'Enter', shiftKey: true})
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(await screen.findByText('快捷键 "Shift+Enter" 重复')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', {name: '设置'})).toBeInTheDocument()
+  })
+
+  it('设置弹窗扩展内容宽度并允许分类标签横向滚动', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+
+    const dialog = screen.getByRole('dialog', {name: '设置'})
+    const tabList = within(dialog).getByRole('tablist', {name: '设置分类'})
+    expect(dialog).toHaveClass('max-w-6xl')
+    expect(tabList).toHaveClass('w-full', 'overflow-x-auto')
+    expect(within(tabList).getByRole('tab', {name: '任务模板'})).toHaveClass('flex-none')
   })
 
 	it('在设置中编辑任务模板字段并选择当前模板', async () => {

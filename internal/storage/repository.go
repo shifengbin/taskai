@@ -62,6 +62,15 @@ func (repository *Repository) Load() (Data, error) {
 	if err := json.Unmarshal(contents, &data); err != nil {
 		return Data{}, fmt.Errorf("decode data file: %w", err)
 	}
+	var rawData map[string]json.RawMessage
+	if err := json.Unmarshal(contents, &rawData); err == nil {
+		var rawSettings map[string]json.RawMessage
+		if err := json.Unmarshal(rawData["settings"], &rawSettings); err == nil {
+			if _, present := rawSettings["terminalShortcuts"]; !present {
+				data.Settings.TerminalShortcuts = []settings.TerminalShortcut{}
+			}
+		}
+	}
 
 	normalized, changed, err := normalizeData(data, !repository.startupRecovered)
 	if err != nil {
@@ -116,6 +125,14 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 		data.Settings.TerminalTheme = normalizedTerminalTheme
 		changed = true
 	}
+	normalizedTerminalShortcuts, err := settings.NormalizeTerminalShortcuts(data.Settings.TerminalShortcuts)
+	if err != nil {
+		return Data{}, false, fmt.Errorf("normalize terminal shortcut settings: %w", err)
+	}
+	if !sameJSON(data.Settings.TerminalShortcuts, normalizedTerminalShortcuts) {
+		changed = true
+	}
+	data.Settings.TerminalShortcuts = normalizedTerminalShortcuts
 	menuItems, err := settings.NormalizeTaskMenuItems(data.Settings.TaskMenuItems)
 	if err != nil {
 		return Data{}, false, fmt.Errorf("normalize task menu settings: %w", err)
@@ -540,11 +557,27 @@ func (repository *Repository) SaveSettings(next settings.Settings) (settings.Set
 	if validated.PresetVersion < data.Settings.PresetVersion {
 		validated.PresetVersion = data.Settings.PresetVersion
 	}
+	validated.TerminalShortcuts, err = settings.NormalizeTerminalShortcuts(validated.TerminalShortcuts)
+	if err != nil {
+		return settings.Settings{}, err
+	}
 	data.Settings = validated
 	if err := repository.Save(data); err != nil {
 		return settings.Settings{}, err
 	}
 	return data.Settings, nil
+}
+
+func (repository *Repository) SaveWindowMaximized(maximized bool) error {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
+	data, err := repository.Load()
+	if err != nil {
+		return err
+	}
+	data.Settings.WindowMaximized = maximized
+	return repository.Save(data)
 }
 
 func validateTaskTemplateUpdates(previous, next settings.Settings, tasks []task.Task) error {

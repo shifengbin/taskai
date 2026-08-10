@@ -12,6 +12,13 @@ export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-works
 export type LifecycleCommandChainArgumentMode = 'enabled' | 'disabled'
 export type TaskTemplateFieldInputType = 'string' | 'bool'
 export type TaskTemplateValues = Record<string, string | boolean>
+export type TerminalShortcutStep = {kind: 'text', text: string} | {kind: 'key', key: string, modifiers?: string[]} | {kind: 'enter'}
+
+export interface TerminalShortcut {
+  id: string
+  shortcut: string
+  steps: TerminalShortcutStep[]
+}
 export const defaultTaskColor = '#4f46e5'
 export const taskColorOptions = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899'] as const
 
@@ -200,6 +207,8 @@ export interface SettingsRecord {
 	terminalFontFamily?: string
 	terminalFontSize?: number
 	terminalTheme?: TerminalTheme
+	terminalShortcuts?: TerminalShortcut[]
+	windowMaximized?: boolean
 	shellPath: string
 	taskMenuItems: TaskMenuItem[]
 	activeTaskStatus: TaskStatus

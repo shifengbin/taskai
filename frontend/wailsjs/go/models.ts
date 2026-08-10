@@ -1,17 +1,17 @@
 export namespace application {
-	
+
 	export class TaskMenuCommandResult {
 	    terminal?: terminal.Info;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskMenuCommandResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.terminal = this.convertValues(source["terminal"], terminal.Info);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -32,17 +32,16 @@ export namespace application {
 	}
 
 }
-
 export namespace fonts {
-	
+
 	export class Candidate {
 	    family: string;
 	    spacing: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Candidate(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.family = source["family"];
@@ -53,16 +52,16 @@ export namespace fonts {
 }
 
 export namespace quickinput {
-	
+
 	export class QuickInput {
 	    id: string;
 	    name: string;
 	    content: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new QuickInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -74,7 +73,7 @@ export namespace quickinput {
 }
 
 export namespace settings {
-	
+
 	export class LifecycleCommand {
 	    id: string;
 	    kind: string;
@@ -84,11 +83,11 @@ export namespace settings {
 	    chainArgumentMode: string;
 	    documentation?: string;
 	    applicableHooks: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleCommand(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -104,11 +103,11 @@ export namespace settings {
 	export class LifecycleCommandReference {
 	    commandId: string;
 	    arguments: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleCommandReference(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.commandId = source["commandId"];
@@ -121,11 +120,11 @@ export namespace settings {
 	    commands: LifecycleCommandReference[];
 	    commandIds?: string[];
 	    applicableHooks: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleCommandChain(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -134,7 +133,7 @@ export namespace settings {
 	        this.commandIds = source["commandIds"];
 	        this.applicableHooks = source["applicableHooks"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -153,16 +152,16 @@ export namespace settings {
 		    return a;
 		}
 	}
-	
+
 	export class LifecyclePreset {
 	    id: string;
 	    name: string;
 	    chains: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecyclePreset(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -173,11 +172,11 @@ export namespace settings {
 	export class TaskScript {
 	    script?: string;
 	    arguments?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskScript(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.script = source["script"];
@@ -195,11 +194,11 @@ export namespace settings {
 	    disableTaskAIMouseClipboard: boolean;
 	    beforeScript?: TaskScript;
 	    afterScript?: TaskScript;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskMenuItem(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -213,7 +212,59 @@ export namespace settings {
 	        this.beforeScript = this.convertValues(source["beforeScript"], TaskScript);
 	        this.afterScript = this.convertValues(source["afterScript"], TaskScript);
 	    }
-	
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class TerminalShortcutStep {
+	    kind: string;
+	    text?: string;
+	    key?: string;
+	    modifiers?: string[];
+
+	    static createFrom(source: any = {}) {
+	        return new TerminalShortcutStep(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.text = source["text"];
+	        this.key = source["key"];
+	        this.modifiers = source["modifiers"];
+	    }
+	}
+	export class TerminalShortcut {
+	    id: string;
+	    shortcut: string;
+	    steps: TerminalShortcutStep[];
+
+	    static createFrom(source: any = {}) {
+	        return new TerminalShortcut(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.shortcut = source["shortcut"];
+	        this.steps = this.convertValues(source["steps"], TerminalShortcutStep);
+	    }
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -293,6 +344,8 @@ export namespace settings {
 	    terminalFontFamily: string;
 	    terminalFontSize: number;
 	    terminalTheme: TerminalTheme;
+	    terminalShortcuts: TerminalShortcut[];
+	    windowMaximized: boolean;
 	    shellPath: string;
 	    taskMenuItems: TaskMenuItem[];
 	    activeTaskStatus: string;
@@ -307,11 +360,11 @@ export namespace settings {
 	    taskTemplates: task.TaskTemplate[];
 	    activeTaskTemplateId: string;
 	    presetVersion: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.workspaceRoot = source["workspaceRoot"];
@@ -320,6 +373,8 @@ export namespace settings {
 	        this.terminalFontFamily = source["terminalFontFamily"];
 	        this.terminalFontSize = source["terminalFontSize"];
 	        this.terminalTheme = this.convertValues(source["terminalTheme"], TerminalTheme);
+	        this.terminalShortcuts = this.convertValues(source["terminalShortcuts"], TerminalShortcut);
+	        this.windowMaximized = source["windowMaximized"];
 	        this.shellPath = source["shellPath"];
 	        this.taskMenuItems = this.convertValues(source["taskMenuItems"], TaskMenuItem);
 	        this.activeTaskStatus = source["activeTaskStatus"];
@@ -335,7 +390,7 @@ export namespace settings {
 	        this.activeTaskTemplateId = source["activeTaskTemplateId"];
 	        this.presetVersion = source["presetVersion"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -357,20 +412,23 @@ export namespace settings {
 
 
 
+
+
 }
+
 export namespace task {
-	
+
 	export class ExtraInfoParameter {
 	    key: string;
 	    displayName: string;
 	    required: boolean;
 	    inputType: string;
 	    value: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoParameter(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -385,11 +443,11 @@ export namespace task {
 	    displayName: string;
 	    value?: string;
 	    defaultValue?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoField(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -404,11 +462,11 @@ export namespace task {
 	    catalogue: string;
 	    fields: ExtraInfoField[];
 	    parameters: ExtraInfoParameter[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -417,7 +475,7 @@ export namespace task {
 	        this.fields = this.convertValues(source["fields"], ExtraInfoField);
 	        this.parameters = this.convertValues(source["parameters"], ExtraInfoParameter);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -436,18 +494,18 @@ export namespace task {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class ExtraInfoParameterDefinition {
 	    key: string;
 	    displayName: string;
 	    required: boolean;
 	    inputType: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoParameterDefinition(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -466,11 +524,11 @@ export namespace task {
 	    key?: string;
 	    keyDisplayName?: string;
 	    value?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoTemplate(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -483,7 +541,7 @@ export namespace task {
 	        this.keyDisplayName = source["keyDisplayName"];
 	        this.value = source["value"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -513,11 +571,11 @@ export namespace task {
 	    commandCount: number;
 	    state: string;
 	    error?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleExecution(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -543,11 +601,11 @@ export namespace task {
 	    key?: string;
 	    keyDisplayName?: string;
 	    value?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskExtraInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -561,7 +619,7 @@ export namespace task {
 	        this.keyDisplayName = source["keyDisplayName"];
 	        this.value = source["value"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -598,11 +656,11 @@ export namespace task {
 	    templateFields: Record<string, any>;
 	    lifecycleChains: Record<string, string>;
 	    lifecycleExecution?: LifecycleExecution;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Task(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -621,7 +679,7 @@ export namespace task {
 	        this.lifecycleChains = source["lifecycleChains"];
 	        this.lifecycleExecution = this.convertValues(source["lifecycleExecution"], LifecycleExecution);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -640,7 +698,7 @@ export namespace task {
 		    return a;
 		}
 	}
-	
+
 	export class TaskTemplateField {
 	    key: string;
 	    displayName: string;
@@ -648,11 +706,11 @@ export namespace task {
 	    required: boolean;
 	    defaultValue: any;
 	    injectEnvironment: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskTemplateField(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -667,18 +725,18 @@ export namespace task {
 	    id: string;
 	    name: string;
 	    fields: TaskTemplateField[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskTemplate(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.fields = this.convertValues(source["fields"], TaskTemplateField);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -701,17 +759,17 @@ export namespace task {
 }
 
 export namespace terminal {
-	
+
 	export class Info {
 	    id: string;
 	    taskId: string;
 	    state: string;
 	    disableTaskAIMouseClipboard: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Info(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];

@@ -98,11 +98,12 @@ export class TerminalSessionRegistry {
     this.sessions.get(terminalSessionKey(taskID, terminalID))?.terminal.focus()
   }
 
-  writeInput(taskID: string, terminalID: string, data: string): void {
+  writeInput(taskID: string, terminalID: string, data: string): boolean {
     if (!data || this.closedTerminalKeys.has(terminalSessionKey(taskID, terminalID))) {
-      return
+      return false
     }
     this.onWrite(taskID, terminalID, data)
+    return true
   }
 
   pasteInput(taskID: string, terminalID: string, content: string): boolean {

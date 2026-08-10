@@ -1,10 +1,14 @@
 package settings
 
 import (
+	crand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"taskai/internal/task"
 )
@@ -184,6 +188,27 @@ type TerminalTheme struct {
 	BrightWhite         string `json:"brightWhite"`
 }
 
+type TerminalShortcutStepKind string
+
+const (
+	TerminalShortcutStepText  TerminalShortcutStepKind = "text"
+	TerminalShortcutStepKey   TerminalShortcutStepKind = "key"
+	TerminalShortcutStepEnter TerminalShortcutStepKind = "enter"
+)
+
+type TerminalShortcutStep struct {
+	Kind      TerminalShortcutStepKind `json:"kind"`
+	Text      string                   `json:"text,omitempty"`
+	Key       string                   `json:"key,omitempty"`
+	Modifiers []string                 `json:"modifiers,omitempty"`
+}
+
+type TerminalShortcut struct {
+	ID       string                 `json:"id"`
+	Shortcut string                 `json:"shortcut"`
+	Steps    []TerminalShortcutStep `json:"steps"`
+}
+
 type Settings struct {
 	WorkspaceRoot                string                   `json:"workspaceRoot"`
 	TaskTreeWidth                int                      `json:"taskTreeWidth"`
@@ -191,6 +216,8 @@ type Settings struct {
 	TerminalFontFamily           string                   `json:"terminalFontFamily"`
 	TerminalFontSize             int                      `json:"terminalFontSize"`
 	TerminalTheme                TerminalTheme            `json:"terminalTheme"`
+	TerminalShortcuts            []TerminalShortcut       `json:"terminalShortcuts"`
+	WindowMaximized              bool                     `json:"windowMaximized"`
 	ShellPath                    string                   `json:"shellPath"`
 	TaskMenuItems                []TaskMenuItem           `json:"taskMenuItems"`
 	ActiveTaskStatus             TaskStatus               `json:"activeTaskStatus"`
@@ -214,6 +241,7 @@ func Default(applicationDataDirectory string) Settings {
 		ColorScheme:              DefaultColorScheme,
 		TerminalFontSize:         DefaultTerminalFontSize,
 		TerminalTheme:            DefaultTerminalTheme(),
+		TerminalShortcuts:        []TerminalShortcut{},
 		ShellPath:                DefaultShellPath(),
 		TaskMenuItems:            DefaultTaskMenuItems(),
 		ActiveTaskStatus:         DefaultActiveTaskStatus,
@@ -541,6 +569,208 @@ func copyLifecyclePresetChains(chains map[LifecycleHook]string) map[LifecycleHoo
 	return copy
 }
 
+func NormalizeTerminalShortcuts(shortcuts []TerminalShortcut) ([]TerminalShortcut, error) {
+	if shortcuts == nil {
+		return nil, nil
+	}
+	normalized := make([]TerminalShortcut, len(shortcuts))
+	seenIDs := make(map[string]struct{}, len(shortcuts))
+	seenBindings := make(map[string]struct{}, len(shortcuts))
+	for index, shortcut := range shortcuts {
+		binding, err := normalizeTerminalShortcutBinding(shortcut.Shortcut)
+		if err != nil {
+			return nil, fmt.Errorf("快捷键 %d 无效: %w", index+1, err)
+		}
+		if _, reserved := map[string]struct{}{"Ctrl+Shift+P": {}, "Command+Shift+P": {}}[binding]; reserved {
+			return nil, fmt.Errorf("快捷键 %q 已被系统保留", binding)
+		}
+		if _, duplicate := seenBindings[binding]; duplicate {
+			return nil, fmt.Errorf("快捷键 %q 重复", binding)
+		}
+		seenBindings[binding] = struct{}{}
+
+		id := strings.TrimSpace(shortcut.ID)
+		if id == "" {
+			id, err = newTerminalShortcutID()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if _, duplicate := seenIDs[id]; duplicate {
+			return nil, fmt.Errorf("快捷键 ID %q 重复", id)
+		}
+		seenIDs[id] = struct{}{}
+
+		if len(shortcut.Steps) == 0 {
+			return nil, fmt.Errorf("快捷键 %q 至少需要一个输入动作", binding)
+		}
+		steps := make([]TerminalShortcutStep, len(shortcut.Steps))
+		for stepIndex, step := range shortcut.Steps {
+			switch step.Kind {
+			case TerminalShortcutStepText:
+				if step.Text == "" {
+					return nil, fmt.Errorf("快捷键 %q 的文本动作 %d 不能为空", binding, stepIndex+1)
+				}
+				steps[stepIndex] = TerminalShortcutStep{Kind: TerminalShortcutStepText, Text: step.Text}
+			case TerminalShortcutStepKey:
+				key, modifiers, err := NormalizeTerminalShortcutKey(step.Key, step.Modifiers)
+				if err != nil {
+					return nil, fmt.Errorf("快捷键 %q 的按键动作 %d 无效: %w", binding, stepIndex+1, err)
+				}
+				steps[stepIndex] = TerminalShortcutStep{Kind: TerminalShortcutStepKey, Key: key, Modifiers: modifiers}
+			case TerminalShortcutStepEnter:
+				steps[stepIndex] = TerminalShortcutStep{Kind: TerminalShortcutStepKey, Key: "Enter"}
+			default:
+				return nil, fmt.Errorf("快捷键 %q 的动作 %d 类型无效: %q", binding, stepIndex+1, step.Kind)
+			}
+		}
+		normalized[index] = TerminalShortcut{ID: id, Shortcut: binding, Steps: steps}
+	}
+	return normalized, nil
+}
+
+func NormalizeTerminalShortcutKey(key string, modifiers []string) (string, []string, error) {
+	canonicalKey, isModifier := normalizeTerminalShortcutPart(key)
+	if canonicalKey == "" {
+		return "", nil, fmt.Errorf("不支持按键 %q", key)
+	}
+	if isModifier {
+		return "", nil, fmt.Errorf("按键不能是修饰键 %q", key)
+	}
+	if strings.HasPrefix(canonicalKey, "F") {
+		if number, err := strconv.Atoi(strings.TrimPrefix(canonicalKey, "F")); err == nil && number > 12 {
+			return "", nil, fmt.Errorf("不支持按键 %q", key)
+		}
+	}
+	if len(modifiers) == 0 {
+		return canonicalKey, nil, nil
+	}
+	seen := make(map[string]struct{}, len(modifiers))
+	for _, modifier := range modifiers {
+		canonical, modifierPart := normalizeTerminalShortcutPart(modifier)
+		if !modifierPart {
+			return "", nil, fmt.Errorf("不支持修饰键 %q", modifier)
+		}
+		if _, duplicate := seen[canonical]; duplicate {
+			return "", nil, fmt.Errorf("修饰键 %q 重复", canonical)
+		}
+		seen[canonical] = struct{}{}
+	}
+	ordered := make([]string, 0, len(seen))
+	for _, modifier := range []string{"Ctrl", "Alt", "Shift", "Command"} {
+		if _, present := seen[modifier]; present {
+			ordered = append(ordered, modifier)
+		}
+	}
+	return canonicalKey, ordered, nil
+}
+
+func newTerminalShortcutID() (string, error) {
+	bytes := make([]byte, 8)
+	if _, err := crand.Read(bytes); err != nil {
+		return "", fmt.Errorf("生成快捷键 ID 失败: %w", err)
+	}
+	return "terminal-shortcut-" + hex.EncodeToString(bytes), nil
+}
+
+func normalizeTerminalShortcutBinding(value string) (string, error) {
+	parts := strings.Split(value, "+")
+	if len(parts) == 0 {
+		return "", fmt.Errorf("不能为空")
+	}
+	modifiers := make(map[string]struct{}, 4)
+	key := ""
+	for _, rawPart := range parts {
+		part := strings.TrimSpace(rawPart)
+		if part == "" {
+			return "", fmt.Errorf("不能为空")
+		}
+		canonical, modifier := normalizeTerminalShortcutPart(part)
+		if canonical == "" {
+			return "", fmt.Errorf("不支持按键 %q", part)
+		}
+		if modifier {
+			if _, duplicate := modifiers[canonical]; duplicate {
+				return "", fmt.Errorf("修饰键 %q 重复", canonical)
+			}
+			modifiers[canonical] = struct{}{}
+			continue
+		}
+		if key != "" {
+			return "", fmt.Errorf("只能包含一个普通按键")
+		}
+		key = canonical
+	}
+	if key == "" {
+		return "", fmt.Errorf("必须包含普通按键")
+	}
+	ordered := make([]string, 0, len(modifiers)+1)
+	for _, modifier := range []string{"Ctrl", "Alt", "Shift", "Command"} {
+		if _, present := modifiers[modifier]; present {
+			ordered = append(ordered, modifier)
+		}
+	}
+	ordered = append(ordered, key)
+	return strings.Join(ordered, "+"), nil
+}
+
+func normalizeTerminalShortcutPart(value string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	switch lower {
+	case "ctrl", "control":
+		return "Ctrl", true
+	case "alt", "option", "opt":
+		return "Alt", true
+	case "shift":
+		return "Shift", true
+	case "cmd", "command", "meta", "super":
+		return "Command", true
+	case "enter", "return":
+		return "Enter", false
+	case "tab":
+		return "Tab", false
+	case "escape", "esc":
+		return "Escape", false
+	case "space":
+		return "Space", false
+	case "backspace":
+		return "Backspace", false
+	case "delete", "del":
+		return "Delete", false
+	case "home":
+		return "Home", false
+	case "end":
+		return "End", false
+	case "pageup", "page up", "pgup":
+		return "PageUp", false
+	case "pagedown", "page down", "pgdn":
+		return "PageDown", false
+	case "insert", "ins":
+		return "Insert", false
+	case "up", "arrowup":
+		return "ArrowUp", false
+	case "down", "arrowdown":
+		return "ArrowDown", false
+	case "left", "arrowleft":
+		return "ArrowLeft", false
+	case "right", "arrowright":
+		return "ArrowRight", false
+	}
+	if strings.HasPrefix(lower, "f") && len(lower) <= 3 {
+		if number, err := strconv.Atoi(strings.TrimPrefix(lower, "f")); err == nil && number >= 1 && number <= 24 {
+			return "F" + strconv.Itoa(number), false
+		}
+	}
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) == 1 && unicode.IsGraphic(runes[0]) {
+		if unicode.IsLetter(runes[0]) || unicode.IsDigit(runes[0]) {
+			return strings.ToUpper(string(runes[0])), false
+		}
+		return string(runes[0]), false
+	}
+	return "", false
+}
+
 func Validate(next Settings) (Settings, error) {
 	if strings.TrimSpace(next.WorkspaceRoot) == "" {
 		return Settings{}, fmt.Errorf("任务工作区根目录不能为空")
@@ -554,6 +784,11 @@ func Validate(next Settings) (Settings, error) {
 	next.TerminalFontFamily = strings.TrimSpace(next.TerminalFontFamily)
 	next.TerminalFontSize = NormalizeTerminalFontSize(next.TerminalFontSize)
 	next.TerminalTheme = NormalizeTerminalTheme(next.TerminalTheme)
+	shortcuts, err := NormalizeTerminalShortcuts(next.TerminalShortcuts)
+	if err != nil {
+		return Settings{}, err
+	}
+	next.TerminalShortcuts = shortcuts
 	if next.ActiveTaskStatus == "" {
 		next.ActiveTaskStatus = DefaultActiveTaskStatus
 	}

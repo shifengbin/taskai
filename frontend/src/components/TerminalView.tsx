@@ -3,7 +3,8 @@ import {ClipboardPaste, Terminal as TerminalIcon} from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
-import {terminalDisplayName, type QuickInput, type TerminalRecord} from '../types'
+import {terminalDisplayName, type QuickInput, type TerminalRecord, type TerminalShortcut} from '../types'
+import {findTerminalShortcut, terminalShortcutInput} from '../terminal-shortcuts'
 import {api} from '../api'
 import {defaultTerminalFontSize} from '../terminal-font-size'
 import {type TerminalTheme} from '../terminal-theme'
@@ -14,6 +15,7 @@ interface TerminalViewProps {
   terminal: TerminalRecord
   sessionRegistry: TerminalSessionRegistry
   quickInputs?: QuickInput[]
+  terminalShortcuts?: TerminalShortcut[]
   fontSize?: number
   terminalTheme?: Partial<TerminalTheme>
   onResize(columns: number, rows: number): void
@@ -21,7 +23,7 @@ interface TerminalViewProps {
   onError?(error: unknown): void
 }
 
-export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, quickInputs = [], terminalShortcuts = [], fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const quickInputSearchRef = useRef<HTMLInputElement>(null)
   const onResizeRef = useRef(onResize)
@@ -118,18 +120,28 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
         && event.key.toLocaleLowerCase() === 'p'
         && event.shiftKey
         && (isMac ? event.metaKey : event.ctrlKey)
-      if (!isQuickInputHotkey) {
-        return true
-      }
-      event.preventDefault()
-      event.stopPropagation()
-      openQuickInputSelector()
-      return false
+		if (isQuickInputHotkey) {
+			event.preventDefault()
+			event.stopPropagation()
+			openQuickInputSelector()
+			return false
+		}
+
+		const configuredShortcut = findTerminalShortcut(terminalShortcuts, event)
+		if (!configuredShortcut) {
+			return true
+		}
+		event.preventDefault()
+		event.stopPropagation()
+		if (!sessionRegistry.writeInput(terminal.taskId, terminal.id, terminalShortcutInput(configuredShortcut.steps))) {
+			onErrorRef.current?.(new Error('终端已关闭，无法执行快捷键动作'))
+		}
+		return false
     })
     return () => {
       sessionRegistry.setCustomKeyEventHandler(terminal.taskId, terminal.id)
     }
-  }, [openQuickInputSelector, sessionRegistry, terminal.id, terminal.taskId])
+  }, [openQuickInputSelector, sessionRegistry, terminal.id, terminal.taskId, terminalShortcuts])
 
   useEffect(() => {
     let active = true
