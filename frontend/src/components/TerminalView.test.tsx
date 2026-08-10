@@ -80,7 +80,7 @@ vi.mock('../../wailsjs/runtime/runtime', () => runtime)
 vi.mock('../api', () => ({api}))
 
 import {TerminalView} from './TerminalView'
-import {TerminalSessionRegistry} from '../terminal-session'
+import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
 
 const terminal = {id: 'terminal-1', taskId: 'task-1', state: 'active' as const}
 
@@ -240,12 +240,19 @@ describe('TerminalView', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法插入快捷输入'}))
   })
 
-  it('暗色模式注入 Nebula 深色终端底色', () => {
-    const darkRegistry = new TerminalSessionRegistry(vi.fn())
+  it('注入保存的独立终端配色', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
     render(
-      <TerminalView mode="dark" terminal={terminal} sessionRegistry={darkRegistry} onResize={vi.fn()} onClose={vi.fn()} />,
+      <TerminalView
+        {...({terminalTheme: {background: '#102030', foreground: '#E0F0FF'}} as {})}
+        terminal={terminal}
+        sessionRegistry={registry}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
     )
-    expect(terminalInstances[0].options.theme?.background).toBe('#070A16')
+    expect(terminalInstances[0].options.theme?.background).toBe('#102030')
+    expect(screen.getByTestId('terminal-content')).toHaveStyle({backgroundColor: '#102030'})
   })
 
   it('挂载活动终端后限制滚屏并自动聚焦 xterm 输入区', () => {
@@ -278,7 +285,7 @@ describe('TerminalView', () => {
     expect(terminalInstances[0].refresh).toHaveBeenCalledWith(0, 29)
   })
 
-  it('保存全局字号后立即重新适配当前终端并同步 PTY 尺寸', () => {
+  it('保存终端外观后立即重新适配当前终端并同步 PTY 尺寸', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
     const onResize = vi.fn()
     const view = render(<TerminalView terminal={terminal} sessionRegistry={registry} fontSize={13} onResize={onResize} onClose={vi.fn()} />)
@@ -286,7 +293,7 @@ describe('TerminalView', () => {
     onResize.mockClear()
     terminalInstances[0].refresh.mockClear()
 
-    registry.setFontSize(16)
+    registry.setAppearance('', 16, terminalVisualTheme())
     view.rerender(<TerminalView terminal={terminal} sessionRegistry={registry} fontSize={16} onResize={onResize} onClose={vi.fn()} />)
 
     expect(terminalInstances[0].options.fontSize).toBe(16)

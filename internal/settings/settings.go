@@ -156,12 +156,38 @@ type TaskMenuItem struct {
 	AfterScript                 *TaskScript      `json:"afterScript,omitempty"`
 }
 
+type TerminalTheme struct {
+	Background          string `json:"background"`
+	Foreground          string `json:"foreground"`
+	Cursor              string `json:"cursor"`
+	CursorAccent        string `json:"cursorAccent"`
+	SelectionBackground string `json:"selectionBackground"`
+	SelectionForeground string `json:"selectionForeground"`
+	Black               string `json:"black"`
+	Red                 string `json:"red"`
+	Green               string `json:"green"`
+	Yellow              string `json:"yellow"`
+	Blue                string `json:"blue"`
+	Magenta             string `json:"magenta"`
+	Cyan                string `json:"cyan"`
+	White               string `json:"white"`
+	BrightBlack         string `json:"brightBlack"`
+	BrightRed           string `json:"brightRed"`
+	BrightGreen         string `json:"brightGreen"`
+	BrightYellow        string `json:"brightYellow"`
+	BrightBlue          string `json:"brightBlue"`
+	BrightMagenta       string `json:"brightMagenta"`
+	BrightCyan          string `json:"brightCyan"`
+	BrightWhite         string `json:"brightWhite"`
+}
+
 type Settings struct {
 	WorkspaceRoot                string                   `json:"workspaceRoot"`
 	TaskTreeWidth                int                      `json:"taskTreeWidth"`
 	ColorScheme                  ColorScheme              `json:"colorScheme"`
 	TerminalFontFamily           string                   `json:"terminalFontFamily"`
 	TerminalFontSize             int                      `json:"terminalFontSize"`
+	TerminalTheme                TerminalTheme            `json:"terminalTheme"`
 	ShellPath                    string                   `json:"shellPath"`
 	TaskMenuItems                []TaskMenuItem           `json:"taskMenuItems"`
 	ActiveTaskStatus             TaskStatus               `json:"activeTaskStatus"`
@@ -184,6 +210,7 @@ func Default(applicationDataDirectory string) Settings {
 		TaskTreeWidth:            DefaultTaskTreeWidth,
 		ColorScheme:              DefaultColorScheme,
 		TerminalFontSize:         DefaultTerminalFontSize,
+		TerminalTheme:            DefaultTerminalTheme(),
 		ShellPath:                DefaultShellPath(),
 		TaskMenuItems:            DefaultTaskMenuItems(),
 		ActiveTaskStatus:         DefaultActiveTaskStatus,
@@ -522,6 +549,7 @@ func Validate(next Settings) (Settings, error) {
 	}
 	next.TerminalFontFamily = strings.TrimSpace(next.TerminalFontFamily)
 	next.TerminalFontSize = NormalizeTerminalFontSize(next.TerminalFontSize)
+	next.TerminalTheme = NormalizeTerminalTheme(next.TerminalTheme)
 	if next.ActiveTaskStatus == "" {
 		next.ActiveTaskStatus = DefaultActiveTaskStatus
 	}
@@ -590,6 +618,76 @@ func Validate(next Settings) (Settings, error) {
 	}
 
 	return next, nil
+}
+
+func DefaultTerminalTheme() TerminalTheme {
+	return TerminalTheme{
+		Background:          "#070A16",
+		Foreground:          "#E8ECFF",
+		Cursor:              "#2DE2E6",
+		CursorAccent:        "#070A16",
+		SelectionBackground: "#2DE2E640",
+		SelectionForeground: "#FFFFFF",
+		Black:               "#070A16",
+		Red:                 "#FF5D73",
+		Green:               "#34F5C5",
+		Yellow:              "#F3C969",
+		Blue:                "#2DE2E6",
+		Magenta:             "#B06BFF",
+		Cyan:                "#2DE2E6",
+		White:               "#8A93C2",
+		BrightBlack:         "#8A93C2",
+		BrightRed:           "#FF7A6E",
+		BrightGreen:         "#34F5C5",
+		BrightYellow:        "#F3C969",
+		BrightBlue:          "#2DE2E6",
+		BrightMagenta:       "#C08BFF",
+		BrightCyan:          "#6FF5F2",
+		BrightWhite:         "#E8ECFF",
+	}
+}
+
+func NormalizeTerminalTheme(theme TerminalTheme) TerminalTheme {
+	defaults := DefaultTerminalTheme()
+	theme.Background = normalizeTerminalThemeColor(theme.Background, defaults.Background, false)
+	theme.Foreground = normalizeTerminalThemeColor(theme.Foreground, defaults.Foreground, false)
+	theme.Cursor = normalizeTerminalThemeColor(theme.Cursor, defaults.Cursor, false)
+	theme.CursorAccent = normalizeTerminalThemeColor(theme.CursorAccent, defaults.CursorAccent, false)
+	theme.SelectionBackground = normalizeTerminalThemeColor(theme.SelectionBackground, defaults.SelectionBackground, true)
+	theme.SelectionForeground = normalizeTerminalThemeColor(theme.SelectionForeground, defaults.SelectionForeground, false)
+	theme.Black = normalizeTerminalThemeColor(theme.Black, defaults.Black, false)
+	theme.Red = normalizeTerminalThemeColor(theme.Red, defaults.Red, false)
+	theme.Green = normalizeTerminalThemeColor(theme.Green, defaults.Green, false)
+	theme.Yellow = normalizeTerminalThemeColor(theme.Yellow, defaults.Yellow, false)
+	theme.Blue = normalizeTerminalThemeColor(theme.Blue, defaults.Blue, false)
+	theme.Magenta = normalizeTerminalThemeColor(theme.Magenta, defaults.Magenta, false)
+	theme.Cyan = normalizeTerminalThemeColor(theme.Cyan, defaults.Cyan, false)
+	theme.White = normalizeTerminalThemeColor(theme.White, defaults.White, false)
+	theme.BrightBlack = normalizeTerminalThemeColor(theme.BrightBlack, defaults.BrightBlack, false)
+	theme.BrightRed = normalizeTerminalThemeColor(theme.BrightRed, defaults.BrightRed, false)
+	theme.BrightGreen = normalizeTerminalThemeColor(theme.BrightGreen, defaults.BrightGreen, false)
+	theme.BrightYellow = normalizeTerminalThemeColor(theme.BrightYellow, defaults.BrightYellow, false)
+	theme.BrightBlue = normalizeTerminalThemeColor(theme.BrightBlue, defaults.BrightBlue, false)
+	theme.BrightMagenta = normalizeTerminalThemeColor(theme.BrightMagenta, defaults.BrightMagenta, false)
+	theme.BrightCyan = normalizeTerminalThemeColor(theme.BrightCyan, defaults.BrightCyan, false)
+	theme.BrightWhite = normalizeTerminalThemeColor(theme.BrightWhite, defaults.BrightWhite, false)
+	return theme
+}
+
+func normalizeTerminalThemeColor(value, fallback string, allowAlpha bool) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	if len(normalized) != 7 && (!allowAlpha || len(normalized) != 9) {
+		return fallback
+	}
+	if normalized[0] != '#' {
+		return fallback
+	}
+	for _, character := range normalized[1:] {
+		if (character < '0' || character > '9') && (character < 'A' || character > 'F') {
+			return fallback
+		}
+	}
+	return normalized
 }
 
 func NormalizeTerminalFontSize(size int) int {

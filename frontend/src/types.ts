@@ -1,3 +1,5 @@
+import type {TerminalTheme} from './terminal-theme'
+
 export type TaskStatus = 'pending' | 'running' | 'completed'
 export type TerminalState = 'active' | 'exited'
 export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
@@ -197,6 +199,7 @@ export interface SettingsRecord {
 	colorScheme: ColorScheme
 	terminalFontFamily?: string
 	terminalFontSize?: number
+	terminalTheme?: TerminalTheme
 	shellPath: string
 	taskMenuItems: TaskMenuItem[]
 	activeTaskStatus: TaskStatus

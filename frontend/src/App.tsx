@@ -52,6 +52,7 @@ import {TerminalView} from './components/TerminalView'
 import {TerminalSessionRegistry} from './terminal-session'
 import {resolveTerminalFontFamily} from './terminal-font'
 import {defaultTerminalFontSize, maximumTerminalFontSize, minimumTerminalFontSize, normalizeTerminalFontSize, terminalFontSizePercent} from './terminal-font-size'
+import {defaultTerminalTheme, normalizeTerminalTheme, type TerminalTheme} from './terminal-theme'
 import {
 	applyRealtimeStatusToTasks,
 	applyRealtimeStatusToTerminals,
@@ -109,6 +110,33 @@ const customLifecyclePresetID = '__custom__'
 
 const selectClass = 'w-full border-2 border-snap-outline rounded-snap bg-snap-surface px-3 py-2 text-sm text-snap-ink shadow-snap-sm outline-none transition-[box-shadow,border-color] focus-visible:border-snap-cobalt focus-visible:ring-[3px] focus-visible:ring-snap-cobalt disabled:cursor-not-allowed disabled:opacity-60'
 const defaultTerminalFontCandidate: TerminalFontCandidate = {family: '', spacing: 'mono'}
+const terminalBasicColorFields: Array<{key: Exclude<keyof TerminalTheme, 'selectionBackground'>, label: string}> = [
+	{key: 'background', label: '背景'},
+	{key: 'foreground', label: '前景'},
+	{key: 'cursor', label: '光标'},
+	{key: 'cursorAccent', label: '光标反差'},
+	{key: 'selectionForeground', label: '选区前景'},
+]
+const terminalAnsiColorFields: Array<{key: keyof TerminalTheme, label: string}> = [
+	{key: 'black', label: '黑'},
+	{key: 'red', label: '红'},
+	{key: 'green', label: '绿'},
+	{key: 'yellow', label: '黄'},
+	{key: 'blue', label: '蓝'},
+	{key: 'magenta', label: '洋红'},
+	{key: 'cyan', label: '青'},
+	{key: 'white', label: '白'},
+]
+const terminalBrightAnsiColorFields: Array<{key: keyof TerminalTheme, label: string}> = [
+	{key: 'brightBlack', label: '亮黑'},
+	{key: 'brightRed', label: '亮红'},
+	{key: 'brightGreen', label: '亮绿'},
+	{key: 'brightYellow', label: '亮黄'},
+	{key: 'brightBlue', label: '亮蓝'},
+	{key: 'brightMagenta', label: '亮洋红'},
+	{key: 'brightCyan', label: '亮青'},
+	{key: 'brightWhite', label: '亮白'},
+]
 
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
@@ -158,6 +186,7 @@ export default function App() {
 	const [terminalFontsLoading, setTerminalFontsLoading] = useState(false)
 	const [terminalFontsError, setTerminalFontsError] = useState(false)
 	const [terminalFontPickerExpanded, setTerminalFontPickerExpanded] = useState(false)
+	const [terminalThemePickerExpanded, setTerminalThemePickerExpanded] = useState(false)
 	const fontOptions = useMemo(() => {
 		const selectedFamily = settingsDraft?.terminalFontFamily?.trim() ?? ''
 		if (!selectedFamily || terminalFontCandidates.some((candidate) => candidate.family === selectedFamily)) {
@@ -167,6 +196,8 @@ export default function App() {
 	}, [settingsDraft?.terminalFontFamily, terminalFontCandidates])
 	const selectedTerminalFont = fontOptions.find((candidate) => candidate.family === (settingsDraft?.terminalFontFamily?.trim() ?? '')) ?? defaultTerminalFontCandidate
 	const terminalFontSizeDraft = normalizeTerminalFontSize(settingsDraft?.terminalFontSize)
+	const terminalThemeDraft = normalizeTerminalTheme(settingsDraft?.terminalTheme)
+	const terminalSelectionOpacity = terminalThemeSelectionOpacity(terminalThemeDraft)
 	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
   const [statusHelpOpen, setStatusHelpOpen] = useState(false)
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
@@ -185,11 +216,12 @@ export default function App() {
   const terminalTitleValues = useRef(new Map<string, string>())
 	const terminalFontFamily = useRef('')
 	const terminalFontSize = useRef(defaultTerminalFontSize)
+	const terminalTheme = useRef<TerminalTheme>(defaultTerminalTheme)
 	const terminalSessions = useRef<TerminalSessionRegistry>()
 	if (!terminalSessions.current) {
 		terminalSessions.current = new TerminalSessionRegistry((taskID, terminalID, data) => {
 			void api.writeTerminal(taskID, terminalID, data).catch((error) => showError(error, setMessage))
-		}, () => terminalFontFamily.current, () => terminalFontSize.current)
+		}, () => terminalFontFamily.current, () => terminalFontSize.current, () => terminalTheme.current)
 	}
 	const latestRealtimeStatusVersion = useRef(0)
 	const lifecycleStatusTargets = useRef(new Map<string, TaskStatus>())
@@ -222,9 +254,11 @@ export default function App() {
       try {
 		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoTemplates, loadedExtraInfos, loadedQuickInputs] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoTemplates(), api.listExtraInfos(), api.listQuickInputs()])
         setTasks(loadedTasks)
-		setSettings(loadedSettings)
+		const loadedTerminalTheme = normalizeTerminalTheme(loadedSettings.terminalTheme)
+		setSettings({...loadedSettings, terminalTheme: loadedTerminalTheme})
 		terminalFontFamily.current = loadedSettings.terminalFontFamily ?? ''
 		terminalFontSize.current = normalizeTerminalFontSize(loadedSettings.terminalFontSize)
+		terminalTheme.current = loadedTerminalTheme
         setActiveTaskStatus(loadedSettings.activeTaskStatus ?? 'pending')
         setDetectedShells(loadedShells)
 		setExtraInfoTemplates(loadedExtraInfoTemplates)
@@ -917,10 +951,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
     }
     try {
 		const saved = await api.saveSettings(settingsDraft)
-		setSettings(saved)
+		const savedTerminalTheme = normalizeTerminalTheme(saved.terminalTheme)
+		setSettings({...saved, terminalTheme: savedTerminalTheme})
 		terminalFontFamily.current = saved.terminalFontFamily ?? ''
 		terminalFontSize.current = normalizeTerminalFontSize(saved.terminalFontSize)
-		terminalSessions.current?.setFontSize(terminalFontSize.current)
+		terminalTheme.current = savedTerminalTheme
+		terminalSessions.current?.setAppearance(terminalFontFamily.current, terminalFontSize.current, terminalTheme.current)
       setSettingsDialogOpen(false)
       closeTaskMenuItemEditor()
     } catch (error) {
@@ -951,8 +987,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
   const closeSettingsDialog = () => {
     setSettingsDialogOpen(false)
-    setSettingsTab('workspace')
+		setSettingsTab('workspace')
 		setTerminalFontPickerExpanded(false)
+		setTerminalThemePickerExpanded(false)
 		setStatusHelpOpen(false)
     closeTaskMenuItemEditor()
   }
@@ -1049,6 +1086,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		colorScheme: current?.colorScheme ?? colorScheme,
 		terminalFontFamily: current?.terminalFontFamily ?? settings?.terminalFontFamily ?? '',
 		terminalFontSize: normalizeTerminalFontSize(current?.terminalFontSize ?? settings?.terminalFontSize),
+		terminalTheme: normalizeTerminalTheme(current?.terminalTheme ?? settings?.terminalTheme),
       shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
       taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
 		activeTaskStatus: current?.activeTaskStatus ?? settings?.activeTaskStatus ?? activeTaskStatus,
@@ -1157,6 +1195,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                     colorScheme,
 					terminalFontFamily: settings.terminalFontFamily ?? '',
 						terminalFontSize: normalizeTerminalFontSize(settings.terminalFontSize),
+						terminalTheme: normalizeTerminalTheme(settings.terminalTheme),
                     shellPath: settings.shellPath || detectedShells[0] || '',
 						taskMenuItems: draftMenuItems,
 						statusManagementMode: settings.statusManagementMode ?? 'title-change',
@@ -1286,7 +1325,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 sessionRegistry={terminalSessions.current!}
                 quickInputs={quickInputs}
                 fontSize={normalizeTerminalFontSize(settings?.terminalFontSize)}
-                mode={colorScheme}
+				terminalTheme={settings?.terminalTheme}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onError={(error) => showError(error, setMessage)}
                 onClose={() => void closeTerminal(selectedTerminal)}
@@ -1754,6 +1793,54 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 						/>
 						<div className="flex justify-between text-xs tabular-nums text-snap-muted"><span>{minimumTerminalFontSize} px</span><span>{maximumTerminalFontSize} px</span></div>
 					</div>
+				</Field>
+				<Field label="终端配色" hint="配色独立于应用亮暗模式；编辑仅会更新此处预览，保存后才应用到终端。">
+					<SnapAccordion type="single" collapsible value={terminalThemePickerExpanded ? 'terminal-theme' : ''} onValueChange={(value) => setTerminalThemePickerExpanded(value === 'terminal-theme')}>
+						<SnapAccordionItem value="terminal-theme">
+							<SnapAccordionTrigger aria-label="终端配色设置">
+								<span className="text-sm font-bold text-snap-ink">自定义终端颜色</span>
+							</SnapAccordionTrigger>
+							<SnapAccordionContent>
+								<div className="grid gap-4 pt-2">
+									<div
+										data-testid="terminal-theme-preview"
+										className="rounded-snap border-2 p-3 font-mono text-sm shadow-snap-sm"
+										style={{backgroundColor: terminalThemeDraft.background, color: terminalThemeDraft.foreground, fontFamily: resolveTerminalFontFamily(selectedTerminalFont.family), fontSize: `${terminalFontSizeDraft}px`}}
+									>
+										<div><span style={{color: terminalThemeDraft.green}}>taskai</span><span style={{color: terminalThemeDraft.foreground}}> $ git status</span></div>
+										<div style={{color: terminalThemeDraft.brightWhite}}>On branch main</div>
+										<div style={{backgroundColor: terminalThemeDraft.selectionBackground, color: terminalThemeDraft.selectionForeground, display: 'inline'}}>已选择的终端输出</div>
+									</div>
+									<div className="grid gap-2">
+										<span className="text-sm font-bold text-snap-ink">基础颜色</span>
+										<div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+											{terminalBasicColorFields.map((field) => <TerminalThemeColorPicker
+												key={field.key}
+												label={field.label}
+												value={terminalThemeDraft[field.key]}
+												onChange={(value) => updateSettingsDraft({terminalTheme: {...terminalThemeDraft, [field.key]: value}})}
+											/>)}
+										</div>
+									</div>
+									<div className="grid gap-2">
+										<div className="flex items-center justify-between gap-3">
+											<span className="text-sm font-bold text-snap-ink">选区背景</span>
+											<TerminalThemeColorPicker label="选区背景" value={terminalThemeDraft.selectionBackground} onChange={(value) => updateSettingsDraft({terminalTheme: {...terminalThemeDraft, selectionBackground: `${value}${terminalThemeDraft.selectionBackground.slice(7, 9)}`}})}/>
+										</div>
+										<div className="grid gap-1">
+											<div className="flex items-center justify-between text-sm text-snap-ink"><label htmlFor="terminal-selection-opacity">选区透明度</label><span className="tabular-nums">{terminalSelectionOpacity}%</span></div>
+											<input id="terminal-selection-opacity" aria-label="终端选区透明度" type="range" min={0} max={100} step={1} value={terminalSelectionOpacity} onChange={(event) => updateSettingsDraft({terminalTheme: terminalThemeWithSelectionOpacity(terminalThemeDraft, Number(event.target.value))})} className="w-full accent-snap-cobalt"/>
+										</div>
+									</div>
+									<TerminalThemeColorGroup title="常规 ANSI" fields={terminalAnsiColorFields} theme={terminalThemeDraft} onChange={(key, value) => updateSettingsDraft({terminalTheme: {...terminalThemeDraft, [key]: value}})}/>
+									<TerminalThemeColorGroup title="高亮 ANSI" fields={terminalBrightAnsiColorFields} theme={terminalThemeDraft} onChange={(key, value) => updateSettingsDraft({terminalTheme: {...terminalThemeDraft, [key]: value}})}/>
+									<div className="flex justify-end">
+										<SnapButton variant="secondary" size="sm" onClick={() => updateSettingsDraft({terminalTheme: defaultTerminalTheme})}><RotateCcw className="mr-1 h-4 w-4" strokeWidth={2.25}/>恢复默认终端配色</SnapButton>
+									</div>
+								</div>
+							</SnapAccordionContent>
+						</SnapAccordionItem>
+					</SnapAccordion>
 				</Field>
               </div>}
 
@@ -3171,4 +3258,40 @@ function terminalFontSpacingLabel(spacing: TerminalFontCandidate['spacing']): st
 		return '当前字体不可用'
 	}
 	return '等宽'
+}
+
+function terminalThemeSelectionOpacity(theme: TerminalTheme): number {
+	const opacity = theme.selectionBackground.length === 9 ? Number.parseInt(theme.selectionBackground.slice(7), 16) : 255
+	return Math.round(opacity / 255 * 100)
+}
+
+function terminalThemeWithSelectionOpacity(theme: TerminalTheme, opacity: number): TerminalTheme {
+	const normalizedOpacity = Math.min(100, Math.max(0, Math.round(opacity)))
+	const alpha = Math.round(normalizedOpacity / 100 * 255).toString(16).toUpperCase().padStart(2, '0')
+	return {...theme, selectionBackground: `${theme.selectionBackground.slice(0, 7)}${alpha}`}
+}
+
+function terminalColorInputValue(value: string): string {
+	return value.slice(0, 7)
+}
+
+function TerminalThemeColorPicker({label, value, onChange}: {label: string, value: string, onChange(value: string): void}) {
+	return <label className="flex items-center justify-between gap-2 rounded-snap border-2 border-snap-outline bg-snap-surface px-2 py-1.5 text-sm text-snap-ink">
+		<span>{label}</span>
+		<input aria-label={`终端${label}色`} type="color" value={terminalColorInputValue(value)} onChange={(event) => onChange(event.target.value.toUpperCase())} className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"/>
+	</label>
+}
+
+function TerminalThemeColorGroup({title, fields, theme, onChange}: {
+	title: string
+	fields: Array<{key: keyof TerminalTheme, label: string}>
+	theme: TerminalTheme
+	onChange(key: keyof TerminalTheme, value: string): void
+}) {
+	return <div className="grid gap-2">
+		<span className="text-sm font-bold text-snap-ink">{title}</span>
+		<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+			{fields.map((field) => <TerminalThemeColorPicker key={field.key} label={field.label} value={theme[field.key]} onChange={(value) => onChange(field.key, value)}/>)}
+		</div>
+	</div>
 }

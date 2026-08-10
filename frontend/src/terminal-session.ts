@@ -5,6 +5,7 @@ import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import {type TerminalEvent, type TerminalRecord} from './types'
 import {resolveTerminalFontFamily} from './terminal-font'
 import {defaultTerminalFontSize, normalizeTerminalFontSize} from './terminal-font-size'
+import {normalizeTerminalTheme, type TerminalTheme} from './terminal-theme'
 
 export const terminalScrollback = 1000
 
@@ -30,12 +31,24 @@ export class TerminalSessionRegistry {
     private readonly onWrite: (taskID: string, terminalID: string, data: string) => void,
     private readonly terminalFontFamily: () => string = () => '',
     private readonly terminalFontSize: () => number = () => defaultTerminalFontSize,
+    private readonly terminalTheme: () => TerminalTheme = () => normalizeTerminalTheme(),
   ) {}
 
   setFontSize(fontSize: number): void {
     const normalizedFontSize = normalizeTerminalFontSize(fontSize)
     for (const session of this.sessions.values()) {
       session.terminal.options.fontSize = normalizedFontSize
+    }
+  }
+
+  setAppearance(fontFamily: string, fontSize: number, theme: TerminalVisualTheme): void {
+    const normalizedFontSize = normalizeTerminalFontSize(fontSize)
+    const resolvedFontFamily = resolveTerminalFontFamily(fontFamily)
+    for (const session of this.sessions.values()) {
+      session.terminal.options.fontFamily = resolvedFontFamily
+      session.terminal.options.fontSize = normalizedFontSize
+      session.terminal.options.theme = theme
+      this.refreshVisibleRows(session)
     }
   }
 
@@ -153,6 +166,7 @@ export class TerminalSessionRegistry {
       fontSize: normalizeTerminalFontSize(this.terminalFontSize()),
       lineHeight: 1.35,
       scrollback: terminalScrollback,
+      theme: terminalVisualTheme(this.terminalTheme()),
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -191,56 +205,8 @@ export class TerminalSessionRegistry {
   }
 }
 
-export function terminalVisualTheme(mode: 'light' | 'dark'): TerminalVisualTheme {
-  return mode === 'dark'
-    ? {
-        background: '#070A16',
-        foreground: '#E8ECFF',
-        cursor: '#2DE2E6',
-        cursorAccent: '#070A16',
-        selectionBackground: '#2DE2E640',
-        selectionForeground: '#FFFFFF',
-        black: '#070A16',
-        red: '#FF5D73',
-        green: '#34F5C5',
-        yellow: '#F3C969',
-        blue: '#2DE2E6',
-        magenta: '#B06BFF',
-        cyan: '#2DE2E6',
-        white: '#8A93C2',
-        brightBlack: '#8A93C2',
-        brightRed: '#FF7A6E',
-        brightGreen: '#34F5C5',
-        brightYellow: '#F3C969',
-        brightBlue: '#2DE2E6',
-        brightMagenta: '#C08BFF',
-        brightCyan: '#6FF5F2',
-        brightWhite: '#E8ECFF',
-      }
-    : {
-        background: '#EDF1FB',
-        foreground: '#0E1730',
-        cursor: '#0BA5BE',
-        cursorAccent: '#EDF1FB',
-        selectionBackground: '#0BA5BE40',
-        selectionForeground: '#FFFFFF',
-        black: '#0E1730',
-        red: '#E0413E',
-        green: '#0E9F6E',
-        yellow: '#B97816',
-        blue: '#0BA5BE',
-        magenta: '#7C3AED',
-        cyan: '#0BA5BE',
-        white: '#5A6588',
-        brightBlack: '#5A6588',
-        brightRed: '#E0413E',
-        brightGreen: '#0E9F6E',
-        brightYellow: '#B97816',
-        brightBlue: '#0BA5BE',
-        brightMagenta: '#7C3AED',
-        brightCyan: '#2DE2E6',
-        brightWhite: '#0E1730',
-      }
+export function terminalVisualTheme(theme?: Partial<TerminalTheme>): TerminalVisualTheme {
+  return normalizeTerminalTheme(theme)
 }
 
 function terminalSessionKey(taskID: string, terminalID: string): string {

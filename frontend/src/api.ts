@@ -67,6 +67,7 @@ import {quickinput as quickInputModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
 import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord} from './types'
+import {normalizeTerminalTheme} from './terminal-theme'
 
 export const api = {
   createTask: (title: string, description: string, color: string) => CreateTask(title, description, color) as Promise<TaskRecord>,
@@ -139,7 +140,7 @@ export const api = {
 	},
 	getLifecycleCommandInput: (taskID: string) => GetLifecycleCommandInput(taskID),
 	saveSettings: (settings: SettingsRecord) => {
-		const payload = settingsModel.Settings.createFrom(settings)
+		const payload = settingsModel.Settings.createFrom({...settings, terminalTheme: normalizeTerminalTheme(settings.terminalTheme)})
 		delete (payload as {lifecycleCommands?: unknown}).lifecycleCommands
 		delete (payload as {lifecycleChains?: unknown}).lifecycleChains
 		delete (payload as {lifecyclePresets?: unknown}).lifecyclePresets

@@ -65,6 +65,30 @@ describe('api.saveSettings', () => {
 		expect(payload.taskTemplates).toBeUndefined()
 		expect(payload.activeTaskTemplateId).toBeUndefined()
 	})
+
+	it('为缺少主题的旧设置发送完整暗色终端主题', async () => {
+		const settings: SettingsRecord = {
+			workspaceRoot: '/tmp/workspaces',
+			taskTreeWidth: 360,
+			colorScheme: 'light',
+			shellPath: '/bin/sh',
+			taskMenuItems: [],
+			activeTaskStatus: 'pending',
+			statusManagementMode: 'title-change',
+			statusManagementHTTPPort: 0,
+			httpServiceEnabled: false,
+		}
+
+		await api.saveSettings(settings)
+
+		expect(saveSettings.mock.calls[0][0]).toMatchObject({
+			terminalTheme: {
+				background: '#070A16',
+				foreground: '#E8ECFF',
+				brightWhite: '#E8ECFF',
+			},
+		})
+	})
 })
 
 describe('api.lifecyclePresets', () => {

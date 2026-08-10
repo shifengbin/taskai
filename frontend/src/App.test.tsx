@@ -72,6 +72,7 @@ const terminalSessionRegistry = vi.hoisted(() => ({
   disposeTask: vi.fn(),
   dispose: vi.fn(),
   setFontSize: vi.fn(),
+  setAppearance: vi.fn(),
 }))
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
@@ -83,6 +84,7 @@ vi.mock('./terminal-session', () => ({
     disposeTask = terminalSessionRegistry.disposeTask
     dispose = terminalSessionRegistry.dispose
     setFontSize = terminalSessionRegistry.setFontSize
+    setAppearance = terminalSessionRegistry.setAppearance
 
     constructor(_onWrite: unknown) {}
   },
@@ -761,6 +763,7 @@ describe('App confirmation flows', () => {
 		colorScheme: 'dark',
 		terminalFontFamily: '',
 		terminalFontSize: 13,
+		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
 		shellPath: '/bin/sh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
@@ -833,14 +836,83 @@ describe('App confirmation flows', () => {
     fireEvent.change(fontSize, {target: {value: '16'}})
     await user.click(screen.getByRole('button', {name: '取消'}))
     expect(bindings.SaveSettings).not.toHaveBeenCalled()
-    expect(terminalSessionRegistry.setFontSize).not.toHaveBeenCalled()
+    expect(terminalSessionRegistry.setAppearance).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', {name: '设置'}))
     fireEvent.change(await screen.findByRole('slider', {name: '终端字号'}), {target: {value: '16'}})
     await user.click(screen.getByRole('button', {name: '保存'}))
 
     await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({terminalFontSize: 16})))
-    expect(terminalSessionRegistry.setFontSize).toHaveBeenCalledWith(16)
+    expect(terminalSessionRegistry.setAppearance).toHaveBeenCalledWith('', 16, expect.any(Object))
+  })
+
+  it('仅在保存后向已有会话一次性应用终端外观', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    fireEvent.change(await screen.findByRole('slider', {name: '终端字号'}), {target: {value: '16'}})
+    expect(terminalSessionRegistry.setAppearance).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(terminalSessionRegistry.setAppearance).toHaveBeenCalledWith(
+      '',
+      16,
+      expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
+    ))
+  })
+
+  it('终端配色仅通过颜色选择器编辑草稿，取消不影响会话', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('button', {name: '终端配色设置'}))
+    const background = await screen.findByLabelText('终端背景色')
+    expect(background).toHaveAttribute('type', 'color')
+    fireEvent.change(background, {target: {value: '#102030'}})
+    expect(screen.getByTestId('terminal-theme-preview')).toHaveStyle({backgroundColor: '#102030'})
+    expect(terminalSessionRegistry.setAppearance).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', {name: '取消'}))
+    expect(bindings.SaveSettings).not.toHaveBeenCalled()
+    expect(terminalSessionRegistry.setAppearance).not.toHaveBeenCalled()
+  })
+
+  it('终端配色可调整选区透明度并恢复整套暗色默认值', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('button', {name: '终端配色设置'}))
+    fireEvent.change(screen.getByLabelText('终端背景色'), {target: {value: '#102030'}})
+    fireEvent.change(screen.getByRole('slider', {name: '终端选区透明度'}), {target: {value: '60'}})
+    expect(screen.getByText('60%')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', {name: '恢复默认终端配色'}))
+    expect(screen.getByLabelText('终端背景色')).toHaveValue('#070a16')
+    expect(screen.getByRole('slider', {name: '终端选区透明度'})).toHaveValue('25')
+
+    await user.click(screen.getByRole('button', {name: '保存'}))
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      terminalTheme: expect.objectContaining({background: '#070A16', selectionBackground: '#2DE2E640', brightWhite: '#E8ECFF'}),
+    })))
+  })
+
+  it('保存自定义终端背景后立即应用到已有会话', async () => {
+    const user = userEvent.setup()
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('button', {name: '终端配色设置'}))
+    fireEvent.change(screen.getByLabelText('终端背景色'), {target: {value: '#102030'}})
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      terminalTheme: expect.objectContaining({background: '#102030'}),
+    })))
+    expect(terminalSessionRegistry.setAppearance).toHaveBeenCalledWith('', 13, expect.objectContaining({background: '#102030'}))
   })
 
 	it('字体发现失败时仍显示可展开的默认终端字体摘要', async () => {
@@ -892,6 +964,7 @@ describe('App confirmation flows', () => {
 		colorScheme: 'light',
 		terminalFontFamily: '',
 		terminalFontSize: 13,
+		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
 		shellPath: '/bin/zsh',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',
@@ -920,6 +993,7 @@ describe('App confirmation flows', () => {
 		colorScheme: 'light',
 		terminalFontFamily: '',
 		terminalFontSize: 13,
+		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
 		shellPath: '/custom/shell',
       taskMenuItems: fixedTaskMenuItems,
       activeTaskStatus: 'pending',

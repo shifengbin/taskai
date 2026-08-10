@@ -230,12 +230,67 @@ export namespace settings {
 		    return a;
 		}
 	}
+	export class TerminalTheme {
+	    background: string;
+	    foreground: string;
+	    cursor: string;
+	    cursorAccent: string;
+	    selectionBackground: string;
+	    selectionForeground: string;
+	    black: string;
+	    red: string;
+	    green: string;
+	    yellow: string;
+	    blue: string;
+	    magenta: string;
+	    cyan: string;
+	    white: string;
+	    brightBlack: string;
+	    brightRed: string;
+	    brightGreen: string;
+	    brightYellow: string;
+	    brightBlue: string;
+	    brightMagenta: string;
+	    brightCyan: string;
+	    brightWhite: string;
+
+	    static createFrom(source: any = {}) {
+	        return new TerminalTheme(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.background = source["background"];
+	        this.foreground = source["foreground"];
+	        this.cursor = source["cursor"];
+	        this.cursorAccent = source["cursorAccent"];
+	        this.selectionBackground = source["selectionBackground"];
+	        this.selectionForeground = source["selectionForeground"];
+	        this.black = source["black"];
+	        this.red = source["red"];
+	        this.green = source["green"];
+	        this.yellow = source["yellow"];
+	        this.blue = source["blue"];
+	        this.magenta = source["magenta"];
+	        this.cyan = source["cyan"];
+	        this.white = source["white"];
+	        this.brightBlack = source["brightBlack"];
+	        this.brightRed = source["brightRed"];
+	        this.brightGreen = source["brightGreen"];
+	        this.brightYellow = source["brightYellow"];
+	        this.brightBlue = source["brightBlue"];
+	        this.brightMagenta = source["brightMagenta"];
+	        this.brightCyan = source["brightCyan"];
+	        this.brightWhite = source["brightWhite"];
+	    }
+	}
 	export class Settings {
 	    workspaceRoot: string;
 	    taskTreeWidth: number;
 	    colorScheme: string;
 	    terminalFontFamily: string;
 	    terminalFontSize: number;
+	    terminalTheme: TerminalTheme;
 	    shellPath: string;
 	    taskMenuItems: TaskMenuItem[];
 	    activeTaskStatus: string;
@@ -262,6 +317,7 @@ export namespace settings {
 	        this.colorScheme = source["colorScheme"];
 	        this.terminalFontFamily = source["terminalFontFamily"];
 	        this.terminalFontSize = source["terminalFontSize"];
+	        this.terminalTheme = this.convertValues(source["terminalTheme"], TerminalTheme);
 	        this.shellPath = source["shellPath"];
 	        this.taskMenuItems = this.convertValues(source["taskMenuItems"], TaskMenuItem);
 	        this.activeTaskStatus = source["activeTaskStatus"];
@@ -296,7 +352,8 @@ export namespace settings {
 		    return a;
 		}
 	}
-	
+
+
 
 }
 
@@ -664,4 +721,3 @@ export namespace terminal {
 	}
 
 }
-

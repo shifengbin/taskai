@@ -6,6 +6,7 @@ import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
 import {terminalDisplayName, type QuickInput, type TerminalRecord} from '../types'
 import {api} from '../api'
 import {defaultTerminalFontSize} from '../terminal-font-size'
+import {type TerminalTheme} from '../terminal-theme'
 import {ClipboardGetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
 import {IconButton, Input, Popover, PopoverContent, PopoverTrigger} from './ui'
 
@@ -14,14 +15,13 @@ interface TerminalViewProps {
   sessionRegistry: TerminalSessionRegistry
   quickInputs?: QuickInput[]
   fontSize?: number
-  /** 当前色彩模式，用于注入 xterm 主题；默认亮色。 */
-  mode?: 'light' | 'dark'
+  terminalTheme?: Partial<TerminalTheme>
   onResize(columns: number, rows: number): void
   onClose(): void
   onError?(error: unknown): void
 }
 
-export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontSize = defaultTerminalFontSize, mode = 'light', onResize, onClose, onError}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const quickInputSearchRef = useRef<HTMLInputElement>(null)
   const onResizeRef = useRef(onResize)
@@ -29,7 +29,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
   const [quickInputSelectorOpen, setQuickInputSelectorOpen] = useState(false)
   const [quickInputSearch, setQuickInputSearch] = useState('')
   const [selectedQuickInputIndex, setSelectedQuickInputIndex] = useState(0)
-  const terminalTheme = useMemo(() => terminalVisualTheme(mode), [mode])
+  const resolvedTerminalTheme = useMemo(() => terminalVisualTheme(terminalTheme), [terminalTheme])
   const taskAIMouseClipboardEnabled = terminal.disableTaskAIMouseClipboard !== true
   const quickInputHotkey = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC')
     ? 'Command+Shift+P'
@@ -73,7 +73,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
       }
     }
     if (containerRef.current) {
-      sessionRegistry.attach(terminal, containerRef.current, terminalTheme, onResizeRef.current)
+      sessionRegistry.attach(terminal, containerRef.current, resolvedTerminalTheme, onResizeRef.current)
     }
     const observer = new ResizeObserver(fitAndRefresh)
     if (containerRef.current) {
@@ -91,7 +91,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
       cancelAnimationFrame(animationFrame)
       observer.disconnect()
     }
-  }, [sessionRegistry, terminal.disableTaskAIMouseClipboard, terminal.id, terminal.taskId, terminalTheme])
+  }, [resolvedTerminalTheme, sessionRegistry, terminal.disableTaskAIMouseClipboard, terminal.id, terminal.taskId])
 
   useEffect(() => {
     onResizeRef.current = onResize
@@ -255,7 +255,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
             }
           }).catch(() => {})
         } : undefined}
-        style={{backgroundColor: terminalTheme.background, '--wails-drop-target': 'drop'} as CSSProperties}
+        style={{backgroundColor: resolvedTerminalTheme.background, '--wails-drop-target': 'drop'} as CSSProperties}
       >
         <div
           aria-hidden

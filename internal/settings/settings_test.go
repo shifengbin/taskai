@@ -54,6 +54,41 @@ func TestDefaultUsesTerminalFontSize(t *testing.T) {
 	}
 }
 
+func TestDefaultUsesCurrentDarkTerminalTheme(t *testing.T) {
+	current := Default(t.TempDir())
+
+	if got, want := current.TerminalTheme, DefaultTerminalTheme(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Default() TerminalTheme = %#v, want %#v", got, want)
+	}
+}
+
+func TestNormalizeTerminalThemePreservesValidColorsAndRestoresInvalidValues(t *testing.T) {
+	current := TerminalTheme{
+		Background:          "#102030",
+		Foreground:          "#invalid",
+		Cursor:              "#abcdef",
+		SelectionBackground: "#1234567f",
+	}
+
+	normalized := NormalizeTerminalTheme(current)
+	defaults := DefaultTerminalTheme()
+	if got, want := normalized.Background, "#102030"; got != want {
+		t.Fatalf("NormalizeTerminalTheme() Background = %q, want %q", got, want)
+	}
+	if got, want := normalized.Cursor, "#ABCDEF"; got != want {
+		t.Fatalf("NormalizeTerminalTheme() Cursor = %q, want %q", got, want)
+	}
+	if got, want := normalized.SelectionBackground, "#1234567F"; got != want {
+		t.Fatalf("NormalizeTerminalTheme() SelectionBackground = %q, want %q", got, want)
+	}
+	if got, want := normalized.Foreground, defaults.Foreground; got != want {
+		t.Fatalf("NormalizeTerminalTheme() Foreground = %q, want %q", got, want)
+	}
+	if got, want := normalized.BrightCyan, defaults.BrightCyan; got != want {
+		t.Fatalf("NormalizeTerminalTheme() BrightCyan = %q, want %q", got, want)
+	}
+}
+
 func TestValidateNormalizesTerminalFontSize(t *testing.T) {
 	tests := []struct {
 		name string

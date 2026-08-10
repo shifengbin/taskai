@@ -111,6 +111,11 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 		data.Settings.TerminalFontSize = normalizedTerminalFontSize
 		changed = true
 	}
+	normalizedTerminalTheme := settings.NormalizeTerminalTheme(data.Settings.TerminalTheme)
+	if data.Settings.TerminalTheme != normalizedTerminalTheme {
+		data.Settings.TerminalTheme = normalizedTerminalTheme
+		changed = true
+	}
 	templateSettings, err := settings.NormalizeTaskTemplates(data.Settings)
 	if err != nil {
 		return Data{}, false, fmt.Errorf("normalize task template settings: %w", err)

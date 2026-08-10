@@ -82,32 +82,16 @@ import {TerminalSessionRegistry, terminalVisualTheme} from './terminal-session'
 const terminal = {id: 'terminal-1', taskId: 'task-1', state: 'active' as const}
 
 describe('terminalVisualTheme', () => {
-  it.each([
-    ['light', {
-      background: '#EDF1FB',
-      foreground: '#0E1730',
-      cursor: '#0BA5BE',
-      cursorAccent: '#EDF1FB',
-      red: '#E0413E',
-      green: '#0E9F6E',
-      blue: '#0BA5BE',
-      magenta: '#7C3AED',
-      cyan: '#0BA5BE',
-    }],
-    ['dark', {
-      background: '#070A16',
-      foreground: '#E8ECFF',
-      cursor: '#2DE2E6',
-      cursorAccent: '#070A16',
-      red: '#FF5D73',
-      green: '#34F5C5',
-      blue: '#2DE2E6',
-      magenta: '#B06BFF',
-      cyan: '#2DE2E6',
-    }],
-  ] as const)('uses Nebula %s terminal surfaces and ANSI semantic colors', (mode, expected) => {
-    expect(terminalVisualTheme(mode)).toMatchObject(expected)
-  })
+	it('使用保存的独立主题，不随工作台亮暗模式切换', () => {
+		const savedTheme = {...terminalVisualTheme(), background: '#102030', foreground: '#E0F0FF'}
+
+		expect(terminalVisualTheme(undefined as never)).toMatchObject({
+			background: '#070A16',
+			foreground: '#E8ECFF',
+		})
+		expect(terminalVisualTheme(savedTheme as never)).toMatchObject(savedTheme)
+	})
+
 })
 
 describe('TerminalSessionRegistry', () => {
@@ -131,6 +115,20 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[1].options.fontFamily).toBe('"Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace')
   })
 
+  it('创建会话时使用当前已保存的独立主题', () => {
+    const savedTheme = {...terminalVisualTheme(), background: '#102030'}
+    const registry = new (TerminalSessionRegistry as unknown as new (...arguments_: unknown[]) => TerminalSessionRegistry)(
+      vi.fn(),
+      () => '',
+      () => 13,
+      () => savedTheme,
+    )
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'first'})
+
+    expect(terminalInstances[0].options.theme).toMatchObject(savedTheme)
+  })
+
   it('创建和批量更新会话时使用已保存字号，保留视图挂载前的输出', () => {
     let savedFontSize = 16
     const registry = new TerminalSessionRegistry(vi.fn(), () => '', () => savedFontSize)
@@ -142,7 +140,7 @@ describe('TerminalSessionRegistry', () => {
 
     savedFontSize = 20
     registry.setFontSize(savedFontSize)
-    registry.attach(terminal, container, terminalVisualTheme('light'), onResize)
+    registry.attach(terminal, container, terminalVisualTheme(), onResize)
 
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].options.fontSize).toBe(20)
@@ -150,6 +148,22 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].dispose).not.toHaveBeenCalled()
     expect(terminalInstances[0].onDataDisposable.dispose).not.toHaveBeenCalled()
     expect(onResize).toHaveBeenCalledWith(100, 30)
+  })
+
+  it('保存后将主题、字体和字号更新到已有会话', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    const updatedTheme = {...terminalVisualTheme(), background: '#102030', foreground: '#E0F0FF'}
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'ready'})
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn())
+    ;(registry as unknown as {setAppearance(fontFamily: string, fontSize: number, theme: typeof updatedTheme): void}).setAppearance('Fira Code', 16, updatedTheme)
+
+    expect(terminalInstances[0].options.theme).toMatchObject(updatedTheme)
+    expect(terminalInstances[0].options.fontFamily).toBe('"Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace')
+    expect(terminalInstances[0].options.fontSize).toBe(16)
+    expect(terminalInstances[0].refresh).toHaveBeenCalledWith(0, 29)
+    expect(terminalInstances[0].write).toHaveBeenCalledWith('ready')
   })
 
   it('直接写入按终端键持有的会话，并将滚屏限制为 1000 行', () => {
@@ -197,8 +211,8 @@ describe('TerminalSessionRegistry', () => {
     const onResize = vi.fn()
 
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'existing output'})
-    registry.attach(terminal, firstContainer, terminalVisualTheme('dark'), onResize)
-    registry.attach(terminal, secondContainer, terminalVisualTheme('dark'), onResize)
+    registry.attach(terminal, firstContainer, terminalVisualTheme(), onResize)
+    registry.attach(terminal, secondContainer, terminalVisualTheme(), onResize)
 
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].write).toHaveBeenCalledTimes(1)
@@ -211,7 +225,7 @@ describe('TerminalSessionRegistry', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
     const container = document.createElement('div')
 
-    registry.attach({...terminal, disableTaskAIMouseClipboard: true}, container, terminalVisualTheme('light'), vi.fn())
+    registry.attach({...terminal, disableTaskAIMouseClipboard: true}, container, terminalVisualTheme(), vi.fn())
     terminalInstances[0].getSelection.mockReturnValue('selected terminal output')
     terminalInstances[0].triggerSelectionChange()
 
@@ -225,9 +239,9 @@ describe('TerminalSessionRegistry', () => {
     const bContainer = document.createElement('div')
     const secondAContainer = document.createElement('div')
 
-    registry.attach(terminal, firstAContainer, terminalVisualTheme('light'), vi.fn())
-    registry.attach(terminalB, bContainer, terminalVisualTheme('light'), vi.fn())
-    registry.attach(terminal, secondAContainer, terminalVisualTheme('light'), vi.fn())
+    registry.attach(terminal, firstAContainer, terminalVisualTheme(), vi.fn())
+    registry.attach(terminalB, bContainer, terminalVisualTheme(), vi.fn())
+    registry.attach(terminal, secondAContainer, terminalVisualTheme(), vi.fn())
 
     expect(terminalInstances).toHaveLength(2)
     expect(secondAContainer.contains(terminalInstances[0].element!)).toBe(true)
