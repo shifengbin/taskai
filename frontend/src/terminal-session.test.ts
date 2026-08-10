@@ -176,17 +176,21 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].write).toHaveBeenCalledWith('first output chunk')
   })
 
-  it('将快捷输入作为模拟粘贴写入指定活动会话，不追加执行字符', () => {
+  it('将多行文本作为模拟粘贴写入指定活动会话，不追加执行字符', () => {
     const onWrite = vi.fn()
     const registry = new TerminalSessionRegistry(onWrite)
+
+    expect(registry.pasteInput('task-1', 'terminal-1', 'ignored before session')).toBe(false)
+    expect(onWrite).not.toHaveBeenCalled()
+
 	registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'ready'})
 
-    expect(registry.pasteQuickInput('task-1', 'terminal-1', 'git status\ngit push')).toBe(true)
+    expect(registry.pasteInput('task-1', 'terminal-1', 'git status\ngit push')).toBe(true)
     expect(terminalInstances[0].paste).toHaveBeenCalledWith('git status\ngit push')
     expect(onWrite).not.toHaveBeenCalled()
 
     registry.dispose('task-1', 'terminal-1')
-    expect(registry.pasteQuickInput('task-1', 'terminal-1', 'ignored')).toBe(false)
+    expect(registry.pasteInput('task-1', 'terminal-1', 'ignored')).toBe(false)
     expect(terminalInstances[0].paste).toHaveBeenCalledTimes(1)
   })
 

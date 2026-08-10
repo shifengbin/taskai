@@ -58,7 +58,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
   }
 
   const insertQuickInput = (quickInput: QuickInput) => {
-    if (!sessionRegistry.pasteQuickInput(terminal.taskId, terminal.id, quickInput.content)) {
+    if (!sessionRegistry.pasteInput(terminal.taskId, terminal.id, quickInput.content)) {
       onErrorRef.current?.(new Error('终端已关闭，无法插入快捷输入'))
       return
     }
@@ -251,7 +251,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], fontS
           event.preventDefault()
           void ClipboardGetText().then((clipboard) => {
             if (clipboard) {
-              sessionRegistry.writeInput(terminal.taskId, terminal.id, clipboard)
+              sessionRegistry.pasteInput(terminal.taskId, terminal.id, clipboard)
             }
           }).catch(() => {})
         } : undefined}

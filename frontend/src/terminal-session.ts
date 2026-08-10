@@ -105,7 +105,7 @@ export class TerminalSessionRegistry {
     this.onWrite(taskID, terminalID, data)
   }
 
-  pasteQuickInput(taskID: string, terminalID: string, content: string): boolean {
+  pasteInput(taskID: string, terminalID: string, content: string): boolean {
     const key = terminalSessionKey(taskID, terminalID)
     const session = this.sessions.get(key)
     if (!content || !session || this.closedTerminalKeys.has(key)) {

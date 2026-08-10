@@ -309,15 +309,38 @@ describe('TerminalView', () => {
     expect(runtime.ClipboardSetText).toHaveBeenCalledWith('selected terminal output')
   })
 
-  it('右键终端时将系统剪贴板内容写入终端', async () => {
+  it('右键终端时将多行系统剪贴板内容作为模拟粘贴写入', async () => {
     const onWrite = vi.fn()
-    runtime.ClipboardGetText.mockResolvedValue('paste from system clipboard')
+    runtime.ClipboardGetText.mockResolvedValue('git status\ngit push')
     render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(onWrite)} onResize={vi.fn()} onClose={vi.fn()} />)
     const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
     fireEvent(screen.getByTestId('terminal-content'), event)
 
     expect(event.defaultPrevented).toBe(true)
-    await waitFor(() => expect(onWrite).toHaveBeenCalledWith('task-1', 'terminal-1', 'paste from system clipboard'))
+    await waitFor(() => expect(terminalInstances[0].paste).toHaveBeenCalledWith('git status\ngit push'))
+    expect(onWrite).not.toHaveBeenCalled()
+  })
+
+  it('右键读取剪贴板期间终端关闭时不写入文本', async () => {
+    const onWrite = vi.fn()
+    let resolveClipboard: (clipboard: string) => void = () => {}
+    runtime.ClipboardGetText.mockImplementation(() => new Promise<string>((resolve) => {
+      resolveClipboard = resolve
+    }))
+    const registry = new TerminalSessionRegistry(onWrite)
+    render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()} />)
+
+    const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
+    fireEvent(screen.getByTestId('terminal-content'), event)
+    registry.dispose('task-1', 'terminal-1')
+
+    await act(async () => {
+      resolveClipboard('git status\ngit push')
+    })
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(terminalInstances[0].paste).not.toHaveBeenCalled()
+    expect(onWrite).not.toHaveBeenCalled()
   })
 
   it('禁用 TaskAI 鼠标剪贴板后不接管选区或右键', () => {
