@@ -203,6 +203,8 @@ export default function App() {
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
   const [taskMenuItemEditorTab, setTaskMenuItemEditorTab] = useState<'basic' | 'scripts'>('basic')
+	const taskMenuItemIsCommand = taskMenuItemDraft?.kind === 'command'
+	const taskMenuItemIsShelvingToggle = taskMenuItemDraft?.kind === 'toggle-shelved'
   const [scriptHelpAnchor, setScriptHelpAnchor] = useState<HTMLElement>()
   const [message, setMessage] = useState<Notification>()
   const showErrorMessage = (text: string) => setMessage({text, severity: 'error'})
@@ -1046,17 +1048,25 @@ const closeTerminal = async (terminal: TerminalRecord) => {
     if (!taskMenuItemDraft || !taskMenuItemEditorMode) {
       return
     }
-    const item = {
-      ...taskMenuItemDraft,
-      name: taskMenuItemDraft.name.trim(),
-      command: taskMenuItemDraft.command?.trim(),
-      arguments: taskMenuItemDraft.arguments?.filter((argument) => argument.trim()),
-      disableTaskAIMouseClipboard: taskMenuItemDraft.showTerminal && taskMenuItemDraft.disableTaskAIMouseClipboard === true,
-      beforeScript: normalizeTaskScript(taskMenuItemDraft.beforeScript),
-      afterScript: normalizeTaskScript(taskMenuItemDraft.afterScript),
-    }
-    if (!item.name || !item.command) {
-      showErrorMessage('菜单名称和启动命令不能为空')
+    const item = taskMenuItemDraft.kind === 'command'
+      ? {
+        ...taskMenuItemDraft,
+        name: taskMenuItemDraft.name.trim(),
+        command: taskMenuItemDraft.command?.trim(),
+        arguments: taskMenuItemDraft.arguments?.filter((argument) => argument.trim()),
+        disableTaskAIMouseClipboard: taskMenuItemDraft.showTerminal && taskMenuItemDraft.disableTaskAIMouseClipboard === true,
+        beforeScript: normalizeTaskScript(taskMenuItemDraft.beforeScript),
+        afterScript: normalizeTaskScript(taskMenuItemDraft.afterScript),
+      }
+      : {
+        id: taskMenuItemDraft.id,
+        kind: taskMenuItemDraft.kind,
+        name: taskMenuItemDraft.name.trim(),
+        unshelveName: taskMenuItemDraft.kind === 'toggle-shelved' ? taskMenuItemDraft.unshelveName?.trim() : undefined,
+        showTerminal: false,
+      }
+    if (!item.name || (item.kind === 'command' && !item.command) || (item.kind === 'toggle-shelved' && !item.unshelveName)) {
+      showErrorMessage(item.kind === 'command' ? '菜单名称和启动命令不能为空' : '菜单名称不能为空')
       return
     }
     setSettingsDraft((current) => current ? {
@@ -1856,7 +1866,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
               {settingsTab === 'menu' && <div className="grid gap-3">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-snap-muted">右键菜单与“任务操作”下拉菜单共用此顺序。系统项仅可调序。</span>
+                  <span className="text-sm text-snap-muted">右键菜单与“任务操作”下拉菜单共用此顺序。系统项可改名与调序，固定操作不可修改。</span>
                   <SnapButton variant="primary" size="sm" onClick={() => openTaskMenuItemEditor()}>新增菜单项</SnapButton>
                 </div>
                 <div className="overflow-hidden rounded-snap border-2 border-snap-outline divide-y divide-snap-outline">
@@ -1867,7 +1877,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                         <span className="block text-xs text-snap-muted truncate">{item.kind === 'command' ? item.command : '系统固定操作'}</span>
                       </div>
                       <SnapChip>{item.kind === 'command' ? item.showTerminal ? '显示终端' : '后台启动' : '系统固定'}</SnapChip>
-                      {item.kind === 'command' && <SnapButton variant="secondary" size="sm" aria-label={`编辑菜单项 ${item.name}`} onClick={() => openTaskMenuItemEditor(item)}>编辑</SnapButton>}
+                      <SnapButton variant="secondary" size="sm" aria-label={`编辑菜单项 ${item.name}`} onClick={() => openTaskMenuItemEditor(item)}>编辑</SnapButton>
                       <SnapIconButton title={`上移 ${item.name}`} aria-label={`上移 ${item.name}`} size="sm" disabled={index === 0} onClick={() => moveTaskMenuItem(item.id, -1)}><ArrowUp className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
                       <SnapIconButton title={`下移 ${item.name}`} aria-label={`下移 ${item.name}`} size="sm" disabled={index === settingsDraft.taskMenuItems.length - 1} onClick={() => moveTaskMenuItem(item.id, 1)}><ArrowDown className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
                     </div>
@@ -2032,15 +2042,15 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <SnapDialogHeader>
               <SnapDialogTitle>{taskMenuItemEditorMode === 'create' ? '新增菜单项' : '编辑菜单项'}</SnapDialogTitle>
             </SnapDialogHeader>
-            <SnapTabs value={taskMenuItemEditorTab} onValueChange={(value) => setTaskMenuItemEditorTab(value as 'basic' | 'scripts')}>
+            {taskMenuItemIsCommand && <SnapTabs value={taskMenuItemEditorTab} onValueChange={(value) => setTaskMenuItemEditorTab(value as 'basic' | 'scripts')}>
               <SnapTabsList aria-label="菜单项配置分类">
                 <SnapTabsTrigger value="basic">基本配置</SnapTabsTrigger>
                 <SnapTabsTrigger value="scripts">前后置脚本</SnapTabsTrigger>
               </SnapTabsList>
-            </SnapTabs>
+            </SnapTabs>}
 
             <div className="grid gap-3 px-1 py-1" style={{overflowY: 'auto', minHeight: 0}}>
-              {taskMenuItemEditorTab === 'basic' && <>
+              {taskMenuItemEditorTab === 'basic' && taskMenuItemIsCommand && <>
                 <Field label="菜单名称"><Input autoFocus required value={taskMenuItemDraft.name} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, name: event.target.value} : current)}/></Field>
                 <Field label="启动命令"><Input required value={taskMenuItemDraft.command ?? ''} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, command: event.target.value} : current)}/></Field>
                 <Field label="启动参数（每行一个）" hint="每行代表一个启动参数。"><Textarea rows={2} value={(taskMenuItemDraft.arguments ?? []).join('\n')} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, arguments: event.target.value.split('\n')} : current)}/></Field>
@@ -2064,7 +2074,15 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 </label>}
               </>}
 
-              {taskMenuItemEditorTab === 'scripts' && <>
+              {taskMenuItemEditorTab === 'basic' && !taskMenuItemIsCommand && <>
+                <span className="text-sm text-snap-muted">系统固定操作不可修改。</span>
+                {taskMenuItemIsShelvingToggle ? <>
+                  <Field label="搁置任务名称"><Input autoFocus required value={taskMenuItemDraft.name} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, name: event.target.value} : current)}/></Field>
+                  <Field label="取消搁置名称"><Input required value={taskMenuItemDraft.unshelveName ?? ''} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, unshelveName: event.target.value} : current)}/></Field>
+                </> : <Field label="菜单名称"><Input autoFocus required value={taskMenuItemDraft.name} onChange={(event) => setTaskMenuItemDraft((current) => current ? {...current, name: event.target.value} : current)}/></Field>}
+              </>}
+
+              {taskMenuItemEditorTab === 'scripts' && taskMenuItemIsCommand && <>
                 <div className="flex items-center justify-between">
                   <span className="font-display text-sm font-bold text-snap-ink">前置与后置脚本</span>
                   <SnapPopover open={Boolean(scriptHelpAnchor)} onOpenChange={(open) => { if (!open) setScriptHelpAnchor(undefined) }}>
@@ -2098,7 +2116,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             </div>
 
             <SnapDialogFooter>
-              {taskMenuItemEditorMode === 'edit' && <SnapButton variant="danger" onClick={deleteTaskMenuItem}>删除菜单项</SnapButton>}
+              {taskMenuItemEditorMode === 'edit' && taskMenuItemIsCommand && <SnapButton variant="danger" onClick={deleteTaskMenuItem}>删除菜单项</SnapButton>}
               <div className="flex-1"/>
               <SnapButton variant="secondary" onClick={closeTaskMenuItemEditor}>取消</SnapButton>
               <SnapButton type="submit" variant="primary">{taskMenuItemEditorMode === 'create' ? '添加菜单项' : '保存菜单项'}</SnapButton>

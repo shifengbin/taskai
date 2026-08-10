@@ -335,6 +335,8 @@ export function TaskTree({
       onCreateTerminal(taskMenu.taskID)
     } else if (item.kind === 'open-folder') {
       onOpenTaskFolder(taskMenu.taskID)
+    } else if (item.kind === 'toggle-shelved' && taskMenuTask) {
+      onSetTaskShelved?.(taskMenuTask.id, !taskMenuTask.shelved)
     } else if (item.kind === 'command') {
       onRunMenuCommand?.(taskMenu.taskID, item.id)
     }
@@ -682,24 +684,11 @@ export function TaskTree({
               {item.kind === 'edit-task' && <Pencil className="h-4 w-4"/>}
               {item.kind === 'create-terminal' && <Terminal className="h-4 w-4"/>}
               {item.kind === 'open-folder' && <FolderOpen className="h-4 w-4"/>}
+              {item.kind === 'toggle-shelved' && (taskMenuTask?.shelved ? <ArchiveRestore className="h-4 w-4"/> : <Archive className="h-4 w-4"/>)}
               {item.kind === 'command' && (item.showTerminal ? <Terminal className="h-4 w-4"/> : <ExternalLink className="h-4 w-4"/>)}
-              <span>{item.name}</span>
+              <span>{item.kind === 'toggle-shelved' && taskMenuTask?.shelved ? item.unshelveName ?? '取消搁置' : item.name}</span>
             </div>
           ))}
-          {taskMenuTask?.status === 'running' && !taskMenuTask.lifecycleExecution && (
-            <div
-              role="menuitem"
-              className="flex cursor-default items-center gap-2 px-3 py-1.5 text-sm font-semibold text-snap-ink transition-colors hover:bg-snap-cobalt hover:text-white"
-              onClick={() => {
-                if (!taskMenuTask) return
-                onSetTaskShelved?.(taskMenuTask.id, !taskMenuTask.shelved)
-                setTaskMenu(null)
-              }}
-            >
-              {taskMenuTask.shelved ? <ArchiveRestore className="h-4 w-4"/> : <Archive className="h-4 w-4"/>}
-              <span>{taskMenuTask.shelved ? '取消搁置' : '搁置任务'}</span>
-            </div>
-          )}
         </div>,
         document.body,
       )}

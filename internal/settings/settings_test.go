@@ -120,10 +120,10 @@ func TestValidateNormalizesTerminalFontSize(t *testing.T) {
 func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 	settings := Default(t.TempDir())
 
-	if len(settings.TaskMenuItems) != 3 {
-		t.Fatalf("默认任务菜单项数量 = %d，期望 3", len(settings.TaskMenuItems))
+	if len(settings.TaskMenuItems) != 4 {
+		t.Fatalf("默认任务菜单项数量 = %d，期望 4", len(settings.TaskMenuItems))
 	}
-	if settings.TaskMenuItems[0].ID != TaskMenuItemEditTaskID || settings.TaskMenuItems[1].ID != TaskMenuItemCreateTerminalID || settings.TaskMenuItems[2].ID != TaskMenuItemOpenFolderID {
+	if settings.TaskMenuItems[0].ID != TaskMenuItemEditTaskID || settings.TaskMenuItems[1].ID != TaskMenuItemCreateTerminalID || settings.TaskMenuItems[2].ID != TaskMenuItemOpenFolderID || settings.TaskMenuItems[3].ID != "system.toggle-shelved" {
 		t.Errorf("默认任务菜单项 = %#v", settings.TaskMenuItems)
 	}
 }
@@ -1090,21 +1090,21 @@ func TestValidateRequiresHTTPPortOnlyForHTTPStatusManagement(t *testing.T) {
 func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 	validated, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),
-		TaskTreeWidth: DefaultTaskTreeWidth,
-		TaskMenuItems: []TaskMenuItem{
+	TaskTreeWidth: DefaultTaskTreeWidth,
+	TaskMenuItems: []TaskMenuItem{
 			{ID: "custom-codex", Kind: TaskMenuItemKindCommand, Name: "Codex", Command: "codex", Arguments: []string{"--full-auto"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: " prepare-codex ", Arguments: []string{" --task ", "", "  "}}},
-			{ID: TaskMenuItemOpenFolderID, Kind: TaskMenuItemKindCommand, Name: "被篡改", Command: "rm", Arguments: []string{"-rf"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: "不得保存"}},
-			{ID: TaskMenuItemEditTaskID, Kind: TaskMenuItemKindCommand, Name: "被篡改"},
+			{ID: TaskMenuItemOpenFolderID, Kind: TaskMenuItemKindCommand, Name: " 打开工作目录 ", Command: "rm", Arguments: []string{"-rf"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: "不得保存"}},
+			{ID: TaskMenuItemEditTaskID, Kind: TaskMenuItemKindCommand, Name: " 修改任务 "},
 		},
 	})
 
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if len(validated.TaskMenuItems) != 4 {
-		t.Fatalf("任务菜单项数量 = %d，期望 4", len(validated.TaskMenuItems))
+	if len(validated.TaskMenuItems) != 5 {
+		t.Fatalf("任务菜单项数量 = %d，期望 5", len(validated.TaskMenuItems))
 	}
-	if validated.TaskMenuItems[0].ID != "custom-codex" || !reflect.DeepEqual(validated.TaskMenuItems[1], fixedTaskMenuItem(TaskMenuItemOpenFolderID)) || !reflect.DeepEqual(validated.TaskMenuItems[2], fixedTaskMenuItem(TaskMenuItemEditTaskID)) || !reflect.DeepEqual(validated.TaskMenuItems[3], fixedTaskMenuItem(TaskMenuItemCreateTerminalID)) {
+	if validated.TaskMenuItems[0].ID != "custom-codex" || !reflect.DeepEqual(validated.TaskMenuItems[1], TaskMenuItem{ID: TaskMenuItemOpenFolderID, Kind: TaskMenuItemKindOpenFolder, Name: "打开工作目录"}) || !reflect.DeepEqual(validated.TaskMenuItems[2], TaskMenuItem{ID: TaskMenuItemEditTaskID, Kind: TaskMenuItemKindEditTask, Name: "修改任务"}) || !reflect.DeepEqual(validated.TaskMenuItems[3], fixedTaskMenuItem(TaskMenuItemCreateTerminalID)) || !reflect.DeepEqual(validated.TaskMenuItems[4], fixedTaskMenuItem(TaskMenuItemToggleShelvedID)) {
 		t.Errorf("规范化任务菜单项 = %#v", validated.TaskMenuItems)
 	}
 	if got, want := validated.TaskMenuItems[0].BeforeScript, (&TaskScript{Script: "prepare-codex", Arguments: []string{"--task"}}); !reflect.DeepEqual(got, want) {
@@ -1130,6 +1130,58 @@ func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 	}
 }
 
+func TestValidatePreservesToggleShelvedLabels(t *testing.T) {
+	var toggleShelved TaskMenuItem
+	if err := json.Unmarshal([]byte(`{"id":"system.toggle-shelved","kind":"command","name":" 收纳任务 ","unshelveName":" 恢复任务 ","command":"rm","showTerminal":true}`), &toggleShelved); err != nil {
+		t.Fatalf("解析搁置菜单项 error = %v", err)
+	}
+
+	validated, err := Validate(Settings{
+		WorkspaceRoot: t.TempDir(),
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		TaskMenuItems: []TaskMenuItem{toggleShelved},
+	})
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	contents, err := json.Marshal(validated.TaskMenuItems[0])
+	if err != nil {
+		t.Fatalf("序列化搁置菜单项 error = %v", err)
+	}
+	var persisted map[string]any
+	if err := json.Unmarshal(contents, &persisted); err != nil {
+		t.Fatalf("解析持久化搁置菜单项 error = %v", err)
+	}
+	if persisted["name"] != "收纳任务" || persisted["unshelveName"] != "恢复任务" {
+		t.Fatalf("搁置菜单项名称 = %#v", persisted)
+	}
+	if _, ok := persisted["command"]; ok {
+		t.Fatalf("系统搁置菜单项不应持久化命令: %#v", persisted)
+	}
+}
+
+func TestValidateRejectsBlankSystemTaskMenuItemNames(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		item TaskMenuItem
+	}{
+		{name: "普通系统项", item: TaskMenuItem{ID: TaskMenuItemEditTaskID, Name: "  "}},
+		{name: "取消搁置", item: TaskMenuItem{ID: TaskMenuItemToggleShelvedID, Name: "收纳任务", UnshelveName: stringPointer("  ")}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Validate(Settings{
+				WorkspaceRoot: t.TempDir(),
+				TaskTreeWidth: DefaultTaskTreeWidth,
+				TaskMenuItems: []TaskMenuItem{test.item},
+			})
+			if err == nil {
+				t.Fatal("Validate() error = nil，期望拒绝空白系统菜单项名称")
+			}
+		})
+	}
+}
+
 func TestValidateNormalizesTaskMenuMouseClipboardPolicy(t *testing.T) {
 	validated, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),
@@ -1152,6 +1204,7 @@ func TestValidateNormalizesTaskMenuMouseClipboardPolicy(t *testing.T) {
 			},
 			{
 				ID:                          TaskMenuItemEditTaskID,
+				Name:                        "编辑任务",
 				DisableTaskAIMouseClipboard: true,
 			},
 		},

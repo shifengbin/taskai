@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,42 @@ func TestRepositoryLoadsPersistedColorScheme(t *testing.T) {
 	}
 	if got, want := settingsData["colorScheme"], "dark"; got != want {
 		t.Errorf("加载的颜色模式 = %#v，期望 %q", got, want)
+	}
+}
+
+func TestRepositoryAddsMissingShelvingMenuItemToPersistedSettings(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [],
+  "settings": {
+    "workspaceRoot": "` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `",
+    "taskTreeWidth": 360,
+    "taskMenuItems": [{"id":"system.edit-task","kind":"edit-task","name":"编辑任务"}]
+  }
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(data.Settings.TaskMenuItems) != 4 {
+		t.Fatalf("规范化后的任务菜单项数量 = %d，期望 4", len(data.Settings.TaskMenuItems))
+	}
+	last := data.Settings.TaskMenuItems[len(data.Settings.TaskMenuItems)-1]
+	if last.ID != settings.TaskMenuItemToggleShelvedID || last.Name != "搁置任务" || last.UnshelveName == nil || *last.UnshelveName != "取消搁置" {
+		t.Fatalf("补齐的搁置菜单项 = %#v", last)
+	}
+
+	persisted, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(persisted), settings.TaskMenuItemToggleShelvedID) {
+		t.Fatal("补齐的搁置菜单项未持久化")
 	}
 }
 
@@ -1570,6 +1607,10 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeTaskTemplates() error = %v", err)
 	}
+	expectedSettings.TaskMenuItems, err = settings.NormalizeTaskMenuItems(expectedSettings.TaskMenuItems)
+	if err != nil {
+		t.Fatalf("NormalizeTaskMenuItems() error = %v", err)
+	}
 	expectedSettings, err = settings.NormalizeLifecycle(expectedSettings)
 	if err != nil {
 		t.Fatalf("NormalizeLifecycle() error = %v", err)
@@ -1662,6 +1703,10 @@ func TestRepositorySaveSettingsKeepsTaskWorkspaceSnapshot(t *testing.T) {
 	expectedSettings, err := settings.NormalizeTaskTemplates(nextSettings)
 	if err != nil {
 		t.Fatalf("NormalizeTaskTemplates() error = %v", err)
+	}
+	expectedSettings.TaskMenuItems, err = settings.NormalizeTaskMenuItems(expectedSettings.TaskMenuItems)
+	if err != nil {
+		t.Fatalf("NormalizeTaskMenuItems() error = %v", err)
 	}
 	expectedSettings.LifecycleCommands = initialSettings.LifecycleCommands
 	expectedSettings.LifecycleChains = initialSettings.LifecycleChains

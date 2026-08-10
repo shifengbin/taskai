@@ -5,7 +5,7 @@ export type TerminalState = 'active' | 'exited'
 export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
 export type StatusManagementMode = 'title-change' | 'output-change' | 'http'
 export type ColorScheme = 'light' | 'dark'
-export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'command'
+export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'toggle-shelved' | 'command'
 export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'
 export type LifecycleExecutionState = 'running' | 'failed'
 export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace' | 'git-clone' | 'git-clone-repository' | 'manifest-file' | 'update-default-branch'
@@ -223,6 +223,7 @@ export interface TaskMenuItem {
   id: string
   kind: TaskMenuItemKind
   name: string
+  unshelveName?: string
   command?: string
   arguments?: string[]
   showTerminal: boolean
@@ -244,6 +245,7 @@ export const defaultTaskMenuItems: TaskMenuItem[] = [
   {id: 'system.edit-task', kind: 'edit-task', name: '编辑任务', showTerminal: false},
   {id: 'system.create-terminal', kind: 'create-terminal', name: '新增终端', showTerminal: false},
   {id: 'system.open-folder', kind: 'open-folder', name: '打开任务文件夹', showTerminal: false},
+  {id: 'system.toggle-shelved', kind: 'toggle-shelved', name: '搁置任务', unshelveName: '取消搁置', showTerminal: false},
 ]
 
 export const taskStatusLabel: Record<TaskStatus, string> = {
