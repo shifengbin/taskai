@@ -55,7 +55,7 @@ TBD - created by archiving change add-terminal-quick-inputs. Update Purpose afte
 ### Requirement: 从活动终端搜索并插入快捷输入
 系统 MUST 在每个活动终端的工具栏提供快捷输入入口。入口的悬停提示和无障碍标签 MUST 展示 `Ctrl+Shift+P`，macOS MUST 展示 `Command+Shift+P`。该组合键仅在终端聚焦时打开选择器，不得成为系统级全局快捷键。
 
-选择器打开后 MUST 自动聚焦搜索输入；未输入搜索词时 MUST 按用户排序显示，输入搜索词时 MUST 同时匹配名称和内容。结果 MUST 显示名称和内容摘要。系统 MUST 支持方向键选择结果、Enter 插入和 Escape 关闭；点击结果与 Enter 的插入行为相同。成功插入后系统 MUST 关闭选择器并将焦点归还给原终端。
+选择器打开后 MUST 自动聚焦搜索输入；未输入搜索词时 MUST 按用户排序显示，输入搜索词时 MUST 同时匹配名称和内容。结果 MUST 显示名称和内容摘要。系统 MUST 支持方向键选择结果、Enter 插入和 Escape 关闭；点击结果与 Enter 的插入行为相同。成功插入后系统 MUST 关闭选择器并将焦点归还给原终端。当前通过方向键或鼠标悬停选中的结果 MUST 始终呈现可辨识的选中样式，包括主题色弱背景和左侧强调线；即使键盘焦点停留在搜索输入框，该样式也必须可见，未选中项不得呈现该组合样式。
 
 #### Scenario: 通过工具栏打开并按排序显示
 - **WHEN** 用户点击活动终端工具栏中的快捷输入入口
@@ -68,6 +68,10 @@ TBD - created by archiving change add-terminal-quick-inputs. Update Purpose afte
 #### Scenario: 通过内容搜索并用键盘插入
 - **WHEN** 用户输入仅出现在某项内容中的关键词，使用方向键选中结果后按 Enter
 - **THEN** 系统向当前终端插入该项完整内容、关闭选择器并将焦点恢复至该终端
+
+#### Scenario: 方向键显示当前选中结果
+- **WHEN** 用户在搜索输入框中按下方向键，将选择从第一项切换到另一项
+- **THEN** 当前项显示主题色弱背景和左侧强调线，原项不再显示该组合样式，搜索输入框保持焦点
 
 #### Scenario: 关闭选择器不写入内容
 - **WHEN** 用户在选择器打开时按 Escape
@@ -96,4 +100,3 @@ TBD - created by archiving change add-terminal-quick-inputs. Update Purpose afte
 #### Scenario: 仅显示全局库内容
 - **WHEN** 用户在任意任务的终端中打开快捷输入选择器
 - **THEN** 系统只显示同一个全局快捷输入库，不显示或创建任务专属内容
-
