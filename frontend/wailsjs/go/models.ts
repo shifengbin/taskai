@@ -356,7 +356,6 @@ export namespace settings {
 
 
 }
-
 export namespace task {
 	
 	export class ExtraInfoParameter {
