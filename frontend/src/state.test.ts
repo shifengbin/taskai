@@ -184,6 +184,19 @@ describe('终端状态路由', () => {
     expect(mergePendingTerminalEvents(pendingEvents, terminal)).toEqual({...terminal, realtimeStatus: 'unread'})
   })
 
+  it('合并待处理事件时保留终端启动命令以支持快捷键生效范围', () => {
+    const pendingEvents = new Map()
+    const terminal: TerminalRecord = {id: 'terminal-1', taskId: 'task-a', state: 'active', command: 'codex'}
+
+    bufferPendingTerminalEvent(pendingEvents, {...terminal, terminalId: terminal.id, type: 'output', data: '输出'}, '终端标题')
+
+    expect(mergePendingTerminalEvents(pendingEvents, terminal)).toEqual({
+      ...terminal,
+      title: '终端标题',
+      command: 'codex',
+    })
+  })
+
   it('登记已退出的终端，避免后续事件重新成为创建前缓存', () => {
     const registeredTerminalKeys = new Set<string>()
     const terminal = {id: 'terminal-1', taskId: 'task-a', state: 'exited' as const}

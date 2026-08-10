@@ -357,6 +357,27 @@ func TestManagerSnapshotsMouseClipboardPolicyForCommand(t *testing.T) {
 	}
 }
 
+func TestManagerSnapshotsLaunchCommandOnInfo(t *testing.T) {
+	backend := &fakeBackend{}
+	manager := NewManager(backend, func(Event) {})
+
+	commandCreated, err := manager.CreateCommand("task-a", t.TempDir(), "/bin/sh", "codex", nil, 80, 24)
+	if err != nil {
+		t.Fatalf("创建命令终端: %v", err)
+	}
+	if commandCreated.Command != "codex" {
+		t.Fatalf("命令终端 Info.Command = %q，期望 codex", commandCreated.Command)
+	}
+
+	shellCreated, err := manager.Create("task-a", t.TempDir(), "/bin/zsh", 80, 24)
+	if err != nil {
+		t.Fatalf("创建纯 shell 终端: %v", err)
+	}
+	if shellCreated.Command != "/bin/zsh" {
+		t.Fatalf("纯 shell 终端 Info.Command = %q，期望 /bin/zsh", shellCreated.Command)
+	}
+}
+
 func TestManagerPublishesExpectedExitReasonForExplicitClose(t *testing.T) {
 	backend := &fakeBackend{}
 	events := make(chan Event, 2)

@@ -6,10 +6,11 @@ import {Button, Field, Input} from './ui'
 
 interface TerminalShortcutSettingsProps {
   shortcuts: TerminalShortcut[]
+  candidatePrograms?: string[]
   onChange(shortcuts: TerminalShortcut[]): void
 }
 
-export function TerminalShortcutSettings({shortcuts, onChange}: TerminalShortcutSettingsProps) {
+export function TerminalShortcutSettings({shortcuts, candidatePrograms = [], onChange}: TerminalShortcutSettingsProps) {
   const updateShortcut = (id: string, update: Partial<TerminalShortcut>) => {
     onChange(shortcuts.map((shortcut) => shortcut.id === id ? {...shortcut, ...update} : shortcut))
   }
@@ -32,6 +33,7 @@ export function TerminalShortcutSettings({shortcuts, onChange}: TerminalShortcut
         key={shortcut.id}
         shortcut={shortcut}
         index={index}
+        candidatePrograms={candidatePrograms}
         onChange={(update) => updateShortcut(shortcut.id, update)}
         onDelete={() => onChange(shortcuts.filter((candidate) => candidate.id !== shortcut.id))}
       />)}
@@ -39,12 +41,23 @@ export function TerminalShortcutSettings({shortcuts, onChange}: TerminalShortcut
   </div>
 }
 
-function ShortcutCard({shortcut, index, onChange, onDelete}: {shortcut: TerminalShortcut, index: number, onChange(update: Partial<TerminalShortcut>): void, onDelete(): void}) {
+function ShortcutCard({shortcut, index, candidatePrograms, onChange, onDelete}: {shortcut: TerminalShortcut, index: number, candidatePrograms: string[], onChange(update: Partial<TerminalShortcut>): void, onDelete(): void}) {
   const updateStep = (stepIndex: number, step: TerminalShortcutStep) => {
     onChange({steps: shortcut.steps.map((current, currentIndex) => currentIndex === stepIndex ? step : current)})
   }
   const removeStep = (stepIndex: number) => {
     onChange({steps: shortcut.steps.filter((_, currentIndex) => currentIndex !== stepIndex)})
+  }
+  const updateProgram = (programIndex: number, value: string) => {
+    const programs = [...(shortcut.includePrograms ?? [])]
+    programs[programIndex] = value
+    onChange({includePrograms: programs})
+  }
+  const removeProgram = (programIndex: number) => {
+    onChange({includePrograms: (shortcut.includePrograms ?? []).filter((_, currentIndex) => currentIndex !== programIndex)})
+  }
+  const addProgram = () => {
+    onChange({includePrograms: [...(shortcut.includePrograms ?? []), '']})
   }
 
   return <div className="grid gap-3 rounded-snap border-2 border-snap-outline bg-snap-surface p-3 shadow-snap-sm" data-testid={`terminal-shortcut-${index}`}>
@@ -82,6 +95,32 @@ function ShortcutCard({shortcut, index, onChange, onDelete}: {shortcut: Terminal
           <Button variant="secondary" size="sm" onClick={() => onChange({steps: [...shortcut.steps, {kind: 'text', text: ''}]})}><Plus className="mr-1 h-4 w-4"/>添加文本动作</Button>
           <Button variant="secondary" size="sm" onClick={() => onChange({steps: [...shortcut.steps, {kind: 'key', key: 'Enter', modifiers: []}]})}><Plus className="mr-1 h-4 w-4"/>添加按键动作</Button>
         </div>
+      </div>
+    </Field>
+    <Field label="生效程序" hint="留空表示在所有终端生效。从可显示终端的程序中选择后，快捷键仅在这些程序创建的终端里拦截，其余终端透传原始按键。">
+      <div className="grid gap-2">
+        {(shortcut.includePrograms ?? []).map((program, programIndex) => {
+          const otherSelected = (shortcut.includePrograms ?? []).filter((_, otherIndex) => otherIndex !== programIndex).filter(Boolean)
+          const optionValues = candidatePrograms.filter((candidate) => !otherSelected.includes(candidate))
+          if (program && !optionValues.includes(program)) {
+            optionValues.unshift(program)
+          }
+          return (
+            <div key={`${shortcut.id}-program-${programIndex}`} className="flex items-center gap-2">
+              <select
+                aria-label={`快捷键 ${index + 1} 生效程序 ${programIndex + 1}`}
+                className="flex-1 rounded-snap border-2 border-snap-outline bg-snap-surface px-2 py-2 text-sm text-snap-ink outline-none focus-visible:border-snap-cobalt"
+                value={program}
+                onChange={(event) => updateProgram(programIndex, event.target.value)}
+              >
+                {!program && <option value="" disabled>选择生效程序</option>}
+                {optionValues.map((candidate) => <option key={candidate} value={candidate}>{candidate}</option>)}
+              </select>
+              <Button variant="ghost" size="sm" aria-label={`删除快捷键 ${index + 1} 生效程序 ${programIndex + 1}`} onClick={() => removeProgram(programIndex)}><Trash2 className="h-4 w-4"/></Button>
+            </div>
+          )
+        })}
+        <Button variant="secondary" size="sm" onClick={addProgram} disabled={candidatePrograms.every((candidate) => (shortcut.includePrograms ?? []).includes(candidate))}><Plus className="mr-1 h-4 w-4"/>添加生效程序</Button>
       </div>
     </Field>
   </div>

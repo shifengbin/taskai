@@ -18,6 +18,7 @@ export interface TerminalShortcut {
   id: string
   shortcut: string
   steps: TerminalShortcutStep[]
+  includePrograms?: string[]
 }
 export const defaultTaskColor = '#4f46e5'
 export const taskColorOptions = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7', '#ec4899'] as const
@@ -177,6 +178,7 @@ export interface TerminalRecord {
   state: TerminalState
   disableTaskAIMouseClipboard?: boolean
   title?: string
+  command?: string
   realtimeStatus?: RealtimeStatus
 }
 

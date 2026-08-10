@@ -60,6 +60,7 @@ type Info struct {
 	TaskID                      string `json:"taskId"`
 	State                       State  `json:"state"`
 	DisableTaskAIMouseClipboard bool   `json:"disableTaskAIMouseClipboard"`
+	Command                     string `json:"command,omitempty"`
 }
 
 type ActiveSession struct {

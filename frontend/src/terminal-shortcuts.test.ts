@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 
-import {findTerminalShortcut, keyboardEventShortcut, keyboardEventStep, terminalShortcutInput, terminalShortcutStepInput} from './terminal-shortcuts'
+import {findTerminalShortcut, keyboardEventShortcut, keyboardEventStep, terminalShortcutApplies, terminalShortcutInput, terminalShortcutStepInput, uniqueProgramNames} from './terminal-shortcuts'
 import type {TerminalShortcut, TerminalShortcutStep} from './types'
 
 describe('terminal shortcut matching', () => {
@@ -32,5 +32,37 @@ describe('terminal shortcut matching', () => {
     const savedStep = {kind: 'key', key: 'Enter'} as unknown as TerminalShortcutStep
 
     expect(terminalShortcutStepInput(savedStep)).toBe('\r')
+  })
+})
+
+describe('terminal shortcut program scope', () => {
+  const scoped: TerminalShortcut = {id: 'scoped', shortcut: 'Shift+Enter', steps: [{kind: 'enter'}], includePrograms: ['codex']}
+
+  it('applies to all terminals when includePrograms is empty or missing', () => {
+    const unscoped: TerminalShortcut = {id: 'unscoped', shortcut: 'Shift+Enter', steps: [{kind: 'enter'}]}
+    expect(terminalShortcutApplies(unscoped, 'codex')).toBe(true)
+    expect(terminalShortcutApplies(unscoped, 'powershell.exe')).toBe(true)
+    expect(terminalShortcutApplies(unscoped, undefined)).toBe(true)
+    expect(terminalShortcutApplies({...unscoped, includePrograms: []}, 'codex')).toBe(true)
+  })
+
+  it('matches the launch command by normalized basename, extension, and case', () => {
+    expect(terminalShortcutApplies(scoped, 'codex')).toBe(true)
+    expect(terminalShortcutApplies(scoped, 'codex.exe')).toBe(true)
+    expect(terminalShortcutApplies(scoped, 'C:\\tools\\codex.exe')).toBe(true)
+    expect(terminalShortcutApplies(scoped, '/usr/local/bin/codex')).toBe(true)
+    expect(terminalShortcutApplies(scoped, 'CODEX.EXE')).toBe(true)
+  })
+
+  it('does not match unrelated programs or missing command', () => {
+    expect(terminalShortcutApplies(scoped, 'pwsh.exe')).toBe(false)
+    expect(terminalShortcutApplies(scoped, undefined)).toBe(false)
+    expect(terminalShortcutApplies(scoped, '')).toBe(false)
+  })
+
+  it('uniqueProgramNames normalizes basenames, dedupes case-insensitively, drops empties, and keeps order', () => {
+    expect(uniqueProgramNames(['/bin/zsh', 'CODEX.EXE', '', 'codex', 'C:\\tools\\codex.exe', undefined, 'powershell'])).toEqual(['zsh', 'codex', 'powershell'])
+    expect(uniqueProgramNames([])).toEqual([])
+    expect(uniqueProgramNames(['   ', undefined, ''])).toEqual([])
   })
 })

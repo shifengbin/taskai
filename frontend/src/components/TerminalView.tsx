@@ -4,7 +4,7 @@ import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
 import {terminalDisplayName, type QuickInput, type TerminalRecord, type TerminalShortcut} from '../types'
-import {findTerminalShortcut, terminalShortcutInput} from '../terminal-shortcuts'
+import {findTerminalShortcut, terminalShortcutApplies, terminalShortcutInput} from '../terminal-shortcuts'
 import {api} from '../api'
 import {defaultTerminalFontSize} from '../terminal-font-size'
 import {type TerminalTheme} from '../terminal-theme'
@@ -131,6 +131,9 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 		if (!configuredShortcut) {
 			return true
 		}
+		if (!terminalShortcutApplies(configuredShortcut, terminal.command)) {
+			return true
+		}
 		event.preventDefault()
 		event.stopPropagation()
 		if (!sessionRegistry.writeInput(terminal.taskId, terminal.id, terminalShortcutInput(configuredShortcut.steps))) {
@@ -141,7 +144,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
     return () => {
       sessionRegistry.setCustomKeyEventHandler(terminal.taskId, terminal.id)
     }
-  }, [openQuickInputSelector, sessionRegistry, terminal.id, terminal.taskId, terminalShortcuts])
+  }, [openQuickInputSelector, sessionRegistry, terminal.command, terminal.id, terminal.taskId, terminalShortcuts])
 
   useEffect(() => {
     let active = true

@@ -23,6 +23,45 @@ export function findTerminalShortcut(shortcuts: TerminalShortcut[], event: Keybo
   return binding ? shortcuts.find((shortcut) => shortcut.shortcut === binding) : undefined
 }
 
+export function terminalShortcutApplies(shortcut: TerminalShortcut, command?: string): boolean {
+  const scope = shortcut.includePrograms
+  if (!scope || scope.length === 0) {
+    return true
+  }
+  if (!command) {
+    return false
+  }
+  const normalizedCommand = normalizeProgramName(command)
+  return scope.some((program) => normalizeProgramName(program) === normalizedCommand)
+}
+
+export function normalizeProgramName(value: string): string {
+  const trimmed = value.trim()
+  const segments = trimmed.split(/[\\/]/)
+  const basename = segments[segments.length - 1] ?? trimmed
+  return basename.replace(/\.(?:exe|com)$/i, '').toLowerCase()
+}
+
+// Normalizes a set of launch commands into deduplicated program basenames,
+// preserving first-seen order. Used to build the candidate list of programs
+// that can display a terminal (shell + show-terminal task menu commands).
+export function uniqueProgramNames(commands: Array<string | undefined | null>): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const command of commands) {
+    if (!command) {
+      continue
+    }
+    const normalized = normalizeProgramName(command)
+    if (!normalized || seen.has(normalized)) {
+      continue
+    }
+    seen.add(normalized)
+    result.push(normalized)
+  }
+  return result
+}
+
 export function terminalShortcutInput(steps: TerminalShortcutStep[]): string {
   return steps.map(terminalShortcutStepInput).join('')
 }

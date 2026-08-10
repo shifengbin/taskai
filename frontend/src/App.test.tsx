@@ -1036,6 +1036,98 @@ describe('App confirmation flows', () => {
     }))
   })
 
+  it('在设置中编辑生效程序范围并随快捷键保存', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: [
+        ...fixedTaskMenuItems,
+        {id: 'menu.codex', kind: 'command', name: 'Codex', command: 'codex', showTerminal: true},
+        {id: 'menu.powershell', kind: 'command', name: 'PowerShell', command: 'powershell', showTerminal: true},
+      ],
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端快捷键'}))
+    await user.click(screen.getByRole('button', {name: '新增快捷键'}))
+    const capture = screen.getByRole('textbox', {name: '按键组合'})
+    fireEvent.keyDown(capture, {key: 'Enter', shiftKey: true})
+
+    await user.click(screen.getByRole('button', {name: '添加生效程序'}))
+    fireEvent.change(screen.getByRole('combobox', {name: '快捷键 1 生效程序 1'}), {target: {value: 'codex'}})
+    await user.click(screen.getByRole('button', {name: '添加生效程序'}))
+    fireEvent.change(screen.getByRole('combobox', {name: '快捷键 1 生效程序 2'}), {target: {value: 'powershell'}})
+
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      terminalShortcuts: [{
+        id: expect.any(String),
+        shortcut: 'Shift+Enter',
+        steps: [
+          {kind: 'text', text: '\\'},
+          {kind: 'key', key: 'Enter', modifiers: []},
+        ],
+        includePrograms: ['codex', 'powershell'],
+      }],
+    }))
+  })
+
+  it('移除已配置的生效程序并保存', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: [
+        ...fixedTaskMenuItems,
+        {id: 'menu.codex', kind: 'command', name: 'Codex', command: 'codex', showTerminal: true},
+        {id: 'menu.powershell', kind: 'command', name: 'PowerShell', command: 'powershell', showTerminal: true},
+      ],
+      terminalShortcuts: [{
+        id: 'shortcut-1', shortcut: 'Shift+Enter',
+        steps: [{kind: 'text', text: '\\'}, {kind: 'key', key: 'Enter'}],
+        includePrograms: ['codex', 'powershell'],
+      }],
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端快捷键'}))
+
+    await user.click(screen.getByRole('button', {name: '删除快捷键 1 生效程序 1'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      terminalShortcuts: [{
+        id: 'shortcut-1',
+        shortcut: 'Shift+Enter',
+        steps: [{kind: 'text', text: '\\'}, {kind: 'key', key: 'Enter'}],
+        includePrograms: ['powershell'],
+      }],
+    }))
+  })
+
+  it('生效程序下拉仅列出可显示终端的程序', async () => {
+    const user = userEvent.setup()
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: [
+        ...fixedTaskMenuItems,
+        {id: 'menu.codex', kind: 'command', name: 'Codex', command: 'codex', showTerminal: true},
+        {id: 'menu.background', kind: 'command', name: '后台任务', command: 'background-task', showTerminal: false},
+      ],
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '终端快捷键'}))
+    await user.click(screen.getByRole('button', {name: '新增快捷键'}))
+    await user.click(screen.getByRole('button', {name: '添加生效程序'}))
+
+    const select = screen.getByRole('combobox', {name: '快捷键 1 生效程序 1'})
+    const optionValues = Array.from(select.querySelectorAll('option')).map((option) => (option as HTMLOptionElement).value)
+    expect(optionValues).toEqual(['', 'sh', 'codex'])
+  })
+
   it('读取未保存修饰键的按键动作时仍可打开快捷键设置', async () => {
     const user = userEvent.setup()
     bindings.GetSettings.mockResolvedValue({

@@ -54,6 +54,34 @@ func TestNormalizeTerminalShortcutKeyAcceptsCommonTerminalKeys(t *testing.T) {
 	}
 }
 
+func TestNormalizeTerminalShortcutsCanonicalizesIncludePrograms(t *testing.T) {
+	got, err := NormalizeTerminalShortcuts([]TerminalShortcut{{
+		Shortcut:        "Shift+Enter",
+		Steps:           []TerminalShortcutStep{{Kind: TerminalShortcutStepEnter}},
+		IncludePrograms: []string{" codex ", "CODEX", "", "powershell"},
+	}})
+	if err != nil {
+		t.Fatalf("NormalizeTerminalShortcuts() error = %v", err)
+	}
+	want := []string{"codex", "powershell"}
+	if !reflect.DeepEqual(got[0].IncludePrograms, want) {
+		t.Fatalf("IncludePrograms = %#v, want %#v", got[0].IncludePrograms, want)
+	}
+}
+
+func TestNormalizeTerminalShortcutsLeavesIncludeProgramsNilWhenAbsent(t *testing.T) {
+	got, err := NormalizeTerminalShortcuts([]TerminalShortcut{{
+		Shortcut: "Shift+Enter",
+		Steps:    []TerminalShortcutStep{{Kind: TerminalShortcutStepEnter}},
+	}})
+	if err != nil {
+		t.Fatalf("NormalizeTerminalShortcuts() error = %v", err)
+	}
+	if got[0].IncludePrograms != nil {
+		t.Fatalf("IncludePrograms = %#v, want nil", got[0].IncludePrograms)
+	}
+}
+
 func TestNormalizeTerminalShortcutsRejectsInvalidAndConflictingBindings(t *testing.T) {
 	tests := []struct {
 		name      string

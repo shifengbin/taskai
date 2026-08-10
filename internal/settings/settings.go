@@ -204,9 +204,10 @@ type TerminalShortcutStep struct {
 }
 
 type TerminalShortcut struct {
-	ID       string                 `json:"id"`
-	Shortcut string                 `json:"shortcut"`
-	Steps    []TerminalShortcutStep `json:"steps"`
+	ID              string                 `json:"id"`
+	Shortcut        string                 `json:"shortcut"`
+	Steps           []TerminalShortcutStep `json:"steps"`
+	IncludePrograms []string               `json:"includePrograms,omitempty"`
 }
 
 type Settings struct {
@@ -624,9 +625,33 @@ func NormalizeTerminalShortcuts(shortcuts []TerminalShortcut) ([]TerminalShortcu
 				return nil, fmt.Errorf("快捷键 %q 的动作 %d 类型无效: %q", binding, stepIndex+1, step.Kind)
 			}
 		}
-		normalized[index] = TerminalShortcut{ID: id, Shortcut: binding, Steps: steps}
+		normalized[index] = TerminalShortcut{ID: id, Shortcut: binding, Steps: steps, IncludePrograms: normalizeTerminalShortcutIncludePrograms(shortcut.IncludePrograms)}
 	}
 	return normalized, nil
+}
+
+func normalizeTerminalShortcutIncludePrograms(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func NormalizeTerminalShortcutKey(key string, modifiers []string) (string, []string, error) {

@@ -136,15 +136,16 @@ func (manager *Manager) createWithEnvironmentBuilder(request StartRequest, envir
 		return Info{}, err
 	}
 
+	command := request.Command
+	if command == "" {
+		command = request.ShellPath
+	}
 	info := Info{
 		ID:                          request.ID,
 		TaskID:                      request.TaskID,
 		State:                       StateActive,
 		DisableTaskAIMouseClipboard: request.DisableTaskAIMouseClipboard,
-	}
-	command := request.Command
-	if command == "" {
-		command = request.ShellPath
+		Command:                     command,
 	}
 	managed := &managedSession{info: info, command: command, shellPath: request.ShellPath, session: session, done: make(chan struct{})}
 	if manager.sessions[request.TaskID] == nil {

@@ -51,6 +51,7 @@ import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalShortcutSettings} from './components/TerminalShortcutSettings'
 import {TerminalView} from './components/TerminalView'
 import {TerminalSessionRegistry} from './terminal-session'
+import {uniqueProgramNames} from './terminal-shortcuts'
 import {resolveTerminalFontFamily} from './terminal-font'
 import {defaultTerminalFontSize, maximumTerminalFontSize, minimumTerminalFontSize, normalizeTerminalFontSize, terminalFontSizePercent} from './terminal-font-size'
 import {defaultTerminalTheme, normalizeTerminalTheme, type TerminalTheme} from './terminal-theme'
@@ -1863,6 +1864,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
               {settingsTab === 'shortcuts' && <TerminalShortcutSettings
                 shortcuts={settingsDraft?.terminalShortcuts ?? []}
+                candidatePrograms={uniqueProgramNames([
+                  settingsDraft?.shellPath,
+                  ...(settingsDraft?.taskMenuItems ?? [])
+                    .filter((item) => item.kind === 'command' && item.showTerminal && item.command)
+                    .map((item) => item.command),
+                ])}
                 onChange={(terminalShortcuts) => updateSettingsDraft({terminalShortcuts})}
               />}
 

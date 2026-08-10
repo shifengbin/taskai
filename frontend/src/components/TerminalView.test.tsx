@@ -259,6 +259,43 @@ describe('TerminalView', () => {
     expect(onWrite).toHaveBeenCalledWith('task-1', 'terminal-1', '\\\r')
   })
 
+  it('快捷键在生效程序范围外透传原始按键而不写入', () => {
+    const onWrite = vi.fn()
+    render(
+      <TerminalView
+        terminal={{...terminal, command: 'codex'}}
+        sessionRegistry={new TerminalSessionRegistry(onWrite)}
+        terminalShortcuts={[{id: 'shortcut-1', shortcut: 'Shift+Enter', steps: [{kind: 'text', text: '\\'}, {kind: 'key', key: 'Enter', modifiers: []}], includePrograms: ['powershell']}]}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const handled = terminalInstances[0].triggerCustomKeyEvent(new KeyboardEvent('keydown', {key: 'Enter', shiftKey: true, cancelable: true}))
+
+    expect(handled).toBe(true)
+    expect(onWrite).not.toHaveBeenCalled()
+  })
+
+  it('快捷键在生效程序范围内仍写入已配置动作', () => {
+    const onWrite = vi.fn()
+    render(
+      <TerminalView
+        terminal={{...terminal, command: 'codex.exe'}}
+        sessionRegistry={new TerminalSessionRegistry(onWrite)}
+        terminalShortcuts={[{id: 'shortcut-1', shortcut: 'Shift+Enter', steps: [{kind: 'text', text: '\\'}, {kind: 'key', key: 'Enter', modifiers: []}], includePrograms: ['codex']}]}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const handled = terminalInstances[0].triggerCustomKeyEvent(new KeyboardEvent('keydown', {key: 'Enter', shiftKey: true, cancelable: true}))
+
+    expect(handled).toBe(false)
+    expect(onWrite).toHaveBeenCalledOnce()
+    expect(onWrite).toHaveBeenCalledWith('task-1', 'terminal-1', '\\\r')
+  })
+
   it('快捷键目标终端关闭后停止动作并报告不可用', () => {
     const onWrite = vi.fn()
     const onError = vi.fn()
