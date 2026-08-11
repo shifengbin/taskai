@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest'
 
 import {settings as wailsSettings, task as wailsTask} from '../wailsjs/go/models'
-import {clampTaskTreeWidth, defaultTaskMenuItems} from './types'
+import {clampTaskTreeWidth, defaultTaskMenuItems, terminalActualName, terminalAliasDetails, terminalDisplayName} from './types'
 
 describe('clampTaskTreeWidth', () => {
   it('将拖拽产生的小数宽度归一化为整数', () => {
@@ -67,5 +67,25 @@ describe('clampTaskTreeWidth', () => {
 		expect(settings.lifecyclePresets).toHaveLength(1)
 		expect(settings.lifecyclePresets[0].chains).toEqual({beforeStart: 'prepare'})
 		expect(settings.defaultLifecyclePresetId).toBe('deploy')
+	})
+
+	it('别名优先显示，空白别名恢复实际终端名称', () => {
+		const terminal = {title: ' npm run dev ', alias: ' 前端调试 '}
+
+		expect(terminalActualName(terminal)).toBe('npm run dev')
+		expect(terminalDisplayName(terminal)).toBe('前端调试')
+		expect(terminalDisplayName({...terminal, alias: '  '})).toBe('npm run dev')
+		expect(terminalActualName({})).toBe('终端')
+	})
+
+	it('别名提示始终显示实际名称和启动命令', () => {
+		expect(terminalAliasDetails({title: '当前标题', command: ' zsh '})).toEqual({
+			actualName: '当前标题',
+			command: 'zsh',
+		})
+		expect(terminalAliasDetails({})).toEqual({
+			actualName: '终端',
+			command: '未提供启动命令',
+		})
 	})
 })

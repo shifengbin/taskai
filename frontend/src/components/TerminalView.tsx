@@ -3,13 +3,14 @@ import {ClipboardPaste, Terminal as TerminalIcon} from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
-import {terminalDisplayName, type QuickInput, type TerminalRecord, type TerminalShortcut} from '../types'
+import {type QuickInput, type TerminalRecord, type TerminalShortcut} from '../types'
 import {findTerminalShortcut, terminalShortcutApplies, terminalShortcutInput} from '../terminal-shortcuts'
 import {api} from '../api'
 import {defaultTerminalFontSize} from '../terminal-font-size'
 import {type TerminalTheme} from '../terminal-theme'
 import {ClipboardGetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
 import {IconButton, Input, Popover, PopoverContent, PopoverTrigger} from './ui'
+import {TerminalName} from './TerminalName'
 
 interface TerminalViewProps {
   terminal: TerminalRecord
@@ -21,9 +22,10 @@ interface TerminalViewProps {
   onResize(columns: number, rows: number): void
   onClose(): void
   onError?(error: unknown): void
+  onAliasChange?(alias: string | undefined): void
 }
 
-export function TerminalView({terminal, sessionRegistry, quickInputs = [], terminalShortcuts = [], fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, quickInputs = [], terminalShortcuts = [], fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError, onAliasChange = () => {}}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const quickInputSearchRef = useRef<HTMLInputElement>(null)
   const onResizeRef = useRef(onResize)
@@ -173,13 +175,12 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
       <div className="taskai-terminal__header flex items-center gap-2 border-b border-snap-outline bg-snap-surface px-2" data-testid="terminal-view-header">
         <TerminalIcon className="h-4 w-4 shrink-0 text-snap-cobalt"/>
         <div data-testid="terminal-view-title-container" style={{flex: 1, minWidth: 0}}>
-          <span
-            data-testid="terminal-view-title"
-            style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'}}
-            className="block font-display text-sm font-bold text-snap-ink"
-          >
-            {terminalDisplayName(terminal)}
-          </span>
+          <TerminalName
+            terminal={terminal}
+            onAliasChange={onAliasChange}
+            testId="terminal-view-title"
+            className="block w-full truncate font-display text-sm font-bold text-snap-ink"
+          />
         </div>
         {terminal.state === 'active' && (
           <div className="taskai-terminal__quick-input-actions flex shrink-0 items-center" data-testid="terminal-view-actions">

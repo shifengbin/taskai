@@ -68,6 +68,7 @@ import {
   registerTerminal,
 	shouldReportTerminalTitleActivity,
   terminalEventKey,
+	updateTerminalAlias,
   type PendingTerminalEvent,
 } from './state'
 import type {TerminalTitleParserState} from './terminal-title'
@@ -854,6 +855,10 @@ export default function App() {
     return true
   }
 
+  const renameTerminal = (terminal: TerminalRecord, alias: string | undefined) => {
+    setTerminals((current) => updateTerminalAlias(current, terminal.taskId, terminal.id, alias))
+  }
+
   const createTerminal = async (taskID: string) => {
     try {
       const created = await api.createTerminal(taskID, 100, 32)
@@ -1297,8 +1302,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 onStartTask={(taskID) => void startTask(taskID)}
 				onFinishTask={(taskID) => setFinishTask(tasks.find((task) => task.id === taskID))}
 				onRetryLifecycle={(taskID) => void retryLifecycleChain(taskID)}
-				onSetTaskShelved={(taskID, shelved) => void setTaskShelved(taskID, shelved)}
+                onSetTaskShelved={(taskID, shelved) => void setTaskShelved(taskID, shelved)}
                 onCloseTerminal={(terminal) => void closeTerminal(terminal)}
+                onAliasChange={renameTerminal}
                 onReorderTasks={(taskID, targetTaskID, position) => void reorderTasks(taskID, targetTaskID, position)}
               />
             </div>
@@ -1338,6 +1344,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onError={(error) => showError(error, setMessage)}
                 onClose={() => void closeTerminal(selectedTerminal)}
+                onAliasChange={(alias) => renameTerminal(selectedTerminal, alias)}
               />
             ) : (
               <TaskDetail
