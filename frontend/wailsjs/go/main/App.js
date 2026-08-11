@@ -158,6 +158,10 @@ export function ReportTerminalTitleActivity(arg1, arg2) {
   return window['go']['main']['App']['ReportTerminalTitleActivity'](arg1, arg2);
 }
 
+export function ReportTerminalVisualActivity(arg1, arg2) {
+  return window['go']['main']['App']['ReportTerminalVisualActivity'](arg1, arg2);
+}
+
 export function ResizeTerminal(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['ResizeTerminal'](arg1, arg2, arg3, arg4);
 }

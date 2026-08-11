@@ -44,9 +44,10 @@ const bindings = vi.hoisted(() => ({
 	ListTerminalFonts: vi.fn(),
 	SaveLifecyclePreset: vi.fn(),
 	SaveDefaultLifecyclePreset: vi.fn(),
-  ReorderTasks: vi.fn(),
+	ReorderTasks: vi.fn(),
 	SetTaskShelved: vi.fn(),
 	ReportTerminalTitleActivity: vi.fn(),
+	ReportTerminalVisualActivity: vi.fn(),
   StartTask: vi.fn(),
 	RetryTaskLifecycleCommandChain: vi.fn(),
   FinishTask: vi.fn(),
@@ -72,8 +73,9 @@ const terminalSessionRegistry = vi.hoisted(() => ({
   disposeTask: vi.fn(),
   dispose: vi.fn(),
   setFontSize: vi.fn(),
-  setAppearance: vi.fn(),
+	setAppearance: vi.fn(),
 }))
+const terminalVisualActivity = vi.hoisted(() => vi.fn())
 
 vi.mock('../wailsjs/go/main/App', () => bindings)
 vi.mock('../wailsjs/runtime/runtime', () => runtime)
@@ -86,7 +88,9 @@ vi.mock('./terminal-session', () => ({
     setFontSize = terminalSessionRegistry.setFontSize
     setAppearance = terminalSessionRegistry.setAppearance
 
-    constructor(_onWrite: unknown) {}
+    constructor(_onWrite: unknown, _fontFamily: unknown, _fontSize: unknown, _theme: unknown, onVisualActivity: unknown) {
+		terminalVisualActivity.mockImplementation(onVisualActivity as (taskID: string, terminalID: string) => void)
+	}
   },
 }))
 vi.mock('./components/TerminalView', async () => {
@@ -131,6 +135,7 @@ describe('App confirmation flows', () => {
 		bindings.ClearSelectedTerminal.mockResolvedValue(undefined)
 		bindings.SelectTerminal.mockResolvedValue(undefined)
 		bindings.ReportTerminalTitleActivity.mockResolvedValue(true)
+		bindings.ReportTerminalVisualActivity.mockResolvedValue(true)
 		runtime.ClipboardSetText.mockResolvedValue(true)
 		bindings.ListExtraInfoCatalogues.mockResolvedValue([])
 		bindings.ListExtraInfoTemplates.mockResolvedValue([])
@@ -2796,6 +2801,27 @@ describe('App confirmation flows', () => {
     expect(screen.queryByText('终端 1')).not.toBeInTheDocument()
   })
 
+	it.each([
+		['title-change', false],
+		['output-change', true],
+		['http', false],
+	] as const)('终端画面变化仅在 %s 模式下上报', async (statusManagementMode, shouldReport) => {
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			statusManagementMode,
+		})
+		render(<App/>)
+
+		await screen.findByRole('tab', {name: /执行中/})
+		await act(async () => terminalVisualActivity('task-1', 'terminal-1'))
+
+		if (shouldReport) {
+			await waitFor(() => expect(bindings.ReportTerminalVisualActivity).toHaveBeenCalledWith('task-1', 'terminal-1'))
+		} else {
+			expect(bindings.ReportTerminalVisualActivity).not.toHaveBeenCalled()
+		}
+	})
+
   it('接收实时状态事件并在选择终端时通知后端清除未读状态', async () => {
     const user = userEvent.setup()
     let realtimeStatusListener: ((event: {version: number, taskId: string, taskStatus: 'unread' | 'working', terminalId: string, terminalStatus: 'unread' | 'working'}) => void) | undefined
@@ -2901,7 +2927,7 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByLabelText('状态管理方式'))
     await user.click(screen.getByRole('option', {name: '根据终端输出变化'}))
 
-    expect(screen.getByText('任意非空终端输出会在 1.5 秒内显示为工作中，未选中的终端静默后显示为未读。')).toBeInTheDocument()
+    expect(screen.getByText('终端画面实际变化会在 1.5 秒内显示为工作中，未选中的终端静默后显示为未读。')).toBeInTheDocument()
     expect(screen.getByRole('switch', {name: '启用本机 HTTP 服务'})).not.toBeDisabled()
     await user.click(screen.getByRole('button', {name: '保存'}))
 

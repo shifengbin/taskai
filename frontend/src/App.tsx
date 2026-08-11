@@ -222,11 +222,17 @@ export default function App() {
 	const terminalFontFamily = useRef('')
 	const terminalFontSize = useRef(defaultTerminalFontSize)
 	const terminalTheme = useRef<TerminalTheme>(defaultTerminalTheme)
+	const statusManagementModeRef = useRef<SettingsRecord['statusManagementMode']>('title-change')
 	const terminalSessions = useRef<TerminalSessionRegistry>()
 	if (!terminalSessions.current) {
 		terminalSessions.current = new TerminalSessionRegistry((taskID, terminalID, data) => {
 			void api.writeTerminal(taskID, terminalID, data).catch((error) => showError(error, setMessage))
-		}, () => terminalFontFamily.current, () => terminalFontSize.current, () => terminalTheme.current)
+		}, () => terminalFontFamily.current, () => terminalFontSize.current, () => terminalTheme.current, (taskID, terminalID) => {
+			if (statusManagementModeRef.current !== 'output-change') {
+				return
+			}
+			void api.reportTerminalVisualActivity(taskID, terminalID).catch((error) => showError(error, setMessage))
+		})
 	}
 	const latestRealtimeStatusVersion = useRef(0)
 	const lifecycleStatusTargets = useRef(new Map<string, TaskStatus>())
@@ -264,6 +270,7 @@ export default function App() {
 		terminalFontFamily.current = loadedSettings.terminalFontFamily ?? ''
 		terminalFontSize.current = normalizeTerminalFontSize(loadedSettings.terminalFontSize)
 		terminalTheme.current = loadedTerminalTheme
+		statusManagementModeRef.current = loadedSettings.statusManagementMode ?? 'title-change'
         setActiveTaskStatus(loadedSettings.activeTaskStatus ?? 'pending')
         setDetectedShells(loadedShells)
 		setExtraInfoTemplates(loadedExtraInfoTemplates)
@@ -971,6 +978,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		terminalFontFamily.current = saved.terminalFontFamily ?? ''
 		terminalFontSize.current = normalizeTerminalFontSize(saved.terminalFontSize)
 		terminalTheme.current = savedTerminalTheme
+		statusManagementModeRef.current = saved.statusManagementMode ?? 'title-change'
 		terminalSessions.current?.setAppearance(terminalFontFamily.current, terminalFontSize.current, terminalTheme.current)
       setSettingsDialogOpen(false)
       closeTaskMenuItemEditor()
@@ -1182,7 +1190,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   const httpServiceEnabled = settingsDraft?.httpServiceEnabled ?? false
   const httpServiceActive = statusManagementMode === 'http' || httpServiceEnabled
 	const statusManagementDescription = statusManagementMode === 'output-change'
-		? '任意非空终端输出会在 1.5 秒内显示为工作中，未选中的终端静默后显示为未读。'
+		? '终端画面实际变化会在 1.5 秒内显示为工作中，未选中的终端静默后显示为未读。'
 		: statusManagementMode === 'http'
 			? '状态由 HTTP 接口更新；终端输出不会自动改变状态。'
 			: '终端标题变化会在 1.5 秒内显示为工作中，未选中的终端随后显示为未读。'

@@ -1,6 +1,33 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 
+type TerminalCellOverrides = Partial<{
+  chars: string
+  width: number
+  foregroundColor: number
+  foregroundColorMode: number
+  backgroundColor: number
+  backgroundColorMode: number
+  bold: number
+  dim: number
+  italic: number
+  underline: number
+  blink: number
+  inverse: number
+  invisible: number
+  strikethrough: number
+  overline: number
+}>
+
 const terminalInstances = vi.hoisted(() => [] as Array<{
+  buffer: {
+    active: {
+      cursorX: number
+      cursorY: number
+      getLine: ReturnType<typeof vi.fn>
+      type: 'normal' | 'alternate'
+      viewportY: number
+    }
+  }
   cols: number
   rows: number
   attachCustomKeyEventHandler: ReturnType<typeof vi.fn>
@@ -13,16 +40,61 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   onDataDisposable: {dispose: ReturnType<typeof vi.fn>}
   onSelectionChange: ReturnType<typeof vi.fn>
   onSelectionDisposable: {dispose: ReturnType<typeof vi.fn>}
+	onScroll: ReturnType<typeof vi.fn>
+	onScrollDisposable: {dispose: ReturnType<typeof vi.fn>}
+  onWriteParsed: ReturnType<typeof vi.fn>
+  onWriteParsedDisposable: {dispose: ReturnType<typeof vi.fn>}
   open: ReturnType<typeof vi.fn>
   paste: ReturnType<typeof vi.fn>
   options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
   refresh: ReturnType<typeof vi.fn>
   triggerSelectionChange(): void
 	triggerData(data: string): void
+	triggerScroll(viewportY: number): void
+  triggerWriteParsed(): void
   write: ReturnType<typeof vi.fn>
+  setCell(row: number, column: number, cell: TerminalCellOverrides): void
 }>)
 const fitAddonInstances = vi.hoisted(() => [] as Array<{fit: ReturnType<typeof vi.fn>}>)
 const runtime = vi.hoisted(() => ({ClipboardSetText: vi.fn()}))
+
+function terminalCell(overrides: TerminalCellOverrides = {}) {
+  const cell = {
+    chars: '',
+    width: 1,
+    foregroundColor: 0,
+    foregroundColorMode: 0,
+    backgroundColor: 0,
+    backgroundColorMode: 0,
+    bold: 0,
+    dim: 0,
+    italic: 0,
+    underline: 0,
+    blink: 0,
+    inverse: 0,
+    invisible: 0,
+    strikethrough: 0,
+    overline: 0,
+    ...overrides,
+  }
+  return {
+    getChars: () => cell.chars,
+    getWidth: () => cell.width,
+    getFgColor: () => cell.foregroundColor,
+    getFgColorMode: () => cell.foregroundColorMode,
+    getBgColor: () => cell.backgroundColor,
+    getBgColorMode: () => cell.backgroundColorMode,
+    isBold: () => cell.bold,
+    isDim: () => cell.dim,
+    isItalic: () => cell.italic,
+    isUnderline: () => cell.underline,
+    isBlink: () => cell.blink,
+    isInverse: () => cell.inverse,
+    isInvisible: () => cell.invisible,
+    isStrikethrough: () => cell.strikethrough,
+    isOverline: () => cell.overline,
+  }
+}
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
@@ -48,6 +120,20 @@ vi.mock('@xterm/xterm', () => ({
       this.onSelectionDisposable = {dispose: vi.fn()}
       return this.onSelectionDisposable
     })
+		onScrollDisposable = {dispose: vi.fn()}
+		scrollListener: ((viewportY: number) => void) | undefined
+		onScroll = vi.fn((listener: (viewportY: number) => void) => {
+			this.scrollListener = listener
+			this.onScrollDisposable = {dispose: vi.fn()}
+			return this.onScrollDisposable
+		})
+    onWriteParsedDisposable = {dispose: vi.fn()}
+    writeParsedListener: (() => void) | undefined
+    onWriteParsed = vi.fn((listener: () => void) => {
+      this.writeParsedListener = listener
+      this.onWriteParsedDisposable = {dispose: vi.fn()}
+      return this.onWriteParsedDisposable
+    })
     open = vi.fn((container: HTMLElement) => {
       this.element = document.createElement('div')
       container.append(this.element)
@@ -56,14 +142,39 @@ vi.mock('@xterm/xterm', () => ({
     options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
     refresh = vi.fn()
     write = vi.fn()
+    lines = Array.from({length: 30}, () => Array.from({length: 100}, () => terminalCell()))
+    buffer = {
+      active: {
+        cursorX: 0,
+        cursorY: 0,
+        getLine: vi.fn((row: number) => ({
+          getCell: (column: number) => this.lines[row]?.[column],
+        })),
+        type: 'normal' as const,
+        viewportY: 0,
+      },
+    }
 
     triggerSelectionChange() {
       this.selectionChangeListener?.()
     }
 
-		triggerData(data: string) {
-			this.dataListener?.(data)
+	triggerData(data: string) {
+		this.dataListener?.(data)
+	}
+
+		triggerScroll(viewportY: number) {
+			this.buffer.active.viewportY = viewportY
+			this.scrollListener?.(viewportY)
 		}
+
+    triggerWriteParsed() {
+      this.writeParsedListener?.()
+    }
+
+    setCell(row: number, column: number, overrides: TerminalCellOverrides) {
+      this.lines[row][column] = terminalCell(overrides)
+    }
 
     constructor(options: {scrollback?: number, theme?: unknown}) {
       this.options = options
@@ -181,6 +292,105 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].options.scrollback).toBe(1000)
     expect(terminalInstances[0].write).toHaveBeenCalledWith('first output chunk')
+  })
+
+  it('仅在解析后的终端画面内容或颜色变化时上报活动', () => {
+    const onVisualActivity = vi.fn()
+    const registry = new (TerminalSessionRegistry as unknown as new (
+      onWrite: (taskID: string, terminalID: string, data: string) => void,
+      terminalFontFamily?: () => string,
+      terminalFontSize?: () => number,
+      terminalTheme?: () => unknown,
+      onVisualActivity?: (taskID: string, terminalID: string) => void,
+    ) => TerminalSessionRegistry)(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'pending parse'})
+    const session = terminalInstances[0]
+
+    session.setCell(0, 0, {chars: 'A'})
+    session.triggerWriteParsed()
+    expect(onVisualActivity).toHaveBeenCalledWith('task-1', 'terminal-1')
+
+    onVisualActivity.mockClear()
+    session.triggerWriteParsed()
+    expect(onVisualActivity).not.toHaveBeenCalled()
+
+    session.setCell(0, 0, {chars: 'A', foregroundColorMode: 1, foregroundColor: 2})
+    session.triggerWriteParsed()
+    expect(onVisualActivity).toHaveBeenCalledWith('task-1', 'terminal-1')
+
+    onVisualActivity.mockClear()
+    session.setCell(0, 0, {chars: ' '})
+    session.triggerWriteParsed()
+    expect(onVisualActivity).toHaveBeenCalledWith('task-1', 'terminal-1')
+  })
+
+  it('将空白单元格变化视为活动，但忽略仅有光标或后续样式的变化', () => {
+    const onVisualActivity = vi.fn()
+    const registry = new (TerminalSessionRegistry as unknown as new (
+      onWrite: (taskID: string, terminalID: string, data: string) => void,
+      terminalFontFamily?: () => string,
+      terminalFontSize?: () => number,
+      terminalTheme?: () => unknown,
+      onVisualActivity?: (taskID: string, terminalID: string) => void,
+    ) => TerminalSessionRegistry)(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'pending parse'})
+    const session = terminalInstances[0]
+
+    session.buffer.active.cursorX = 12
+    session.buffer.active.cursorY = 8
+    session.triggerWriteParsed()
+    session.triggerWriteParsed()
+    expect(onVisualActivity).not.toHaveBeenCalled()
+
+    session.setCell(0, 0, {chars: ' ', backgroundColorMode: 1, backgroundColor: 4})
+    session.triggerWriteParsed()
+    expect(onVisualActivity).toHaveBeenCalledWith('task-1', 'terminal-1')
+  })
+
+	it('用户滚动可见历史后重建基线，不把后续无画面变化的输出视为活动', () => {
+		const onVisualActivity = vi.fn()
+		const registry = new TerminalSessionRegistry(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+
+		registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'initial'})
+		terminalInstances[0].setCell(1, 0, {chars: '滚'})
+		terminalInstances[0].triggerScroll(1)
+		terminalInstances[0].triggerWriteParsed()
+
+		expect(onVisualActivity).not.toHaveBeenCalled()
+	})
+
+  it('在重新适配或更新外观时重置画面基线并在释放时清理解析监听', () => {
+    const onVisualActivity = vi.fn()
+    const registry = new (TerminalSessionRegistry as unknown as new (
+      onWrite: (taskID: string, terminalID: string, data: string) => void,
+      terminalFontFamily?: () => string,
+      terminalFontSize?: () => number,
+      terminalTheme?: () => unknown,
+      onVisualActivity?: (taskID: string, terminalID: string) => void,
+    ) => TerminalSessionRegistry)(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'pending parse'})
+    const session = terminalInstances[0]
+
+    session.setCell(0, 0, {chars: 'A'})
+    registry.fitAndRefresh('task-1', 'terminal-1', vi.fn())
+    session.triggerWriteParsed()
+    expect(onVisualActivity).not.toHaveBeenCalled()
+
+    session.setCell(0, 0, {chars: 'B'})
+    registry.setFontSize(16)
+    session.triggerWriteParsed()
+    expect(onVisualActivity).not.toHaveBeenCalled()
+
+    session.setCell(0, 0, {chars: 'C'})
+    registry.setAppearance('Fira Code', 16, terminalVisualTheme())
+    session.triggerWriteParsed()
+    expect(onVisualActivity).not.toHaveBeenCalled()
+
+    registry.dispose('task-1', 'terminal-1')
+    expect(session.onWriteParsedDisposable.dispose).toHaveBeenCalledOnce()
   })
 
   it('将多行文本作为模拟粘贴写入指定活动会话，不追加执行字符', () => {
@@ -315,6 +525,18 @@ describe('TerminalSessionRegistry', () => {
     registry.dispose(snapshot.taskId, snapshot.id)
     expect(terminalInstances[0].dispose).toHaveBeenCalledOnce()
   })
+
+	it('异常退出写入内部快照提示时不报告画面活动', () => {
+		const onVisualActivity = vi.fn()
+		const registry = new TerminalSessionRegistry(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+
+		registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'failure output'})
+		terminalInstances[0].setCell(0, 0, {chars: '终'})
+		registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited', exitReason: 'unexpected', exitCode: 1})
+		terminalInstances[0].triggerWriteParsed()
+
+		expect(onVisualActivity).not.toHaveBeenCalled()
+	})
 
   it('无输出的异常终端也保留无光标的退出提示快照', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
