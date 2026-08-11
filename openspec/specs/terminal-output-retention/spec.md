@@ -1,11 +1,11 @@
 # terminal-output-retention Specification
 
 ## Purpose
-TBD - created by archiving change improve-terminal-switch-performance. Update Purpose after archive.
+定义终端输出在前端会话中的有界保留、UTF-8 字符完整性，以及活动终端和异常退出快照的生命周期管理。
 ## Requirements
 ### Requirement: 活动终端的输出状态有界保留
 
-系统 SHALL 为每个活动终端维护独立的前端 xterm 会话，并将该会话的滚屏上限设置为 1000 行。终端输出事件 MUST 以增量方式写入对应会话；系统 MUST NOT 在 React 终端元数据中无上限累积原始输出文本。
+系统 SHALL 为每个活动终端维护独立的前端 xterm 会话，并将该会话的滚屏上限设置为 1000 行。异常退出的终端 MUST 将现有 xterm 会话冻结为只读快照，并保留同一 1000 行滚屏上限；快照末尾 MUST 单独追加一行 `终端已退出`，并隐藏终端光标。终端输出事件 MUST 以增量方式写入对应会话；系统 MUST NOT 在 React 终端元数据中无上限累积原始输出文本。
 
 #### Scenario: 后台终端产生超过 1000 行输出
 - **WHEN** 未被选中的活动终端产生超过 1000 行的输出
@@ -14,6 +14,10 @@ TBD - created by archiving change improve-terminal-switch-performance. Update Pu
 #### Scenario: 含 ANSI 控制序列的后台输出首次显示
 - **WHEN** 活动终端在未显示期间收到带 ANSI 样式、光标控制或备用屏幕状态的输出，随后被用户选择
 - **THEN** 系统显示该会话已解析的 xterm 状态，而不是截断并回放原始文本
+
+#### Scenario: 异常退出后查看输出快照
+- **WHEN** 一个终端以异常状态退出，且用户随后选择该终端
+- **THEN** 系统显示退出前已解析的 xterm 输出与 ANSI 状态，最多保留最近 1000 行，并在末尾以独立行显示 `终端已退出` 且不显示光标；系统不通过 React 状态重放原始输出
 
 ### Requirement: 增量终端输出保持 UTF-8 字符完整性
 
@@ -37,11 +41,19 @@ TBD - created by archiving change improve-terminal-switch-performance. Update Pu
 
 ### Requirement: 终端会话按生命周期释放
 
-系统 MUST 在终端关闭或退出、所属任务结束以及前端应用卸载时释放对应终端会话、xterm 附加组件和事件监听器。已释放会话 MUST NOT 接受晚到的输出或尺寸更新。
+系统 MUST 在终端正常结束或受控关闭、用户关闭异常快照、所属任务结束以及前端应用卸载时释放对应终端会话、xterm 附加组件和事件监听器。异常退出的终端 MUST 在退出后保留其会话作为只读快照；该快照 MUST NOT 接受用户输入、粘贴、快捷键、文件拖放或后端尺寸更新，且不得接受晚到的输出。
 
-#### Scenario: 关闭单个终端
-- **WHEN** 用户关闭一个活动终端或该终端进程退出
+#### Scenario: 正常结束单个终端
+- **WHEN** 终端进程以正常退出码结束，或用户关闭一个活动终端
 - **THEN** 系统释放该终端的会话，并且之后同一终端 ID 的晚到输出不会重新创建或更新该会话
+
+#### Scenario: 异常退出单个终端
+- **WHEN** 终端进程以异常状态退出
+- **THEN** 系统保留其只读会话供用户查看输出，且用户输入、粘贴、快捷键、文件拖放与尺寸更新均不会发送到后端
+
+#### Scenario: 关闭异常终端快照
+- **WHEN** 用户关闭已异常退出终端的快照
+- **THEN** 系统释放该终端的会话、xterm 附加组件和事件监听器，且之后同一终端 ID 的晚到输出不会重新创建或更新该会话
 
 #### Scenario: 结束任务
 - **WHEN** 用户结束一个包含多个终端的任务
