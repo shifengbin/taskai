@@ -135,13 +135,13 @@ describe('api.lifecyclePresets', () => {
 	})
 })
 
-describe('api.deleteCompletedTasks', () => {
-	const deleteCompletedTasks = vi.fn()
+describe('api.deleteTasks', () => {
+	const deleteTasks = vi.fn()
 
 	beforeEach(() => {
 		vi.clearAllMocks()
-		deleteCompletedTasks.mockResolvedValue([])
-		Object.assign(window, {go: {main: {App: {DeleteCompletedTasks: deleteCompletedTasks}}}})
+		deleteTasks.mockResolvedValue([])
+		Object.assign(window, {go: {main: {App: {DeleteTasks: deleteTasks}}}})
 	})
 
 	afterEach(() => {
@@ -149,11 +149,11 @@ describe('api.deleteCompletedTasks', () => {
 	})
 
 	it('转发全部待删除任务 ID', async () => {
-		const deleteTasks = (api as typeof api & {deleteCompletedTasks?: (taskIDs: string[]) => Promise<unknown>}).deleteCompletedTasks
+		const deleteTaskRecords = (api as typeof api & {deleteTasks?: (taskIDs: string[]) => Promise<unknown>}).deleteTasks
 
-		expect(deleteTasks).toEqual(expect.any(Function))
-		await deleteTasks?.(['completed-1', 'completed-2'])
+		expect(deleteTaskRecords).toEqual(expect.any(Function))
+		await deleteTaskRecords?.(['pending-1', 'completed-1'])
 
-		expect(deleteCompletedTasks).toHaveBeenCalledWith(['completed-1', 'completed-2'])
+		expect(deleteTasks).toHaveBeenCalledWith(['pending-1', 'completed-1'])
 	})
 })

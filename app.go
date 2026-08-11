@@ -189,11 +189,11 @@ func (app *App) ListTasks() ([]task.Task, error) {
 	return app.tasks.ListTasks()
 }
 
-func (app *App) DeleteCompletedTasks(taskIDs []string) ([]task.Task, error) {
+func (app *App) DeleteTasks(taskIDs []string) ([]task.Task, error) {
 	unlock := app.lockLifecycleTasks(taskIDs)
 	defer unlock()
 
-	remaining, err := app.tasks.DeleteCompletedTasks(taskIDs)
+	remaining, err := app.tasks.DeleteTasks(taskIDs)
 	if err != nil {
 		return nil, err
 	}

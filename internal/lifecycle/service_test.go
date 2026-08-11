@@ -690,7 +690,7 @@ func TestServiceRejectsInvalidTaskOrder(t *testing.T) {
 	}
 }
 
-func TestServiceDeletesCompletedTaskRecords(t *testing.T) {
+func TestServiceDeletesPendingAndCompletedTaskRecords(t *testing.T) {
 	service, repository, _ := newService(t)
 	first, err := service.CreateTask("第一个已完成任务", "", task.DefaultColor)
 	if err != nil {
@@ -717,37 +717,56 @@ func TestServiceDeletesCompletedTaskRecords(t *testing.T) {
 	if _, err := service.FinishTask(second.ID); err != nil {
 		t.Fatalf("FinishTask(second) error = %v", err)
 	}
-	pending, err := service.CreateTask("保留的未执行任务", "", task.DefaultColor)
+	pending, err := service.CreateTask("待删除的未执行任务", "", task.DefaultColor)
 	if err != nil {
 		t.Fatalf("CreateTask(pending) error = %v", err)
 	}
+	pendingWorkspacePath := filepath.Join(t.TempDir(), "retained-pending-workspace")
+	if err := os.MkdirAll(pendingWorkspacePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll(pending workspace) error = %v", err)
+	}
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	for index := range data.Tasks {
+		if data.Tasks[index].ID == pending.ID {
+			data.Tasks[index].WorkspacePath = pendingWorkspacePath
+		}
+	}
+	if err := repository.SaveTaskSnapshot(data.Tasks); err != nil {
+		t.Fatalf("SaveTaskSnapshot() error = %v", err)
+	}
 
 	deleter, ok := any(service).(interface {
-		DeleteCompletedTasks(taskIDs []string) ([]task.Task, error)
+		DeleteTasks(taskIDs []string) ([]task.Task, error)
 	})
 	if !ok {
-		t.Fatal("Service 缺少 DeleteCompletedTasks()")
+		t.Fatal("Service 缺少 DeleteTasks()")
 	}
-	remaining, err := deleter.DeleteCompletedTasks([]string{first.ID, second.ID})
+	remaining, err := deleter.DeleteTasks([]string{first.ID, pending.ID})
 	if err != nil {
-		t.Fatalf("DeleteCompletedTasks() error = %v", err)
+		t.Fatalf("DeleteTasks() error = %v", err)
 	}
-	if got, want := taskIDs(remaining), []string{pending.ID}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("DeleteCompletedTasks() tasks = %#v, want %#v", got, want)
+	if got, want := taskIDs(remaining), []string{second.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("DeleteTasks() tasks = %#v, want %#v", got, want)
 	}
 	persisted, err := repository.Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got, want := taskIDs(persisted.Tasks), []string{pending.ID}; !reflect.DeepEqual(got, want) {
+	if got, want := taskIDs(persisted.Tasks), []string{second.ID}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("persisted tasks = %#v, want %#v", got, want)
 	}
 	if _, err := os.Stat(first.WorkspacePath); err != nil {
-		t.Fatalf("DeleteCompletedTasks() removed workspace: %v", err)
+		t.Fatalf("DeleteTasks() removed completed workspace: %v", err)
+	}
+	if _, err := os.Stat(pendingWorkspacePath); err != nil {
+		t.Fatalf("DeleteTasks() removed pending workspace: %v", err)
 	}
 }
 
-func TestServiceRejectsInvalidCompletedTaskDeletionAtomically(t *testing.T) {
+func TestServiceRejectsInvalidTaskDeletionAtomically(t *testing.T) {
 	service, repository, _ := newService(t)
 	completed, err := service.CreateTask("可删除任务", "", task.DefaultColor)
 	if err != nil {
@@ -760,9 +779,13 @@ func TestServiceRejectsInvalidCompletedTaskDeletionAtomically(t *testing.T) {
 	if _, err := service.FinishTask(completed.ID); err != nil {
 		t.Fatalf("FinishTask(completed) error = %v", err)
 	}
-	pending, err := service.CreateTask("未执行任务", "", task.DefaultColor)
+	running, err := service.CreateTask("执行中任务", "", task.DefaultColor)
 	if err != nil {
-		t.Fatalf("CreateTask(pending) error = %v", err)
+		t.Fatalf("CreateTask(running) error = %v", err)
+	}
+	running, err = service.StartTask(running.ID)
+	if err != nil {
+		t.Fatalf("StartTask(running) error = %v", err)
 	}
 	locked, err := service.CreateTask("待重试清理任务", "", task.DefaultColor)
 	if err != nil {
@@ -799,10 +822,10 @@ func TestServiceRejectsInvalidCompletedTaskDeletionAtomically(t *testing.T) {
 	}
 
 	deleter, ok := any(service).(interface {
-		DeleteCompletedTasks(taskIDs []string) ([]task.Task, error)
+		DeleteTasks(taskIDs []string) ([]task.Task, error)
 	})
 	if !ok {
-		t.Fatal("Service 缺少 DeleteCompletedTasks()")
+		t.Fatal("Service 缺少 DeleteTasks()")
 	}
 	for _, testCase := range []struct {
 		name    string
@@ -810,7 +833,7 @@ func TestServiceRejectsInvalidCompletedTaskDeletionAtomically(t *testing.T) {
 	}{
 		{name: "empty", taskIDs: nil},
 		{name: "duplicate", taskIDs: []string{completed.ID, completed.ID}},
-		{name: "pending", taskIDs: []string{completed.ID, pending.ID}},
+		{name: "running", taskIDs: []string{completed.ID, running.ID}},
 		{name: "locked", taskIDs: []string{completed.ID, locked.ID}},
 		{name: "missing", taskIDs: []string{completed.ID, "missing-task"}},
 	} {
@@ -819,15 +842,15 @@ func TestServiceRejectsInvalidCompletedTaskDeletionAtomically(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load(before) error = %v", err)
 			}
-			if _, err := deleter.DeleteCompletedTasks(testCase.taskIDs); err == nil {
-				t.Fatal("DeleteCompletedTasks() error = nil")
+			if _, err := deleter.DeleteTasks(testCase.taskIDs); err == nil {
+				t.Fatal("DeleteTasks() error = nil")
 			}
 			after, err := repository.Load()
 			if err != nil {
 				t.Fatalf("Load(after) error = %v", err)
 			}
 			if !reflect.DeepEqual(after.Tasks, before.Tasks) {
-				t.Fatalf("DeleteCompletedTasks() changed tasks after invalid request: %#v", after.Tasks)
+				t.Fatalf("DeleteTasks() changed tasks after invalid request: %#v", after.Tasks)
 			}
 		})
 	}

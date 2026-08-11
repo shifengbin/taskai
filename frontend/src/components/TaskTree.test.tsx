@@ -1534,17 +1534,17 @@ describe('TaskTree', () => {
     }
   })
 
-  it('在已完成选择模式中仅允许勾选无生命周期执行记录的任务', async () => {
+  it('在未执行选择模式中仅允许勾选无生命周期执行记录的任务', async () => {
     const user = userEvent.setup()
-    const selectableTask: TaskRecord = {...runningTask, id: 'completed-1', title: '可删除任务', status: 'completed'}
+    const selectableTask: TaskRecord = {...runningTask, id: 'pending-1', title: '可删除任务', status: 'pending'}
     const lockedTask: TaskRecord = {
       ...runningTask,
-      id: 'completed-2',
-      title: '待重试清理任务',
-      status: 'completed',
-      lifecycleExecution: {hook: 'postEnd', chainId: 'cleanup', currentIndex: 1, commandCount: 1, state: 'failed'},
+      id: 'pending-2',
+      title: '待重试开始任务',
+      status: 'pending',
+      lifecycleExecution: {hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed'},
     }
-    const onToggleCompletedTaskSelection = vi.fn()
+    const onToggleTaskDeletion = vi.fn()
     render(
       <TaskTree
         tasks={[selectableTask, lockedTask]}
@@ -1557,21 +1557,23 @@ describe('TaskTree', () => {
         onOpenTaskFolder={vi.fn()}
         onStartTask={vi.fn()}
         onFinishTask={vi.fn()}
-        activeStatus="completed"
+        activeStatus="pending"
         onChangeStatus={vi.fn()}
-        completedTaskSelectionMode
-        selectedCompletedTaskIDs={['completed-1']}
-        onToggleCompletedTaskSelection={onToggleCompletedTaskSelection}
+        taskDeletionSelectionMode
+        selectedTaskIDs={['pending-1']}
+        onToggleTaskDeletion={onToggleTaskDeletion}
       />,
     )
 
     const selectableCheckbox = screen.getByRole('checkbox', {name: '选择任务 可删除任务'})
     expect(selectableCheckbox).toBeChecked()
     await user.click(selectableCheckbox)
-    expect(onToggleCompletedTaskSelection).toHaveBeenCalledWith('completed-1')
+    expect(onToggleTaskDeletion).toHaveBeenCalledWith('pending-1')
 
-    const lockedCheckbox = screen.getByRole('checkbox', {name: '选择任务 待重试清理任务'})
+    const lockedCheckbox = screen.getByRole('checkbox', {name: '选择任务 待重试开始任务'})
     expect(lockedCheckbox).toBeDisabled()
-    expect(onToggleCompletedTaskSelection).toHaveBeenCalledTimes(1)
+    expect(onToggleTaskDeletion).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', {name: '执行'})).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', {name: '重试命令链'})).not.toBeInTheDocument()
   })
 })

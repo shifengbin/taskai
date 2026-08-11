@@ -176,9 +176,9 @@ export default function App() {
 	const [quickInputDraft, setQuickInputDraft] = useState<QuickInput>()
 	const [quickInputDeletion, setQuickInputDeletion] = useState<QuickInput>()
   const [finishTask, setFinishTask] = useState<TaskRecord>()
-	const [completedTaskSelectionMode, setCompletedTaskSelectionMode] = useState(false)
-	const [selectedCompletedTaskIDs, setSelectedCompletedTaskIDs] = useState<string[]>([])
-	const [completedTaskDeletionOpen, setCompletedTaskDeletionOpen] = useState(false)
+	const [taskDeletionSelectionMode, setTaskDeletionSelectionMode] = useState(false)
+	const [selectedTaskIDs, setSelectedTaskIDs] = useState<string[]>([])
+	const [taskDeletionOpen, setTaskDeletionOpen] = useState(false)
   const [quitDialogOpen, setQuitDialogOpen] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftDescription, setDraftDescription] = useState('')
@@ -408,19 +408,21 @@ export default function App() {
 		&& Object.keys(task.templateFields ?? {}).length > 0,
 	), [tasks])
 	const areAllTasksExpanded = tasks.length > 0 && tasks.every((task) => expandedTasks[task.id] ?? true)
-	const deletableCompletedTaskIDs = useMemo(() => tasks
-		.filter((task) => task.status === 'completed' && !task.lifecycleExecution)
-		.map((task) => task.id), [tasks])
-	const deletableCompletedTaskIDSet = useMemo(() => new Set(deletableCompletedTaskIDs), [deletableCompletedTaskIDs])
-	const selectedDeletableCompletedTaskIDs = useMemo(() => selectedCompletedTaskIDs
-		.filter((taskID) => deletableCompletedTaskIDSet.has(taskID)), [deletableCompletedTaskIDSet, selectedCompletedTaskIDs])
+	const canSelectTasksForDeletion = activeTaskStatus === 'pending' || activeTaskStatus === 'completed'
+	const deletionStatusLabel = activeTaskStatus === 'pending' ? '未执行' : '已完成'
+	const deletableTaskIDs = useMemo(() => tasks
+		.filter((task) => canSelectTasksForDeletion && task.status === activeTaskStatus && !task.lifecycleExecution)
+		.map((task) => task.id), [activeTaskStatus, canSelectTasksForDeletion, tasks])
+	const deletableTaskIDSet = useMemo(() => new Set(deletableTaskIDs), [deletableTaskIDs])
+	const selectedDeletableTaskIDs = useMemo(() => selectedTaskIDs
+		.filter((taskID) => deletableTaskIDSet.has(taskID)), [deletableTaskIDSet, selectedTaskIDs])
 
 	useEffect(() => {
-		setSelectedCompletedTaskIDs((current) => {
-			const next = current.filter((taskID) => deletableCompletedTaskIDSet.has(taskID))
+		setSelectedTaskIDs((current) => {
+			const next = current.filter((taskID) => deletableTaskIDSet.has(taskID))
 			return next.length === current.length ? current : next
 		})
-	}, [deletableCompletedTaskIDSet])
+	}, [deletableTaskIDSet])
 
 	const copyLifecycleCommandInput = async (taskID: string) => {
 		const input = await api.getLifecycleCommandInput(taskID)
@@ -899,29 +901,29 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   }
 }
 
-	const exitCompletedTaskSelectionMode = () => {
-		setCompletedTaskSelectionMode(false)
-		setSelectedCompletedTaskIDs([])
-		setCompletedTaskDeletionOpen(false)
+	const exitTaskDeletionSelectionMode = () => {
+		setTaskDeletionSelectionMode(false)
+		setSelectedTaskIDs([])
+		setTaskDeletionOpen(false)
 	}
 
-	const toggleCompletedTaskSelection = (taskID: string) => {
-		if (!deletableCompletedTaskIDSet.has(taskID)) {
+	const toggleTaskDeletion = (taskID: string) => {
+		if (!deletableTaskIDSet.has(taskID)) {
 			return
 		}
-		setSelectedCompletedTaskIDs((current) => current.includes(taskID)
+		setSelectedTaskIDs((current) => current.includes(taskID)
 			? current.filter((currentTaskID) => currentTaskID !== taskID)
 			: [...current, taskID])
 	}
 
-	const confirmDeleteCompletedTasks = async () => {
-		if (selectedDeletableCompletedTaskIDs.length === 0) {
-			setCompletedTaskDeletionOpen(false)
+	const confirmDeleteTasks = async () => {
+		if (selectedDeletableTaskIDs.length === 0) {
+			setTaskDeletionOpen(false)
 			return
 		}
 		try {
-			const remainingTasks = await api.deleteCompletedTasks(selectedDeletableCompletedTaskIDs)
-			const deletedTaskIDSet = new Set(selectedDeletableCompletedTaskIDs)
+			const remainingTasks = await api.deleteTasks(selectedDeletableTaskIDs)
+			const deletedTaskIDSet = new Set(selectedDeletableTaskIDs)
 			setTasks(remainingTasks)
 				setTerminals((current) => current.filter((terminal) => !deletedTaskIDSet.has(terminal.taskId)))
 				setExpandedTasks((current) => Object.fromEntries(Object.entries(current).filter(([taskID]) => !deletedTaskIDSet.has(taskID))))
@@ -942,9 +944,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			} else if (selectedTerminalID && terminals.some((terminal) => terminal.id === selectedTerminalID && deletedTaskIDSet.has(terminal.taskId))) {
 				setSelectedTerminalID(undefined)
 			}
-			exitCompletedTaskSelectionMode()
+			exitTaskDeletionSelectionMode()
 		} catch (error) {
-			setCompletedTaskDeletionOpen(false)
+			setTaskDeletionOpen(false)
 			showError(error, setMessage)
 		}
 	}
@@ -970,8 +972,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
   const changeActiveTaskStatus = async (status: TaskStatus) => {
     const previousStatus = activeTaskStatus
-		if (status !== 'completed' && completedTaskSelectionMode) {
-			exitCompletedTaskSelectionMode()
+		if (taskDeletionSelectionMode && status !== activeTaskStatus) {
+			exitTaskDeletionSelectionMode()
 		}
     setActiveTaskStatus(status)
     if (!settings) {
@@ -1239,17 +1241,17 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <div className="taskai-sidebar-header flex h-[40px] items-center gap-2 border-b-2 border-snap-outline px-[10px]">
               <span className="font-display text-xs font-extrabold uppercase tracking-wide text-snap-muted">任务与终端</span>
               <span className="flex-1"/>
-              {activeTaskStatus === 'completed' && completedTaskSelectionMode ? <>
-						<span className="text-xs text-snap-muted tabular-nums whitespace-nowrap">已选 {selectedDeletableCompletedTaskIDs.length} 项</span>
-						<SnapIconButton title="全选可删除任务" aria-label="全选已完成任务" size="sm" disabled={deletableCompletedTaskIDs.length === 0} onClick={() => setSelectedCompletedTaskIDs(deletableCompletedTaskIDs)}>
+								{canSelectTasksForDeletion && taskDeletionSelectionMode ? <>
+						<span className="text-xs text-snap-muted tabular-nums whitespace-nowrap">已选 {selectedDeletableTaskIDs.length} 项</span>
+						<SnapIconButton title="全选可删除任务" aria-label={`全选${deletionStatusLabel}任务`} size="sm" disabled={deletableTaskIDs.length === 0} onClick={() => setSelectedTaskIDs(deletableTaskIDs)}>
 							<CheckCheck className="h-4 w-4" strokeWidth={2.25}/>
 						</SnapIconButton>
-						<SnapIconButton title="删除已选任务记录" aria-label="删除已选任务记录" size="sm" disabled={selectedDeletableCompletedTaskIDs.length === 0} onClick={() => setCompletedTaskDeletionOpen(true)} className="text-snap-error hover:text-snap-error">
+						<SnapIconButton title="删除已选任务记录" aria-label="删除已选任务记录" size="sm" disabled={selectedDeletableTaskIDs.length === 0} onClick={() => setTaskDeletionOpen(true)} className="text-snap-error hover:text-snap-error">
 							<Trash2 className="h-4 w-4" strokeWidth={2.25}/>
 						</SnapIconButton>
-						<SnapButton variant="ghost" size="sm" onClick={exitCompletedTaskSelectionMode}>取消</SnapButton>
+						<SnapButton variant="ghost" size="sm" onClick={exitTaskDeletionSelectionMode}>取消</SnapButton>
 					</> : <>
-						{activeTaskStatus === 'completed' && <SnapIconButton title="选择已完成任务" aria-label="选择已完成任务" size="sm" onClick={() => setCompletedTaskSelectionMode(true)}>
+						{canSelectTasksForDeletion && <SnapIconButton title={`选择${deletionStatusLabel}任务`} aria-label={`选择${deletionStatusLabel}任务`} size="sm" onClick={() => setTaskDeletionSelectionMode(true)}>
 							<CheckCheck className="h-4 w-4" strokeWidth={2.25}/>
 						</SnapIconButton>}
 						<SnapIconButton title={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'} aria-label={areAllTasksExpanded ? '收起全部任务' : '展开全部任务'} disabled={tasks.length === 0} onClick={toggleAllTasksExpanded} size="sm">
@@ -1266,14 +1268,14 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 terminals={terminals}
                 menuItems={taskMenuItems}
                 activeStatus={activeTaskStatus}
-				completedTaskSelectionMode={completedTaskSelectionMode}
-				selectedCompletedTaskIDs={selectedDeletableCompletedTaskIDs}
+					taskDeletionSelectionMode={taskDeletionSelectionMode}
+					selectedTaskIDs={selectedDeletableTaskIDs}
                 expandedTasks={expandedTasks}
                 selectedTaskID={selectedTaskID}
                 selectedTerminalId={selectedTerminalID}
                 startedTaskFeedback={startedTaskFeedback}
                 onChangeStatus={(status) => void changeActiveTaskStatus(status)}
-				onToggleCompletedTaskSelection={toggleCompletedTaskSelection}
+					onToggleTaskDeletion={toggleTaskDeletion}
                 onToggleTaskExpanded={toggleTaskExpanded}
                 onSelectTask={(task) => {
                   setSelectedTaskID(task.id)
@@ -2134,15 +2136,15 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         </SnapDialogContent>
       </SnapDialog>}
 
-			<SnapDialog open={completedTaskDeletionOpen} onOpenChange={(open) => { if (!open) setCompletedTaskDeletionOpen(false) }}>
+			<SnapDialog open={taskDeletionOpen} onOpenChange={(open) => { if (!open) setTaskDeletionOpen(false) }}>
 				<SnapDialogContent className="max-w-sm" showClose={false}>
-					<SnapDialogHeader><SnapDialogTitle>删除 {selectedDeletableCompletedTaskIDs.length} 个任务记录？</SnapDialogTitle></SnapDialogHeader>
+					<SnapDialogHeader><SnapDialogTitle>删除 {selectedDeletableTaskIDs.length} 个任务记录？</SnapDialogTitle></SnapDialogHeader>
 					<SnapDialogDescription>
 						此操作只会移除任务记录，不会删除工作目录或运行生命周期命令。此操作无法撤销。
 					</SnapDialogDescription>
 					<SnapDialogFooter>
-						<SnapButton variant="ghost" onClick={() => setCompletedTaskDeletionOpen(false)}>取消</SnapButton>
-						<SnapButton variant="danger" onClick={() => void confirmDeleteCompletedTasks()}>删除记录</SnapButton>
+						<SnapButton variant="ghost" onClick={() => setTaskDeletionOpen(false)}>取消</SnapButton>
+						<SnapButton variant="danger" onClick={() => void confirmDeleteTasks()}>删除记录</SnapButton>
 					</SnapDialogFooter>
 				</SnapDialogContent>
 			</SnapDialog>

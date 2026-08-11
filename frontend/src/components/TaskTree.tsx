@@ -68,14 +68,14 @@ interface TaskTreeProps {
   terminals: TerminalRecord[]
   menuItems?: TaskMenuItem[]
 	activeStatus: TaskStatus
-	completedTaskSelectionMode?: boolean
-	selectedCompletedTaskIDs?: string[]
+	taskDeletionSelectionMode?: boolean
+	selectedTaskIDs?: string[]
 	expandedTasks?: Record<string, boolean>
   selectedTaskID?: string
   selectedTerminalId?: string
   startedTaskFeedback?: TaskStartFeedback
 	onChangeStatus(status: TaskStatus): void
-	onToggleCompletedTaskSelection?(taskID: string): void
+	onToggleTaskDeletion?(taskID: string): void
   onToggleTaskExpanded?(taskID: string): void
   onSelectTask(task: TaskRecord): void
   onSelectTerminal(terminal: TerminalRecord): void
@@ -96,14 +96,14 @@ export function TaskTree({
   terminals,
 	menuItems = defaultTaskMenuItems,
 	activeStatus,
-	completedTaskSelectionMode = false,
-	selectedCompletedTaskIDs = [],
+	taskDeletionSelectionMode = false,
+	selectedTaskIDs = [],
   expandedTasks,
   selectedTaskID,
   selectedTerminalId,
   startedTaskFeedback,
 	onChangeStatus,
-	onToggleCompletedTaskSelection,
+	onToggleTaskDeletion,
 	onToggleTaskExpanded,
   onSelectTask,
   onSelectTerminal,
@@ -153,7 +153,7 @@ export function TaskTree({
   const taskMenuTask = taskMenu ? tasks.find((task) => task.id === taskMenu.taskID) : undefined
   const draggedTask = draggedTaskID ? tasks.find((task) => task.id === draggedTaskID) : undefined
 	const expanded = expandedTasks ?? localExpandedTasks
-	const selectingCompletedTasks = activeStatus === 'completed' && completedTaskSelectionMode
+	const selectingTasksForDeletion = (activeStatus === 'pending' || activeStatus === 'completed') && taskDeletionSelectionMode
 
   useLayoutEffect(() => {
     if (activeStatus !== 'running' || !startedTaskFeedback) {
@@ -246,7 +246,7 @@ export function TaskTree({
   }
 
 	const beginTaskPointerDrag = (event: React.PointerEvent<HTMLElement>, taskID: string) => {
-		if (selectingCompletedTasks) {
+		if (selectingTasksForDeletion) {
 			return
 		}
 		const current = tasks.find((task) => task.id === taskID)
@@ -315,7 +315,7 @@ export function TaskTree({
 
 	const requestContextMenu = (event: React.MouseEvent, task: TaskRecord) => {
 		event.preventDefault()
-		if (selectingCompletedTasks) {
+		if (selectingTasksForDeletion) {
 			return
 		}
 		if (task.lifecycleExecution) {
@@ -415,9 +415,9 @@ export function TaskTree({
           const dropPosition = dropTarget?.taskID === task.id ? dropTarget.position : undefined
 				const execution = task.lifecycleExecution
 					const locked = Boolean(execution)
-					const canSelectCompletedTask = selectingCompletedTasks && !locked && Boolean(onToggleCompletedTaskSelection)
-					const isCompletedTaskSelected = canSelectCompletedTask && selectedCompletedTaskIDs.includes(task.id)
-					const isTaskRowSelected = selectingCompletedTasks ? isCompletedTaskSelected : isSelectedTask
+					const canSelectTaskForDeletion = selectingTasksForDeletion && !locked && Boolean(onToggleTaskDeletion)
+					const isTaskSelectedForDeletion = canSelectTaskForDeletion && selectedTaskIDs.includes(task.id)
+					const isTaskRowSelected = selectingTasksForDeletion ? isTaskSelectedForDeletion : isSelectedTask
 				const executionLabel = execution ? `${lifecycleHookLabel(execution.hook)} · ${execution.currentCommandName || '命令'} ${execution.currentIndex}/${execution.commandCount}` : ''
 				const isShelvedTask = activeStatus === 'running' && Boolean(task.shelved)
 				const isFirstShelvedTask = task.id === firstShelvedTaskID
@@ -462,16 +462,16 @@ export function TaskTree({
                     event.preventDefault()
                     return
                   }
-							if (selectingCompletedTasks) {
-								if (canSelectCompletedTask) {
-									onToggleCompletedTaskSelection?.(task.id)
+							if (selectingTasksForDeletion) {
+								if (canSelectTaskForDeletion) {
+									onToggleTaskDeletion?.(task.id)
 								}
 								return
 							}
 							onSelectTask(task)
                   }}
                   onDoubleClick={(event) => {
-                    if (selectingCompletedTasks) {
+					if (selectingTasksForDeletion) {
                       return
                     }
                     if ((event.target as HTMLElement).closest('button')) {
@@ -488,17 +488,17 @@ export function TaskTree({
                     opacity: draggedTaskID === task.id ? 0.5 : 1,
                     outline: draggedTaskID === task.id ? '2px solid var(--snap-cobalt)' : '2px solid transparent',
                     outlineOffset: -2,
-                    cursor: selectingCompletedTasks ? (canSelectCompletedTask ? 'pointer' : 'not-allowed') : locked ? 'not-allowed' : 'grab',
+					cursor: selectingTasksForDeletion ? (canSelectTaskForDeletion ? 'pointer' : 'not-allowed') : locked ? 'not-allowed' : 'grab',
                   } as CSSProperties}
                 >
-						{selectingCompletedTasks && (
+						{selectingTasksForDeletion && (
 							<Checkbox
-								checked={isCompletedTaskSelected}
-								disabled={!canSelectCompletedTask}
+								checked={isTaskSelectedForDeletion}
+								disabled={!canSelectTaskForDeletion}
 								aria-label={`选择任务 ${task.title}`}
 								className="mr-1"
 								onClick={(event) => event.stopPropagation()}
-								onCheckedChange={() => onToggleCompletedTaskSelection?.(task.id)}
+								onCheckedChange={() => onToggleTaskDeletion?.(task.id)}
 							/>
 						)}
 						{task.status === 'running' && (
@@ -532,7 +532,7 @@ export function TaskTree({
                 </span>
 						)}
                 {task.status === 'running' && !isExpanded && <TerminalStatusDot status={task.realtimeStatus ?? 'idle'}/>}
-						{(task.status === 'pending' || task.status === 'running' || (execution?.state === 'failed' && onRetryLifecycle) || !selectingCompletedTasks) && (
+						{!selectingTasksForDeletion && (
 						  <div className="taskai-contextual-actions flex shrink-0 items-center gap-1.5" data-testid={`task-row-trailing-actions-${task.id}`}>
 						    {task.status === 'pending' && (
 						      <IconButton
@@ -575,7 +575,7 @@ export function TaskTree({
 						        <RotateCcw className="h-4 w-4"/>
 						      </IconButton>
 						    )}
-						    {!selectingCompletedTasks && (
+							    {!selectingTasksForDeletion && (
 						      <IconButton
 						        aria-label="任务操作"
 						        title="任务操作"
