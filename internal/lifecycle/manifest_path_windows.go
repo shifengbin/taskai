@@ -185,7 +185,8 @@ func writeManifestWindowsContentsAt(directoryFD windows.Handle, name string, con
 }
 
 func validateManifestWindowsTarget(directoryFD windows.Handle, name string) error {
-	targetFD, err := createManifestWindowsObject(directoryFD, name, windows.FILE_READ_ATTRIBUTES, windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, false)
+	// FILE_SYNCHRONOUS_IO_NONALERT 要求 DesiredAccess 包含 SYNCHRONIZE，否则 NtCreateFile 在参数校验阶段即返回 STATUS_INVALID_PARAMETER。
+	targetFD, err := createManifestWindowsObject(directoryFD, name, windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, windows.FILE_OPEN, windows.FILE_NON_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT, false)
 	if isWindowsObjectNotFound(err) {
 		return nil
 	}
