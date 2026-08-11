@@ -115,9 +115,9 @@ func (service *Service) GetTask(taskID string) (task.Task, error) {
 	return data.Tasks[index], nil
 }
 
-func (service *Service) DeleteCompletedTasks(taskIDs []string) ([]task.Task, error) {
+func (service *Service) DeleteTasks(taskIDs []string) ([]task.Task, error) {
 	if len(taskIDs) == 0 {
-		return nil, fmt.Errorf("至少选择一个已完成任务")
+		return nil, fmt.Errorf("至少选择一个可删除任务")
 	}
 
 	service.lifecycleExecutionMu.Lock()
@@ -138,8 +138,8 @@ func (service *Service) DeleteCompletedTasks(taskIDs []string) ([]task.Task, err
 			return nil, err
 		}
 		current := data.Tasks[index]
-		if current.Status != task.StatusCompleted {
-			return nil, fmt.Errorf("仅已完成任务可以删除")
+		if current.Status != task.StatusPending && current.Status != task.StatusCompleted {
+			return nil, fmt.Errorf("仅未执行或已完成任务可以删除")
 		}
 		if current.LifecycleExecution != nil {
 			return nil, fmt.Errorf("任务正在执行或等待重试命令链，暂不能删除")

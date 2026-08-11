@@ -29,8 +29,6 @@ export function CreateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(arg1:str
 
 export function CreateTerminal(arg1:string,arg2:number,arg3:number):Promise<terminal.Info>;
 
-export function DeleteCompletedTasks(arg1:Array<string>):Promise<Array<task.Task>>;
-
 export function DeleteExtraInfo(arg1:string):Promise<void>;
 
 export function DeleteExtraInfoCatalogue(arg1:string):Promise<void>;
@@ -44,6 +42,8 @@ export function DeleteLifecycleCommandChain(arg1:string):Promise<void>;
 export function DeleteLifecyclePreset(arg1:string):Promise<void>;
 
 export function DeleteQuickInput(arg1:string):Promise<void>;
+
+export function DeleteTasks(arg1:Array<string>):Promise<Array<task.Task>>;
 
 export function DetectShells():Promise<Array<string>>;
 

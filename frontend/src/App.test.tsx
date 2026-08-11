@@ -16,7 +16,7 @@ const bindings = vi.hoisted(() => ({
 	UpdateTaskWithExtraInfoAndTemplateFields: vi.fn(),
 	UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains: vi.fn(),
   ListTasks: vi.fn(),
-	DeleteCompletedTasks: vi.fn(),
+	DeleteTasks: vi.fn(),
 	ListExtraInfoCatalogues: vi.fn(),
 	ListExtraInfoTemplates: vi.fn(),
 	ListExtraInfos: vi.fn(),
@@ -143,7 +143,7 @@ describe('App confirmation flows', () => {
 		bindings.CopyLifecyclePreset.mockResolvedValue(undefined)
 		bindings.DeleteLifecyclePreset.mockResolvedValue(undefined)
 		bindings.SaveDefaultLifecyclePreset.mockResolvedValue({defaultLifecyclePresetId: ''})
-		bindings.DeleteCompletedTasks.mockResolvedValue([])
+		bindings.DeleteTasks.mockResolvedValue([])
     bindings.ListTasks.mockResolvedValue([{
       id: 'task-1', title: '清理临时文件', description: '', status: 'running', createdAt: '2026-07-22T00:00:00Z',
     }])
@@ -276,46 +276,68 @@ describe('App confirmation flows', () => {
 		expect(event.defaultPrevented).toBe(true)
 	})
 
-	it('已完成任务仅选择可删除记录，并在确认后批量删除', async () => {
+	it('未执行任务仅选择可删除记录，并在确认后批量删除', async () => {
 		const user = userEvent.setup()
 		const lockedTask: TaskRecord = {
-			id: 'completed-locked', title: '正在清理的任务', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z',
-			lifecycleExecution: {hook: 'postEnd', chainId: 'cleanup', currentIndex: 1, commandCount: 1, state: 'failed'},
+			id: 'pending-locked', title: '等待重试的任务', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
+			lifecycleExecution: {hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed'},
 		}
 		bindings.ListTasks.mockResolvedValue([
-			{id: 'completed-1', title: '已交付任务', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z'},
-			{id: 'completed-2', title: '已归档任务', description: '', status: 'completed', createdAt: '2026-07-21T00:00:00Z'},
+			{id: 'pending-1', title: '待执行任务', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z'},
+			{id: 'pending-2', title: '待整理任务', description: '', status: 'pending', createdAt: '2026-07-21T00:00:00Z'},
 			lockedTask,
 		])
 		bindings.GetSettings.mockResolvedValue({
-			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems, activeTaskStatus: 'completed',
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems, activeTaskStatus: 'pending',
 		})
-		bindings.DeleteCompletedTasks.mockResolvedValue([lockedTask])
+		bindings.DeleteTasks.mockResolvedValue([lockedTask])
 		render(<App/>)
 
-		await screen.findByText('已交付任务')
-		await user.click(screen.getByText('已交付任务'))
-		expect(screen.getByRole('heading', {name: '已交付任务'})).toBeInTheDocument()
-		await user.click(screen.getByRole('button', {name: '选择已完成任务'}))
-		expect(screen.getByRole('checkbox', {name: '选择任务 正在清理的任务'})).toBeDisabled()
-		await user.click(screen.getByRole('button', {name: '全选已完成任务'}))
-		expect(screen.getByRole('checkbox', {name: '选择任务 已交付任务'})).toBeChecked()
-		expect(screen.getByRole('checkbox', {name: '选择任务 已归档任务'})).toBeChecked()
+		await screen.findByText('待执行任务')
+		await user.click(screen.getByText('待执行任务'))
+		expect(screen.getByRole('heading', {name: '待执行任务'})).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '选择未执行任务'}))
+		expect(screen.getByRole('checkbox', {name: '选择任务 等待重试的任务'})).toBeDisabled()
+		await user.click(screen.getByRole('button', {name: '全选未执行任务'}))
+		expect(screen.getByRole('checkbox', {name: '选择任务 待执行任务'})).toBeChecked()
+		expect(screen.getByRole('checkbox', {name: '选择任务 待整理任务'})).toBeChecked()
 
 		await user.click(screen.getByRole('button', {name: '删除已选任务记录'}))
 		expect(screen.getByText('删除 2 个任务记录？')).toBeInTheDocument()
 		expect(screen.getByText('此操作只会移除任务记录，不会删除工作目录或运行生命周期命令。此操作无法撤销。')).toBeInTheDocument()
 		await user.click(screen.getByRole('button', {name: '取消'}))
-		expect(bindings.DeleteCompletedTasks).not.toHaveBeenCalled()
+		expect(bindings.DeleteTasks).not.toHaveBeenCalled()
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
 		await user.click(screen.getByRole('button', {name: '删除已选任务记录'}))
 		await user.click(screen.getByRole('button', {name: '删除记录'}))
-		await waitFor(() => expect(bindings.DeleteCompletedTasks).toHaveBeenCalledWith(['completed-1', 'completed-2']))
-		await waitFor(() => expect(screen.queryByText('已交付任务')).not.toBeInTheDocument())
-		expect(screen.getByText('正在清理的任务')).toBeInTheDocument()
+		await waitFor(() => expect(bindings.DeleteTasks).toHaveBeenCalledWith(['pending-1', 'pending-2']))
+		await waitFor(() => expect(screen.queryByText('待执行任务')).not.toBeInTheDocument())
+		expect(screen.getByText('等待重试的任务')).toBeInTheDocument()
 		expect(screen.queryByText('已选 2 项')).not.toBeInTheDocument()
 		expect(screen.getByText('从左侧选择任务，或创建一个新任务开始。')).toBeInTheDocument()
+	})
+
+	it('已完成任务可以全选并在确认后批量删除', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([
+			{id: 'completed-1', title: '已归档任务', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z'},
+		])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems, activeTaskStatus: 'completed',
+		})
+		bindings.DeleteTasks.mockResolvedValue([])
+		render(<App/>)
+
+		await screen.findByText('已归档任务')
+		await user.click(screen.getByRole('button', {name: '选择已完成任务'}))
+		await user.click(screen.getByRole('button', {name: '全选已完成任务'}))
+		await user.click(screen.getByRole('button', {name: '删除已选任务记录'}))
+		await user.click(screen.getByRole('button', {name: '删除记录'}))
+
+		await waitFor(() => expect(bindings.DeleteTasks).toHaveBeenCalledWith(['completed-1']))
+		await waitFor(() => expect(screen.queryByText('已归档任务')).not.toBeInTheDocument())
+		expect(screen.queryByText('已选 1 项')).not.toBeInTheDocument()
 	})
 
 	it('批量删除失败时保留已选任务并展示错误', async () => {
@@ -326,7 +348,7 @@ describe('App confirmation flows', () => {
 		bindings.GetSettings.mockResolvedValue({
 			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems, activeTaskStatus: 'completed',
 		})
-		bindings.DeleteCompletedTasks.mockRejectedValue(new Error('任务记录无法删除'))
+		bindings.DeleteTasks.mockRejectedValue(new Error('任务记录无法删除'))
 		render(<App/>)
 
 		await screen.findByText('保留选择任务')

@@ -193,7 +193,7 @@ func TestAppRegistersRunningTaskAndClearsRealtimeStatusWhenFinished(t *testing.T
 	}
 }
 
-func TestAppDeletesCompletedTasksAndClearsRealtimeStatus(t *testing.T) {
+func TestAppDeletesPendingTasksAndClearsRealtimeStatus(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	created, err := app.CreateTask("待删除记录", "", task.DefaultColor)
 	if err != nil {
@@ -207,27 +207,24 @@ func TestAppDeletesCompletedTasksAndClearsRealtimeStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	completedAt := time.Now()
-	data.Tasks[0].Status = task.StatusCompleted
-	data.Tasks[0].CompletedAt = &completedAt
 	data.Tasks[0].WorkspacePath = workspacePath
 	if err := app.repository.Save(data); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	app.realtime.RegisterTask(created.ID)
 
-	remaining, err := app.DeleteCompletedTasks([]string{created.ID})
+	remaining, err := app.DeleteTasks([]string{created.ID})
 	if err != nil {
-		t.Fatalf("DeleteCompletedTasks() error = %v", err)
+		t.Fatalf("DeleteTasks() error = %v", err)
 	}
 	if len(remaining) != 0 {
-		t.Fatalf("DeleteCompletedTasks() tasks = %#v, want empty", remaining)
+		t.Fatalf("DeleteTasks() tasks = %#v, want empty", remaining)
 	}
 	if got := app.realtime.Snapshot(); len(got.Tasks) != 0 {
-		t.Fatalf("DeleteCompletedTasks() realtime status = %#v", got)
+		t.Fatalf("DeleteTasks() realtime status = %#v", got)
 	}
 	if _, err := os.Stat(workspacePath); err != nil {
-		t.Fatalf("DeleteCompletedTasks() removed workspace: %v", err)
+		t.Fatalf("DeleteTasks() removed workspace: %v", err)
 	}
 }
 
