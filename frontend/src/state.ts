@@ -107,9 +107,24 @@ export function applyTerminalEvent(terminals: TerminalRecord[], event: TerminalE
       return title !== undefined ? {...terminal, title} : terminal
     }
     if (event.type === 'exited') {
-      return {...terminal, state: 'exited'}
+      const {alias: _alias, ...withoutAlias} = terminal
+      return {...withoutAlias, state: 'exited'}
     }
     return terminal
+  })
+}
+
+export function updateTerminalAlias(terminals: TerminalRecord[], taskID: string, terminalID: string, alias: string | undefined): TerminalRecord[] {
+  const normalizedAlias = alias?.trim()
+  return terminals.map((terminal) => {
+    if (terminal.taskId !== taskID || terminal.id !== terminalID) {
+      return terminal
+    }
+    if (normalizedAlias) {
+      return {...terminal, alias: normalizedAlias}
+    }
+    const {alias: _alias, ...withoutAlias} = terminal
+    return withoutAlias
   })
 }
 

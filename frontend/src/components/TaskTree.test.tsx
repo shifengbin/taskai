@@ -79,6 +79,34 @@ describe('TaskTree', () => {
     expect(terminalActions).not.toContainElement(within(terminalItem).getByRole('status', {name: '终端状态：空闲'}))
   })
 
+  it('双击终端名称后将规范化别名交给父级', () => {
+    const onAliasChange = vi.fn()
+    const namedTerminal = {...terminal, title: 'zsh'}
+    render(
+      <TaskTree
+        tasks={[runningTask]}
+        terminals={[namedTerminal]}
+        selectedTerminalId={undefined}
+        onSelectTask={vi.fn()}
+        onSelectTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onEditTask={vi.fn()}
+        onOpenTaskFolder={vi.fn()}
+        onStartTask={vi.fn()}
+        onFinishTask={vi.fn()}
+        activeStatus="running"
+        onChangeStatus={vi.fn()}
+        onAliasChange={onAliasChange}
+      />,
+    )
+
+    fireEvent.doubleClick(screen.getByTestId('task-tree-terminal-title-terminal-1'))
+    fireEvent.change(screen.getByRole('textbox', {name: '终端别名'}), {target: {value: ' 前端调试 '}})
+    fireEvent.keyDown(screen.getByRole('textbox', {name: '终端别名'}), {key: 'Enter'})
+
+    expect(onAliasChange).toHaveBeenCalledWith(namedTerminal, '前端调试')
+  })
+
   it('打开任务操作菜单时标记所属任务的操作区域为活动', async () => {
     const user = userEvent.setup()
     render(

@@ -178,12 +178,24 @@ export interface TerminalRecord {
   state: TerminalState
   disableTaskAIMouseClipboard?: boolean
   title?: string
+  alias?: string
   command?: string
   realtimeStatus?: RealtimeStatus
 }
 
-export function terminalDisplayName(terminal: Pick<TerminalRecord, 'title'>): string {
+export function terminalActualName(terminal: Pick<TerminalRecord, 'title'>): string {
   return terminal.title?.trim() || '终端'
+}
+
+export function terminalDisplayName(terminal: Pick<TerminalRecord, 'title' | 'alias'>): string {
+  return terminal.alias?.trim() || terminalActualName(terminal)
+}
+
+export function terminalAliasDetails(terminal: Pick<TerminalRecord, 'title' | 'command'>): {actualName: string, command: string} {
+  return {
+    actualName: terminalActualName(terminal),
+    command: terminal.command?.trim() || '未提供启动命令',
+  }
 }
 
 export interface TerminalEvent {

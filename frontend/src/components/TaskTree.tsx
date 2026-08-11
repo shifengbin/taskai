@@ -17,7 +17,8 @@ import {
 	X,
 } from 'lucide-react'
 
-import {defaultTaskColor, defaultTaskMenuItems, terminalDisplayName, terminalRealtimeStatus, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
+import {defaultTaskColor, defaultTaskMenuItems, terminalRealtimeStatus, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
+import {TerminalName} from './TerminalName'
 import {TerminalStatusDot} from './TerminalStatusDot'
 import {Checkbox, IconButton, Tabs, TabsList, TabsTrigger, cn} from './ui'
 
@@ -88,6 +89,7 @@ interface TaskTreeProps {
   onRetryLifecycle?(taskID: string): void
   onSetTaskShelved?(taskID: string, shelved: boolean): void
   onCloseTerminal?(terminal: TerminalRecord): void
+  onAliasChange?(terminal: TerminalRecord, alias: string | undefined): void
   onReorderTasks?(taskID: string, targetTaskID: string, position: TaskDropPosition): void
 }
 
@@ -116,6 +118,7 @@ export function TaskTree({
   onRetryLifecycle,
   onSetTaskShelved,
   onCloseTerminal,
+  onAliasChange,
   onReorderTasks,
 }: TaskTreeProps) {
   const [localExpandedTasks, setLocalExpandedTasks] = useState<Record<string, boolean>>({})
@@ -614,13 +617,12 @@ export function TaskTree({
                       >
                         <Terminal className={cn('h-4 w-4 shrink-0', terminal.state === 'active' ? 'text-snap-cobalt' : 'text-snap-muted')}/>
                         <div style={{flex: 1, minWidth: 0}}>
-                          <span
-                            data-testid={`task-tree-terminal-title-${terminal.id}`}
-                            style={{whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip'}}
+                          <TerminalName
+                            terminal={terminal}
+                            onAliasChange={(alias) => onAliasChange?.(terminal, alias)}
+                            testId={`task-tree-terminal-title-${terminal.id}`}
                             className="block"
-                          >
-                            {terminalDisplayName(terminal)}
-                          </span>
+                          />
                         </div>
                         <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>
 						{onCloseTerminal && (

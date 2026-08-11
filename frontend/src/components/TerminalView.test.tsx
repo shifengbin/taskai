@@ -240,6 +240,26 @@ describe('TerminalView', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法插入快捷输入'}))
   })
 
+  it('双击标题后将规范化别名交给父级', () => {
+    const onAliasChange = vi.fn()
+    const namedTerminal = {...terminal, title: 'zsh'}
+    render(
+      <TerminalView
+        terminal={namedTerminal}
+        sessionRegistry={new TerminalSessionRegistry(vi.fn())}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+        onAliasChange={onAliasChange}
+      />,
+    )
+
+    fireEvent.doubleClick(screen.getByTestId('terminal-view-title'))
+    fireEvent.change(screen.getByRole('textbox', {name: '终端别名'}), {target: {value: ' 前端调试 '}})
+    fireEvent.keyDown(screen.getByRole('textbox', {name: '终端别名'}), {key: 'Enter'})
+
+    expect(onAliasChange).toHaveBeenCalledWith('前端调试')
+  })
+
   it('将已配置的 Shift+Enter 作为一次有序输入写入终端', () => {
     const onWrite = vi.fn()
     render(

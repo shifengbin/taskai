@@ -92,8 +92,9 @@ vi.mock('./terminal-session', () => ({
 vi.mock('./components/TerminalView', async () => {
   const {terminalDisplayName} = await vi.importActual<typeof import('./types')>('./types')
   return {
-    TerminalView: ({terminal}: {terminal: {title?: string}}) => <>
+    TerminalView: ({terminal, onAliasChange}: {terminal: {title?: string, alias?: string}, onAliasChange?: (alias: string | undefined) => void}) => <>
       <div>终端视图</div>
+      <button type="button" onClick={() => onAliasChange?.('前端调试')}>设置右侧终端别名</button>
       <div data-testid="terminal-view-title-container">
         <div data-testid="terminal-view-title" aria-label="右侧终端标题">{terminalDisplayName(terminal)}</div>
       </div>
@@ -2681,6 +2682,20 @@ describe('App confirmation flows', () => {
     const startedTask = within(screen.getByRole('navigation', {name: '任务和终端'})).getByText('清理临时文件').closest('[data-task-id]')
     expect(startedTask).toHaveAttribute('data-task-start-feedback', 'flash')
     expect(startedTask).not.toHaveTextContent('开始前')
+  })
+
+  it('右侧终端设置别名后同步更新任务树和标题栏', async () => {
+    const user = userEvent.setup()
+    bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active', title: 'zsh', command: 'zsh'})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await screen.findByText('终端视图')
+    await user.click(screen.getByRole('button', {name: '设置右侧终端别名'}))
+
+    await waitFor(() => expect(screen.getAllByText('前端调试')).toHaveLength(2))
   })
 
   it('终端退出后不再显示右侧终端视图', async () => {

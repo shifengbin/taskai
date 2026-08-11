@@ -12,6 +12,7 @@ import {
 	registerTerminal,
 	shouldReportTerminalTitleActivity,
   terminalEventKey,
+	updateTerminalAlias,
 } from './state'
 import {clampTaskTreeWidth, type TaskRecord, type TerminalRecord} from './types'
 
@@ -110,6 +111,20 @@ describe('终端状态路由', () => {
     ])
   })
 
+  it('实时标题更新保留别名，但终端退出后清除别名', () => {
+    const terminals: TerminalRecord[] = [
+      {id: 'one', taskId: 'task-a', state: 'active', title: '初始标题', alias: '前端调试'},
+    ]
+
+    const afterTitle = applyTerminalEvent(terminals, {
+      taskId: 'task-a', terminalId: 'one', type: 'output', data: '新增输出',
+    }, '实时标题')
+    const afterExit = applyTerminalEvent(afterTitle, {taskId: 'task-a', terminalId: 'one', type: 'exited'})
+
+    expect(afterTitle[0]).toMatchObject({title: '实时标题', alias: '前端调试'})
+    expect(afterExit[0]).toEqual({id: 'one', taskId: 'task-a', state: 'exited', title: '实时标题'})
+  })
+
   it('将实时状态事件投影到对应任务和终端，并移除主动关闭终端', () => {
     const tasks: TaskRecord[] = [{
       id: 'task-a', title: '任务 A', description: '', status: 'running', createdAt: '2026-07-27T00:00:00Z',
@@ -142,6 +157,23 @@ describe('终端状态路由', () => {
 
     expect(shouldReportTerminalTitleActivity(terminal, '旧标题')).toBe(false)
     expect(shouldReportTerminalTitleActivity(terminal, '新标题')).toBe(true)
+  })
+
+  it('更新别名不会改写实际标题或实时状态', () => {
+    const terminals: TerminalRecord[] = [
+      {id: 'terminal-a', taskId: 'task-a', state: 'active', title: '实际标题', realtimeStatus: 'idle'},
+      {id: 'terminal-b', taskId: 'task-a', state: 'active', title: '其他标题', realtimeStatus: 'working'},
+    ]
+
+    const renamed = updateTerminalAlias(terminals, 'task-a', 'terminal-a', ' 前端调试 ')
+
+    expect(renamed).toEqual([
+      {id: 'terminal-a', taskId: 'task-a', state: 'active', title: '实际标题', alias: '前端调试', realtimeStatus: 'idle'},
+      terminals[1],
+    ])
+    expect(shouldReportTerminalTitleActivity(renamed[0], '实际标题')).toBe(false)
+    expect(shouldReportTerminalTitleActivity(renamed[0], '新实际标题')).toBe(true)
+    expect(updateTerminalAlias(renamed, 'task-a', 'terminal-a', '  ')[0]).not.toHaveProperty('alias')
   })
 
   it('终端退出后清理其未完成标题的解析状态', () => {
