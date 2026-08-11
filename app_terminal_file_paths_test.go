@@ -72,7 +72,10 @@ func (session *filePathTerminalSession) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 func (session *filePathTerminalSession) Resize(uint16, uint16) error { return nil }
-func (session *filePathTerminalSession) Wait() error                 { return nil }
+func (session *filePathTerminalSession) Wait() (terminal.ExitResult, error) {
+	exitCode := 0
+	return terminal.ExitResult{ExitCode: &exitCode}, nil
+}
 func (session *filePathTerminalSession) Close() error {
 	session.closeOnce.Do(func() {
 		_ = session.writer.Close()

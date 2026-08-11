@@ -77,7 +77,18 @@ func (session *unixSession) Resize(columns, rows uint16) error {
 	return pty.Setsize(session.file, &pty.Winsize{Cols: columns, Rows: rows})
 }
 
-func (session *unixSession) Wait() error { return session.cmd.Wait() }
+func (session *unixSession) Wait() (ExitResult, error) {
+	waitErr := session.cmd.Wait()
+	if session.cmd.ProcessState == nil {
+		return ExitResult{}, waitErr
+	}
+	exitResult := exitResultFromCode(session.cmd.ProcessState.ExitCode())
+	var exitError *exec.ExitError
+	if errors.As(waitErr, &exitError) {
+		return exitResult, nil
+	}
+	return exitResult, waitErr
+}
 
 func (session *unixSession) Close() error {
 	var closeError error

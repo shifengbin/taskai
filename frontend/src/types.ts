@@ -2,6 +2,7 @@ import type {TerminalTheme} from './terminal-theme'
 
 export type TaskStatus = 'pending' | 'running' | 'completed'
 export type TerminalState = 'active' | 'exited'
+export type TerminalExitReason = 'normal' | 'unexpected' | 'closed' | 'task-ended' | 'application-shutdown'
 export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
 export type StatusManagementMode = 'title-change' | 'output-change' | 'http'
 export type ColorScheme = 'light' | 'dark'
@@ -203,6 +204,8 @@ export interface TerminalEvent {
   terminalId: string
   type: 'output' | 'exited' | 'error'
   data?: string
+  exitCode?: number
+  exitReason?: TerminalExitReason
 }
 
 export interface RealtimeStatusEvent {

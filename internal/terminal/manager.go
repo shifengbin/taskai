@@ -317,7 +317,7 @@ func (manager *Manager) taskSessionsLocked(taskID string) []*managedSession {
 
 func (manager *Manager) watch(managed *managedSession) {
 	defer func() {
-		_ = managed.session.Wait()
+		exitResult, waitErr := managed.session.Wait()
 		manager.mu.Lock()
 		if byID := manager.sessions[managed.info.TaskID]; byID != nil {
 			delete(byID, managed.info.ID)
@@ -329,7 +329,7 @@ func (manager *Manager) watch(managed *managedSession) {
 			manager.closed[managed.info.TaskID] = make(map[string]bool)
 		}
 		manager.closed[managed.info.TaskID][managed.info.ID] = true
-		exitReason := manager.exitReasonLocked(managed.info.TaskID, managed.info.ID)
+		exitReason := manager.exitReasonLocked(managed.info.TaskID, managed.info.ID, exitResult, waitErr)
 		manager.clearExitReasonLocked(managed.info.TaskID, managed.info.ID, exitReason)
 		callbacks := manager.exitCallbacks[managed.info.TaskID][managed.info.ID]
 		delete(manager.exitCallbacks[managed.info.TaskID], managed.info.ID)
@@ -337,7 +337,7 @@ func (manager *Manager) watch(managed *managedSession) {
 			delete(manager.exitCallbacks, managed.info.TaskID)
 		}
 		manager.mu.Unlock()
-		manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "exited", ExitReason: exitReason})
+		manager.publish(Event{TaskID: managed.info.TaskID, TerminalID: managed.info.ID, Type: "exited", ExitCode: exitResult.ExitCode, ExitReason: exitReason})
 		for _, callback := range callbacks {
 			go callback()
 		}
@@ -407,12 +407,15 @@ func (manager *Manager) setExitReasonLocked(taskID, terminalID string, reason Ex
 	manager.exitReasons[taskID][terminalID] = reason
 }
 
-func (manager *Manager) exitReasonLocked(taskID, terminalID string) ExitReason {
+func (manager *Manager) exitReasonLocked(taskID, terminalID string, exitResult ExitResult, waitErr error) ExitReason {
 	reason := manager.exitReasons[taskID][terminalID]
-	if reason == "" {
-		return ExitReasonUnexpected
+	if reason != "" {
+		return reason
 	}
-	return reason
+	if waitErr == nil && exitResult.ExitCode != nil && *exitResult.ExitCode == 0 {
+		return ExitReasonNormal
+	}
+	return ExitReasonUnexpected
 }
 
 func (manager *Manager) clearExitReason(taskID, terminalID string, reason ExitReason) {

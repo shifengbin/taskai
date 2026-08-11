@@ -396,7 +396,7 @@ export default function App() {
   }, [colorScheme])
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskID)
-	const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID && terminal.state === 'active')
+  const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID)
 	const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
 	const activeTaskTemplate = settings?.taskTemplates?.find((template) => template.id === settings.activeTaskTemplateId)
 	const lifecyclePresets = settings?.lifecyclePresets ?? []
@@ -849,6 +849,10 @@ export default function App() {
       return false
     }
     const merged = mergePendingTerminalEvents(pendingTerminalEvents.current, terminal)
+		if (!merged) {
+			terminalTitleValues.current.delete(terminalEventKey(terminal.taskId, terminal.id))
+			return false
+		}
     registerTerminal(registeredTerminalKeys.current, merged)
     terminalTitleValues.current.set(terminalEventKey(merged.taskId, merged.id), merged.title ?? '')
     setTerminals((current) => [...current, merged])

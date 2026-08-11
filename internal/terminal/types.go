@@ -30,7 +30,18 @@ type Session interface {
 	io.ReadWriteCloser
 	ID() string
 	Resize(columns, rows uint16) error
-	Wait() error
+	Wait() (ExitResult, error)
+}
+
+type ExitResult struct {
+	ExitCode *int
+}
+
+func exitResultFromCode(exitCode int) ExitResult {
+	if exitCode < 0 {
+		return ExitResult{}
+	}
+	return ExitResult{ExitCode: &exitCode}
 }
 
 type Backend interface {
@@ -49,6 +60,7 @@ type Event struct {
 type ExitReason string
 
 const (
+	ExitReasonNormal              ExitReason = "normal"
 	ExitReasonUnexpected          ExitReason = "unexpected"
 	ExitReasonClosed              ExitReason = "closed"
 	ExitReasonTaskEnded           ExitReason = "task-ended"

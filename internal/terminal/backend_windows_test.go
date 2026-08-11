@@ -23,9 +23,10 @@ func TestWindowsBackendStartsCommandProcessorInRequestedDirectory(t *testing.T) 
 	}
 	defer session.Close()
 	type result struct {
-		output  []byte
-		readErr error
-		waitErr error
+		output     []byte
+		readErr    error
+		exitResult ExitResult
+		waitErr    error
 	}
 	completed := make(chan result, 1)
 	go func() {
@@ -34,7 +35,8 @@ func TestWindowsBackendStartsCommandProcessorInRequestedDirectory(t *testing.T) 
 			return
 		}
 		output, readErr := io.ReadAll(session)
-		completed <- result{output: output, readErr: readErr, waitErr: session.Wait()}
+		exitResult, waitErr := session.Wait()
+		completed <- result{output: output, readErr: readErr, exitResult: exitResult, waitErr: waitErr}
 	}()
 	var completedResult result
 	select {
@@ -48,6 +50,9 @@ func TestWindowsBackendStartsCommandProcessorInRequestedDirectory(t *testing.T) 
 	}
 	if completedResult.waitErr != nil {
 		t.Fatalf("等待 cmd 退出: %v", completedResult.waitErr)
+	}
+	if completedResult.exitResult.ExitCode == nil || *completedResult.exitResult.ExitCode != 0 {
+		t.Fatalf("cmd 退出码 = %v，期望 0", completedResult.exitResult.ExitCode)
 	}
 	if !strings.Contains(strings.ToLower(string(completedResult.output)), strings.ToLower(filepath.Base(directory))) {
 		t.Fatalf("ConPTY 启动目录错误，输出: %q", completedResult.output)

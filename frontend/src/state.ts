@@ -9,6 +9,7 @@ export interface PendingTerminalEvent {
   title?: string
   state?: TerminalRecord['state']
   realtimeStatus?: TerminalRecord['realtimeStatus']
+  removed?: boolean
 }
 
 export interface RealtimeStatusUpdate {
@@ -99,6 +100,9 @@ export function shouldReportTerminalTitleActivity(terminal: Pick<TerminalRecord,
 }
 
 export function applyTerminalEvent(terminals: TerminalRecord[], event: TerminalEvent, title?: string): TerminalRecord[] {
+	if (event.type === 'exited' && terminalExitRemovesRecord(event.exitReason)) {
+		return terminals.filter((terminal) => terminal.id !== event.terminalId || terminal.taskId !== event.taskId)
+	}
   return terminals.map((terminal) => {
     if (terminal.id !== event.terminalId || terminal.taskId !== event.taskId) {
       return terminal
@@ -112,6 +116,10 @@ export function applyTerminalEvent(terminals: TerminalRecord[], event: TerminalE
     }
     return terminal
   })
+}
+
+function terminalExitRemovesRecord(exitReason: TerminalEvent['exitReason']): boolean {
+	return exitReason === 'normal' || exitReason === 'closed' || exitReason === 'task-ended' || exitReason === 'application-shutdown'
 }
 
 export function updateTerminalAlias(terminals: TerminalRecord[], taskID: string, terminalID: string, alias: string | undefined): TerminalRecord[] {
@@ -166,8 +174,12 @@ export function bufferPendingTerminalEvent(
     }
     return
   }
-  if (event.type === 'exited') {
-    pendingEvents.set(key, {...current, state: 'exited'})
+	if (event.type === 'exited') {
+		if (terminalExitRemovesRecord(event.exitReason)) {
+			pendingEvents.set(key, {...current, removed: true})
+			return
+		}
+		pendingEvents.set(key, {...current, state: 'exited'})
   }
 }
 
@@ -175,11 +187,18 @@ export function bufferPendingRealtimeStatusEvent(
   pendingEvents: Map<string, PendingTerminalEvent>,
   event: RealtimeStatusEvent,
 ): void {
-  if (!event.terminalId || !event.terminalStatus || event.terminalRemoved) {
-    return
-  }
-  const key = terminalEventKey(event.taskId, event.terminalId)
-  const current = pendingEvents.get(key)
+	if (!event.terminalId) {
+		return
+	}
+	const key = terminalEventKey(event.taskId, event.terminalId)
+	const current = pendingEvents.get(key)
+	if (event.terminalRemoved) {
+		pendingEvents.set(key, {...current, removed: true})
+		return
+	}
+	if (!event.terminalStatus) {
+		return
+	}
   pendingEvents.set(key, {
     ...current,
     realtimeStatus: event.terminalStatus,
@@ -187,13 +206,16 @@ export function bufferPendingRealtimeStatusEvent(
 }
 
 export function mergePendingTerminalEvents(
-  pendingEvents: Map<string, PendingTerminalEvent>,
-  terminal: TerminalRecord,
-): TerminalRecord {
+	pendingEvents: Map<string, PendingTerminalEvent>,
+	terminal: TerminalRecord,
+): TerminalRecord | undefined {
   const key = terminalEventKey(terminal.taskId, terminal.id)
-  const pending = pendingEvents.get(key)
-  pendingEvents.delete(key)
-  return {
+	const pending = pendingEvents.get(key)
+	pendingEvents.delete(key)
+	if (pending?.removed) {
+		return undefined
+	}
+	return {
     ...terminal,
     ...(pending?.title !== undefined ? {title: pending.title} : {}),
     ...(pending?.state !== undefined ? {state: pending.state} : {}),

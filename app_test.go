@@ -1811,6 +1811,12 @@ func TestAppSetsRunningTaskShelved(t *testing.T) {
 
 func TestAppMapsTerminalExitReasonsToRealtimeStatus(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	app.realtime.RegisterTerminal("task-1", "terminal-normal")
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-normal", Type: "exited", ExitReason: terminal.ExitReasonNormal})
+	if got := app.realtime.TerminalPresence("task-1", "terminal-normal"); got != realtime.TerminalRemoved {
+		t.Fatalf("正常退出终端状态记录 = %q，期望 %q", got, realtime.TerminalRemoved)
+	}
+
 	app.realtime.RegisterTerminal("task-1", "terminal-1")
 	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "exited", ExitReason: terminal.ExitReasonUnexpected})
 	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusError {
@@ -1825,7 +1831,7 @@ func TestAppMapsTerminalExitReasonsToRealtimeStatus(t *testing.T) {
 
 func TestAppCloseTerminalClearsRealtimeErrorForExitedTerminal(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
-	app.terminals = terminal.NewManager(&capturingTerminalBackend{}, app.publishTerminalEvent)
+	app.terminals = terminal.NewManager(exitedTerminalBackend{exitResult: terminal.ExitResult{ExitCode: intPointer(1)}}, app.publishTerminalEvent)
 
 	created, err := app.CreateTask("关闭异常终端", "", task.DefaultColor)
 	if err != nil {
@@ -1851,7 +1857,7 @@ func TestAppCloseTerminalClearsRealtimeErrorForExitedTerminal(t *testing.T) {
 
 func TestAppCloseTerminalKeepsRemainingRealtimeStatus(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
-	app.terminals = terminal.NewManager(&capturingTerminalBackend{}, app.publishTerminalEvent)
+	app.terminals = terminal.NewManager(exitedTerminalBackend{exitResult: terminal.ExitResult{ExitCode: intPointer(1)}}, app.publishTerminalEvent)
 
 	created, err := app.CreateTask("保留其他终端状态", "", task.DefaultColor)
 	if err != nil {
@@ -1924,6 +1930,36 @@ func TestAppCloseTerminalRetainsRealtimeStatusWhenCloseFails(t *testing.T) {
 	}
 	if got := app.realtime.TerminalPresence(started.ID, createdTerminal.ID); got != realtime.TerminalActive {
 		t.Fatalf("关闭失败终端的状态记录 = %q，期望 %q", got, realtime.TerminalActive)
+	}
+}
+
+func TestAppClosingExitedUnexpectedTerminalRemovesRealtimeStatus(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	exited := make(chan struct{}, 1)
+	app.terminals = terminal.NewManager(exitedTerminalBackend{exitResult: terminal.ExitResult{ExitCode: intPointer(1)}}, func(event terminal.Event) {
+		app.publishTerminalEvent(event)
+		if event.Type == "exited" {
+			exited <- struct{}{}
+		}
+	})
+	created, err := app.terminals.Create("task-1", t.TempDir(), "/bin/sh", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	select {
+	case <-exited:
+	case <-time.After(time.Second):
+		t.Fatal("等待异常终端退出超时")
+	}
+	if got := app.realtime.TerminalStatus("task-1", created.ID); got != realtime.StatusError {
+		t.Fatalf("异常退出终端状态 = %q，期望 %q", got, realtime.StatusError)
+	}
+
+	if err := app.CloseTerminal("task-1", created.ID); err != nil {
+		t.Fatalf("关闭已退出异常终端: %v", err)
+	}
+	if got := app.realtime.TerminalPresence("task-1", created.ID); got != realtime.TerminalRemoved {
+		t.Fatalf("关闭后终端状态记录 = %q，期望 %q", got, realtime.TerminalRemoved)
 	}
 }
 
@@ -3501,9 +3537,36 @@ func (capturingTerminalSession) Read([]byte) (int, error)       { return 0, io.E
 func (capturingTerminalSession) Write(data []byte) (int, error) { return len(data), nil }
 func (capturingTerminalSession) Close() error                   { return nil }
 func (capturingTerminalSession) Resize(uint16, uint16) error    { return nil }
-func (capturingTerminalSession) Wait() error                    { return nil }
+func (capturingTerminalSession) Wait() (terminal.ExitResult, error) {
+	exitCode := 0
+	return terminal.ExitResult{ExitCode: &exitCode}, nil
+}
 
 type activeTerminalBackend struct{}
+
+type exitedTerminalBackend struct {
+	exitResult terminal.ExitResult
+}
+
+func (backend exitedTerminalBackend) Start(request terminal.StartRequest) (terminal.Session, error) {
+	return &exitedTerminalSession{id: request.ID, exitResult: backend.exitResult}, nil
+}
+
+type exitedTerminalSession struct {
+	id         string
+	exitResult terminal.ExitResult
+}
+
+func (session *exitedTerminalSession) ID() string            { return session.id }
+func (exitedTerminalSession) Read([]byte) (int, error)       { return 0, io.EOF }
+func (exitedTerminalSession) Write(data []byte) (int, error) { return len(data), nil }
+func (exitedTerminalSession) Resize(uint16, uint16) error    { return nil }
+func (session *exitedTerminalSession) Wait() (terminal.ExitResult, error) {
+	return session.exitResult, nil
+}
+func (exitedTerminalSession) Close() error { return nil }
+
+func intPointer(value int) *int { return &value }
 
 func (activeTerminalBackend) Start(request terminal.StartRequest) (terminal.Session, error) {
 	reader, writer := io.Pipe()
@@ -3522,7 +3585,10 @@ func (session *activeTerminalSession) Read(data []byte) (int, error) {
 }
 func (session *activeTerminalSession) Write(data []byte) (int, error) { return len(data), nil }
 func (session *activeTerminalSession) Resize(uint16, uint16) error    { return nil }
-func (session *activeTerminalSession) Wait() error                    { return nil }
+func (session *activeTerminalSession) Wait() (terminal.ExitResult, error) {
+	exitCode := 0
+	return terminal.ExitResult{ExitCode: &exitCode}, nil
+}
 func (session *activeTerminalSession) Close() error {
 	_ = session.writer.Close()
 	return session.reader.Close()
@@ -3558,8 +3624,11 @@ func (session *failingCloseTerminalSession) Read(data []byte) (int, error) {
 }
 func (session *failingCloseTerminalSession) Write(data []byte) (int, error) { return len(data), nil }
 func (session *failingCloseTerminalSession) Resize(uint16, uint16) error    { return nil }
-func (session *failingCloseTerminalSession) Wait() error                    { return nil }
-func (session *failingCloseTerminalSession) Close() error                   { return errors.New("关闭终端失败") }
+func (session *failingCloseTerminalSession) Wait() (terminal.ExitResult, error) {
+	exitCode := 0
+	return terminal.ExitResult{ExitCode: &exitCode}, nil
+}
+func (session *failingCloseTerminalSession) Close() error { return errors.New("关闭终端失败") }
 
 func availableLoopbackPort(t *testing.T) int {
 	t.Helper()

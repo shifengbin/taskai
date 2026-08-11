@@ -29,11 +29,41 @@ func TestUnixBackendStartsShellInRequestedDirectory(t *testing.T) {
 	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
 		t.Fatalf("读取 PTY 输出: %v", readErr)
 	}
-	if err := session.Wait(); err != nil {
+	if _, err := session.Wait(); err != nil {
 		t.Fatalf("等待 shell 退出: %v", err)
 	}
 	if !strings.Contains(string(output), directory) {
 		t.Fatalf("PTY 启动目录错误，输出: %q", output)
+	}
+}
+
+func TestUnixBackendReportsProcessExitCode(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		command  string
+		exitCode int
+	}{
+		{name: "正常退出", command: "exit 0", exitCode: 0},
+		{name: "非零退出", command: "exit 7", exitCode: 7},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			session, err := (&unixBackend{}).Start(StartRequest{
+				TaskID: "task-a", Directory: t.TempDir(), Command: "/bin/sh", Arguments: []string{"-c", testCase.command}, Columns: 80, Rows: 24,
+			})
+			if err != nil {
+				t.Fatalf("启动终端: %v", err)
+			}
+			defer session.Close()
+
+			_, _ = io.ReadAll(session)
+			exitResult, err := session.Wait()
+			if err != nil {
+				t.Fatalf("等待终端退出: %v", err)
+			}
+			if exitResult.ExitCode == nil || *exitResult.ExitCode != testCase.exitCode {
+				t.Fatalf("终端退出码 = %v，期望 %d", exitResult.ExitCode, testCase.exitCode)
+			}
+		})
 	}
 }
 
@@ -54,7 +84,7 @@ func TestUnixBackendSetsTerminalTypeForEmbeddedXterm(t *testing.T) {
 	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
 		t.Fatalf("读取 PTY 输出: %v", readErr)
 	}
-	if err := session.Wait(); err != nil {
+	if _, err := session.Wait(); err != nil {
 		t.Fatalf("等待 shell 退出: %v", err)
 	}
 	if !strings.Contains(string(output), "__TERM__xterm-256color__") {
@@ -84,7 +114,7 @@ func TestUnixBackendPassesRequestedEnvironmentToTerminalProcess(t *testing.T) {
 	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
 		t.Fatalf("读取 PTY 输出: %v", readErr)
 	}
-	if err := session.Wait(); err != nil {
+	if _, err := session.Wait(); err != nil {
 		t.Fatalf("等待 shell 退出: %v", err)
 	}
 	if !strings.Contains(string(output), "__STATUS_API__http://127.0.0.1:18765/api/v1__ __TERMINAL_ID__terminal-environment__") {
@@ -125,7 +155,7 @@ func TestUnixBackendUsesShellFromStartRequest(t *testing.T) {
 	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
 		t.Fatalf("读取 PTY 输出: %v", readErr)
 	}
-	if err := session.Wait(); err != nil {
+	if _, err := session.Wait(); err != nil {
 		t.Fatalf("等待 Shell 退出: %v", err)
 	}
 	if !strings.Contains(string(output), "__CONFIGURED_SHELL__") {
@@ -151,7 +181,7 @@ func TestUnixBackendStartsConfiguredCommandWithArguments(t *testing.T) {
 	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
 		t.Fatalf("读取配置命令输出: %v", readErr)
 	}
-	if err := session.Wait(); err != nil {
+	if _, err := session.Wait(); err != nil {
 		t.Fatalf("等待配置命令: %v", err)
 	}
 	if !strings.Contains(string(output), "__TASK_COMMAND__--full-auto__") {
@@ -182,7 +212,7 @@ func TestUnixBackendStartsConfiguredCommandThroughRequestedShell(t *testing.T) {
 	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
 		t.Fatalf("读取配置命令输出: %v", readErr)
 	}
-	if err := session.Wait(); err != nil {
+	if _, err := session.Wait(); err != nil {
 		t.Fatalf("等待配置命令: %v", err)
 	}
 	if !strings.Contains(string(output), "__SHELL_PATH__1__") {

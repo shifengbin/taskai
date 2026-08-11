@@ -95,7 +95,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
       cancelAnimationFrame(animationFrame)
       observer.disconnect()
     }
-  }, [resolvedTerminalTheme, sessionRegistry, terminal.disableTaskAIMouseClipboard, terminal.id, terminal.taskId])
+  }, [resolvedTerminalTheme, sessionRegistry, terminal.disableTaskAIMouseClipboard, terminal.id, terminal.state, terminal.taskId])
 
   useEffect(() => {
     onResizeRef.current = onResize
@@ -116,6 +116,9 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
   }, [quickInputSelectorOpen])
 
   useEffect(() => {
+		if (terminal.state !== 'active') {
+			return
+		}
     sessionRegistry.setCustomKeyEventHandler(terminal.taskId, terminal.id, (event) => {
       const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC')
       const isQuickInputHotkey = event.type === 'keydown'
@@ -146,9 +149,12 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
     return () => {
       sessionRegistry.setCustomKeyEventHandler(terminal.taskId, terminal.id)
     }
-  }, [openQuickInputSelector, sessionRegistry, terminal.command, terminal.id, terminal.taskId, terminalShortcuts])
+  }, [openQuickInputSelector, sessionRegistry, terminal.command, terminal.id, terminal.state, terminal.taskId, terminalShortcuts])
 
   useEffect(() => {
+		if (terminal.state !== 'active') {
+			return
+		}
     let active = true
     try {
       OnFileDrop((_x, _y, paths) => {
@@ -168,7 +174,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
         // The browser development server has no Wails drag-and-drop runtime.
       }
     }
-  }, [terminal.id, terminal.taskId])
+  }, [terminal.id, terminal.state, terminal.taskId])
 
   return (
     <div className="taskai-terminal grid h-full min-w-0" style={{gridTemplateRows: '40px minmax(0, 1fr)'}}>
@@ -263,7 +269,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
         ref={containerRef}
         className="taskai-terminal__content relative min-h-0 overflow-hidden p-1"
         data-testid="terminal-content"
-        onContextMenu={taskAIMouseClipboardEnabled ? (event) => {
+			onContextMenu={terminal.state === 'active' && taskAIMouseClipboardEnabled ? (event) => {
           event.preventDefault()
           void ClipboardGetText().then((clipboard) => {
             if (clipboard) {

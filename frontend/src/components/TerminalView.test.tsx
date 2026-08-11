@@ -16,6 +16,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}
   dispose: ReturnType<typeof vi.fn>
   refresh: ReturnType<typeof vi.fn>
+	write: ReturnType<typeof vi.fn>
   triggerCustomKeyEvent(event: KeyboardEvent): boolean | undefined
   triggerSelectionChange(): void
 }> )
@@ -49,6 +50,7 @@ vi.mock('@xterm/xterm', () => ({
     options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}
     dispose = vi.fn()
     refresh = vi.fn()
+		write = vi.fn()
     customKeyEventHandler: ((event: KeyboardEvent) => boolean) | undefined
     selectionChangeListener: (() => void) | undefined
 
@@ -360,6 +362,23 @@ describe('TerminalView', () => {
 
     expect(terminalInstances[0].options.scrollback).toBe(1000)
     expect(terminalInstances[0].focus).toHaveBeenCalledOnce()
+  })
+
+  it('异常退出快照只读且不注册后端终端交互', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const onResize = vi.fn()
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'failure output'})
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited', exitReason: 'unexpected', exitCode: 1})
+
+    render(<TerminalView terminal={{...terminal, state: 'exited'}} sessionRegistry={registry} onResize={onResize} onClose={vi.fn()} />)
+    runAnimationFrame()
+
+    expect(onResize).not.toHaveBeenCalled()
+    expect(runtime.OnFileDrop).not.toHaveBeenCalled()
+    const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
+    fireEvent(screen.getByTestId('terminal-content'), event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(runtime.ClipboardGetText).not.toHaveBeenCalled()
   })
 
   it('视图卸载时保留终端会话，以便再次切换时复用', () => {

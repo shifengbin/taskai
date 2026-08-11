@@ -95,6 +95,15 @@ describe('终端状态路由', () => {
     ])
   })
 
+  it('正常退出自动移除终端，异常退出保留输出条目', () => {
+    const terminals: TerminalRecord[] = [{id: 'terminal-a', taskId: 'task-a', state: 'active'}]
+    const normalExit = {taskId: 'task-a', terminalId: 'terminal-a', type: 'exited' as const, exitReason: 'normal' as const, exitCode: 0}
+    const unexpectedExit = {taskId: 'task-a', terminalId: 'terminal-a', type: 'exited' as const, exitReason: 'unexpected' as const, exitCode: 1}
+
+    expect(applyTerminalEvent(terminals, normalExit)).toEqual([])
+    expect(applyTerminalEvent(terminals, unexpectedExit)).toEqual([{id: 'terminal-a', taskId: 'task-a', state: 'exited'}])
+  })
+
   it('只为收到输出的对应终端更新实时标题', () => {
     const terminals: TerminalRecord[] = [
       {id: 'one', taskId: 'task-a', state: 'active', title: '旧标题'},
@@ -203,6 +212,17 @@ describe('终端状态路由', () => {
       title: '最新标题',
       state: 'exited',
     })
+    expect(pendingEvents.size).toBe(0)
+  })
+
+  it('终端创建响应前的正常退出不会重新添加终端', () => {
+    const pendingEvents = new Map()
+    const terminal: TerminalRecord = {id: 'terminal-1', taskId: 'task-a', state: 'active'}
+    const normalExit = {taskId: terminal.taskId, terminalId: terminal.id, type: 'exited' as const, exitReason: 'normal' as const, exitCode: 0}
+
+    bufferPendingTerminalEvent(pendingEvents, normalExit)
+
+    expect(mergePendingTerminalEvents(pendingEvents, terminal)).toBeUndefined()
     expect(pendingEvents.size).toBe(0)
   })
 

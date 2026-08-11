@@ -401,7 +401,7 @@ func TestManagerPublishesExpectedExitReasonForExplicitClose(t *testing.T) {
 	}
 }
 
-func TestManagerPublishesUnexpectedExitReasonForNaturalExit(t *testing.T) {
+func TestManagerPublishesNormalExitReasonForNaturalZeroExit(t *testing.T) {
 	backend := &fakeBackend{}
 	events := make(chan Event, 2)
 	manager := NewManager(backend, func(event Event) { events <- event })
@@ -416,8 +416,92 @@ func TestManagerPublishesUnexpectedExitReasonForNaturalExit(t *testing.T) {
 	for {
 		event := receiveEvent(t, events)
 		if event.Type == "exited" {
+			if event.ExitReason != ExitReason("normal") {
+				t.Errorf("自然零退出原因 = %q，期望 normal", event.ExitReason)
+			}
+			if event.ExitCode == nil || *event.ExitCode != 0 {
+				t.Errorf("自然零退出码 = %v，期望 0", event.ExitCode)
+			}
+			return
+		}
+	}
+}
+
+func TestManagerPublishesUnexpectedExitReasonForNaturalNonZeroExit(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 2)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	backend.session(created.ID).setWaitResult(exitResultFromCode(1), nil)
+
+	if err := backend.session(created.ID).Close(); err != nil {
+		t.Fatalf("模拟终端非零退出: %v", err)
+	}
+	for {
+		event := receiveEvent(t, events)
+		if event.Type == "exited" {
 			if event.ExitReason != ExitReasonUnexpected {
-				t.Errorf("自然退出原因 = %q，期望 %q", event.ExitReason, ExitReasonUnexpected)
+				t.Errorf("自然非零退出原因 = %q，期望 %q", event.ExitReason, ExitReasonUnexpected)
+			}
+			if event.ExitCode == nil || *event.ExitCode != 1 {
+				t.Errorf("自然非零退出码 = %v，期望 1", event.ExitCode)
+			}
+			return
+		}
+	}
+}
+
+func TestManagerPublishesUnexpectedExitWithoutCodeWhenWaitFails(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 2)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	backend.session(created.ID).setWaitResult(ExitResult{}, errors.New("等待终端进程失败"))
+
+	if err := backend.session(created.ID).Close(); err != nil {
+		t.Fatalf("模拟终端等待失败: %v", err)
+	}
+	for {
+		event := receiveEvent(t, events)
+		if event.Type == "exited" {
+			if event.ExitReason != ExitReasonUnexpected {
+				t.Errorf("等待失败退出原因 = %q，期望 %q", event.ExitReason, ExitReasonUnexpected)
+			}
+			if event.ExitCode != nil {
+				t.Errorf("等待失败退出码 = %v，期望缺失", event.ExitCode)
+			}
+			return
+		}
+	}
+}
+
+func TestManagerPreservesExplicitCloseReasonForNonZeroExit(t *testing.T) {
+	backend := &fakeBackend{}
+	events := make(chan Event, 2)
+	manager := NewManager(backend, func(event Event) { events <- event })
+	created, err := manager.Create("task-a", t.TempDir(), "", 80, 24)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	backend.session(created.ID).setWaitResult(exitResultFromCode(1), nil)
+
+	if err := manager.Close(created.TaskID, created.ID); err != nil {
+		t.Fatalf("主动关闭终端: %v", err)
+	}
+	for {
+		event := receiveEvent(t, events)
+		if event.Type == "exited" {
+			if event.ExitReason != ExitReasonClosed {
+				t.Errorf("主动关闭退出原因 = %q，期望 %q", event.ExitReason, ExitReasonClosed)
+			}
+			if event.ExitCode == nil || *event.ExitCode != 1 {
+				t.Errorf("主动关闭退出码 = %v，期望 1", event.ExitCode)
 			}
 			return
 		}
@@ -492,6 +576,8 @@ type fakeSession struct {
 	writes     string
 	writeCount int
 	closed     bool
+	waitResult ExitResult
+	waitErr    error
 	closeOnce  sync.Once
 }
 
@@ -516,13 +602,13 @@ func (session *singleReadSession) Write(data []byte) (int, error) { return len(d
 
 func (session *singleReadSession) Resize(uint16, uint16) error { return nil }
 
-func (session *singleReadSession) Wait() error { return nil }
+func (session *singleReadSession) Wait() (ExitResult, error) { return exitResultFromCode(0), nil }
 
 func (session *singleReadSession) Close() error { return nil }
 
 func newFakeSession(id string) *fakeSession {
 	reader, writer := io.Pipe()
-	return &fakeSession{id: id, reader: reader, writer: writer}
+	return &fakeSession{id: id, reader: reader, writer: writer, waitResult: exitResultFromCode(0)}
 }
 
 func (session *fakeSession) ID() string { return session.id }
@@ -542,7 +628,18 @@ func (session *fakeSession) Write(data []byte) (int, error) {
 
 func (session *fakeSession) Resize(uint16, uint16) error { return nil }
 
-func (session *fakeSession) Wait() error { return nil }
+func (session *fakeSession) Wait() (ExitResult, error) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.waitResult, session.waitErr
+}
+
+func (session *fakeSession) setWaitResult(result ExitResult, waitErr error) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.waitResult = result
+	session.waitErr = waitErr
+}
 
 func (session *fakeSession) Close() error {
 	session.closeOnce.Do(func() {

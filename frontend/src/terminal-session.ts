@@ -8,6 +8,7 @@ import {defaultTerminalFontSize, normalizeTerminalFontSize} from './terminal-fon
 import {normalizeTerminalTheme, type TerminalTheme} from './terminal-theme'
 
 export const terminalScrollback = 1000
+const terminalExitSnapshotNotice = '\r\n终端已退出\x1b[?25l'
 
 // Nebula 终端主题：直接注入 xterm ITheme。背景/前景/光标和 ANSI 调色板与
 // 亮暗主题令牌保持一致，终端输出仍由现有 PTY 会话管理。
@@ -54,6 +55,9 @@ export class TerminalSessionRegistry {
 
   handleTerminalEvent(event: TerminalEvent): void {
     if (event.type === 'output') {
+			if (this.closedTerminalKeys.has(terminalSessionKey(event.taskId, event.terminalId))) {
+				return
+			}
       const session = this.getOrCreate(event.taskId, event.terminalId)
       if (session && event.data) {
         session.terminal.write(event.data)
@@ -61,6 +65,16 @@ export class TerminalSessionRegistry {
       return
     }
     if (event.type === 'exited') {
+      const key = terminalSessionKey(event.taskId, event.terminalId)
+      if (!terminalExitDisposesSession(event.exitReason)) {
+        if (this.closedTerminalKeys.has(key)) {
+          return
+        }
+
+        this.getOrCreate(event.taskId, event.terminalId)?.terminal.write(terminalExitSnapshotNotice)
+        this.closedTerminalKeys.add(key)
+        return
+      }
       this.dispose(event.taskId, event.terminalId)
     }
   }
@@ -82,12 +96,12 @@ export class TerminalSessionRegistry {
     } else {
       session.terminal.open(container)
     }
-    return this.fit(session, onResize)
+		return this.fit(session, this.closedTerminalKeys.has(terminalSessionKey(terminal.taskId, terminal.id)) ? undefined : onResize)
   }
 
-  fitAndRefresh(taskID: string, terminalID: string, onResize: (columns: number, rows: number) => void): boolean {
+  fitAndRefresh(taskID: string, terminalID: string, onResize?: (columns: number, rows: number) => void): boolean {
     const session = this.sessions.get(terminalSessionKey(taskID, terminalID))
-    if (!session || !this.fit(session, onResize)) {
+		if (!session || !this.fit(session, this.closedTerminalKeys.has(terminalSessionKey(taskID, terminalID)) ? undefined : onResize)) {
       return false
     }
     this.refreshVisibleRows(session)
@@ -117,10 +131,15 @@ export class TerminalSessionRegistry {
   }
 
   setCustomKeyEventHandler(taskID: string, terminalID: string, handler?: (event: KeyboardEvent) => boolean): boolean {
-    const session = this.sessions.get(terminalSessionKey(taskID, terminalID))
-    if (!session || this.closedTerminalKeys.has(terminalSessionKey(taskID, terminalID))) {
-      return false
-    }
+		const key = terminalSessionKey(taskID, terminalID)
+		const session = this.sessions.get(key)
+		if (!session) {
+			return false
+		}
+		if (this.closedTerminalKeys.has(key)) {
+			session.terminal.attachCustomKeyEventHandler(() => false)
+			return false
+		}
     session.terminal.attachCustomKeyEventHandler(handler ?? (() => true))
     return true
   }
@@ -154,13 +173,13 @@ export class TerminalSessionRegistry {
 
   private getOrCreate(taskID: string, terminalID: string): TerminalSession | undefined {
     const key = terminalSessionKey(taskID, terminalID)
-    if (this.closedTerminalKeys.has(key)) {
-      return undefined
-    }
     const existing = this.sessions.get(key)
     if (existing) {
       return existing
     }
+		if (this.closedTerminalKeys.has(key)) {
+			return undefined
+		}
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: resolveTerminalFontFamily(this.terminalFontFamily()),
@@ -171,7 +190,11 @@ export class TerminalSessionRegistry {
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
-    const onData = terminal.onData((data) => this.onWrite(taskID, terminalID, data))
+		const onData = terminal.onData((data) => {
+			if (!this.closedTerminalKeys.has(key)) {
+				this.onWrite(taskID, terminalID, data)
+			}
+		})
     const selectionClipboard = {enabled: true}
     const onSelectionChange = terminal.onSelectionChange(() => {
       if (!selectionClipboard.enabled) {
@@ -187,10 +210,10 @@ export class TerminalSessionRegistry {
     return session
   }
 
-  private fit(session: TerminalSession, onResize: (columns: number, rows: number) => void): boolean {
+  private fit(session: TerminalSession, onResize?: (columns: number, rows: number) => void): boolean {
     try {
       session.fitAddon.fit()
-      if (session.terminal.cols > 0 && session.terminal.rows > 0) {
+			if (onResize && session.terminal.cols > 0 && session.terminal.rows > 0) {
         onResize(session.terminal.cols, session.terminal.rows)
       }
       return true
@@ -208,6 +231,10 @@ export class TerminalSessionRegistry {
 
 export function terminalVisualTheme(theme?: Partial<TerminalTheme>): TerminalVisualTheme {
   return normalizeTerminalTheme(theme)
+}
+
+function terminalExitDisposesSession(exitReason: TerminalEvent['exitReason']): boolean {
+  return exitReason === 'normal' || exitReason === 'closed' || exitReason === 'task-ended' || exitReason === 'application-shutdown'
 }
 
 function terminalSessionKey(taskID: string, terminalID: string): string {

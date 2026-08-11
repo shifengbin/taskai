@@ -82,9 +82,15 @@ func (session *windowsSession) Resize(columns, rows uint16) error {
 	return session.console.Resize(int(columns), int(rows))
 }
 
-func (session *windowsSession) Wait() error {
-	_, err := session.process.Wait()
-	return err
+func (session *windowsSession) Wait() (ExitResult, error) {
+	processState, err := session.process.Wait()
+	if err != nil {
+		return ExitResult{}, err
+	}
+	if processState == nil {
+		return ExitResult{}, fmt.Errorf("Windows 终端进程未返回退出状态")
+	}
+	return exitResultFromCode(processState.ExitCode()), nil
 }
 
 func (session *windowsSession) Close() error {

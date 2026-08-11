@@ -2698,9 +2698,9 @@ describe('App confirmation flows', () => {
     await waitFor(() => expect(screen.getAllByText('前端调试')).toHaveLength(2))
   })
 
-  it('终端退出后不再显示右侧终端视图', async () => {
+  it('正常退出后不再显示右侧终端视图', async () => {
     const user = userEvent.setup()
-    let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'exited'}) => void) | undefined
+    let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'exited'; exitReason: 'normal'}) => void) | undefined
     runtime.EventsOn.mockImplementation((eventName, listener) => {
       if (eventName === 'task-terminal:event') {
         terminalEventListener = listener
@@ -2717,9 +2717,36 @@ describe('App confirmation flows', () => {
     if (!terminalEventListener) {
       throw new Error('未注册终端事件监听器')
     }
-    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'exited'})
+    terminalEventListener({taskId: 'task-1', terminalId: 'terminal-1', type: 'exited', exitReason: 'normal'})
 
     await waitFor(() => expect(screen.queryByText('终端视图')).not.toBeInTheDocument())
+  })
+
+  it('异常退出后仍显示右侧终端快照', async () => {
+    const user = userEvent.setup()
+    let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'exited'; exitReason: 'unexpected'; exitCode: number}) => void) | undefined
+    runtime.EventsOn.mockImplementation((eventName, listener) => {
+      if (eventName === 'task-terminal:event') {
+        terminalEventListener = listener
+      }
+    })
+    bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+    await screen.findByText('终端视图')
+
+    if (!terminalEventListener) {
+      throw new Error('未注册终端事件监听器')
+    }
+    await act(async () => {
+      terminalEventListener!({taskId: 'task-1', terminalId: 'terminal-1', type: 'exited', exitReason: 'unexpected', exitCode: 1})
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('终端视图')).toBeInTheDocument()
   })
 
   it('主动关闭终端成功后从树和右侧终端视图移除', async () => {

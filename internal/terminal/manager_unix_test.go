@@ -39,5 +39,5 @@ func (session *readErrorSession) ID() string                     { return sessio
 func (session *readErrorSession) Read([]byte) (int, error)       { return 0, session.err }
 func (session *readErrorSession) Write(data []byte) (int, error) { return len(data), nil }
 func (session *readErrorSession) Resize(uint16, uint16) error    { return nil }
-func (session *readErrorSession) Wait() error                    { return nil }
+func (session *readErrorSession) Wait() (ExitResult, error)      { return exitResultFromCode(0), nil }
 func (session *readErrorSession) Close() error                   { return nil }

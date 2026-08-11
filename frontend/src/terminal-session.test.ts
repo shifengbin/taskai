@@ -18,6 +18,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
   refresh: ReturnType<typeof vi.fn>
   triggerSelectionChange(): void
+	triggerData(data: string): void
   write: ReturnType<typeof vi.fn>
 }>)
 const fitAddonInstances = vi.hoisted(() => [] as Array<{fit: ReturnType<typeof vi.fn>}>)
@@ -34,7 +35,9 @@ vi.mock('@xterm/xterm', () => ({
     getSelection = vi.fn(() => '')
     loadAddon = vi.fn()
     onDataDisposable = {dispose: vi.fn()}
-    onData = vi.fn(() => {
+    dataListener: ((data: string) => void) | undefined
+    onData = vi.fn((listener: (data: string) => void) => {
+			this.dataListener = listener
       this.onDataDisposable = {dispose: vi.fn()}
       return this.onDataDisposable
     })
@@ -57,6 +60,10 @@ vi.mock('@xterm/xterm', () => ({
     triggerSelectionChange() {
       this.selectionChangeListener?.()
     }
+
+		triggerData(data: string) {
+			this.dataListener?.(data)
+		}
 
     constructor(options: {scrollback?: number, theme?: unknown}) {
       this.options = options
@@ -256,7 +263,7 @@ describe('TerminalSessionRegistry', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
 
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'before exit'})
-    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited'})
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited', exitReason: 'normal'})
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'late output'})
 
     expect(terminalInstances).toHaveLength(1)
@@ -264,6 +271,63 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].onDataDisposable.dispose).toHaveBeenCalledOnce()
     expect(terminalInstances[0].onSelectionDisposable.dispose).toHaveBeenCalledOnce()
     expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+  })
+
+  it('未分类退出时保留输出快照，避免终端标签与会话状态不一致', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    const onResize = vi.fn()
+    const snapshot = {...terminal, state: 'exited' as const}
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'diagnostic output'})
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited'})
+
+    expect(registry.attach(snapshot, container, terminalVisualTheme(), onResize)).toBe(true)
+    expect(terminalInstances[0].write).toHaveBeenCalledWith('diagnostic output')
+    expect(terminalInstances[0].dispose).not.toHaveBeenCalled()
+    expect(onResize).not.toHaveBeenCalled()
+  })
+
+  it('异常退出冻结输出快照并拒绝后续终端交互', () => {
+		const onWrite = vi.fn()
+    const registry = new TerminalSessionRegistry(onWrite)
+    const container = document.createElement('div')
+    const onResize = vi.fn()
+    const snapshot = {...terminal, state: 'exited' as const}
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'failure output'})
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited', exitReason: 'unexpected', exitCode: 1})
+
+    expect(registry.attach(snapshot, container, terminalVisualTheme(), onResize)).toBe(true)
+    expect(terminalInstances[0].dispose).not.toHaveBeenCalled()
+    expect(terminalInstances[0].write).toHaveBeenNthCalledWith(1, 'failure output')
+    expect(terminalInstances[0].write).toHaveBeenNthCalledWith(2, '\r\n终端已退出\x1b[?25l')
+    expect(onResize).not.toHaveBeenCalled()
+    expect(registry.writeInput(snapshot.taskId, snapshot.id, 'retry')).toBe(false)
+    expect(registry.pasteInput(snapshot.taskId, snapshot.id, 'retry')).toBe(false)
+    expect(registry.setCustomKeyEventHandler(snapshot.taskId, snapshot.id, vi.fn())).toBe(false)
+		terminalInstances[0].triggerData('retry')
+		expect(onWrite).not.toHaveBeenCalled()
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'late output'})
+    expect(terminalInstances[0].write).toHaveBeenCalledTimes(2)
+
+    registry.dispose(snapshot.taskId, snapshot.id)
+    expect(terminalInstances[0].dispose).toHaveBeenCalledOnce()
+  })
+
+  it('无输出的异常终端也保留无光标的退出提示快照', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    const onResize = vi.fn()
+    const snapshot = {...terminal, state: 'exited' as const}
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited', exitReason: 'unexpected', exitCode: 1})
+
+    expect(terminalInstances).toHaveLength(1)
+    expect(terminalInstances[0].write).toHaveBeenCalledWith('\r\n终端已退出\x1b[?25l')
+    expect(registry.attach(snapshot, container, terminalVisualTheme(), onResize)).toBe(true)
+    expect(onResize).not.toHaveBeenCalled()
   })
 
   it('任务级和全局释放不会处置其他任务的活动会话', () => {

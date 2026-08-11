@@ -56,5 +56,5 @@ func (session *windowsReadErrorSession) ID() string                     { return
 func (session *windowsReadErrorSession) Read([]byte) (int, error)       { return 0, session.err }
 func (session *windowsReadErrorSession) Write(data []byte) (int, error) { return len(data), nil }
 func (session *windowsReadErrorSession) Resize(uint16, uint16) error    { return nil }
-func (session *windowsReadErrorSession) Wait() error                    { return nil }
+func (session *windowsReadErrorSession) Wait() (ExitResult, error)      { return exitResultFromCode(0), nil }
 func (session *windowsReadErrorSession) Close() error                   { return nil }
