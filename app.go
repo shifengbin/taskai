@@ -1015,6 +1015,10 @@ func (app *App) ReportTerminalTitleActivity(taskID, terminalID string) bool {
 	return app.realtime.ReportTitleActivity(taskID, terminalID)
 }
 
+func (app *App) ReportTerminalVisualActivity(taskID, terminalID string) bool {
+	return app.realtime.ReportOutputActivity(taskID, terminalID)
+}
+
 func (app *App) SelectTerminal(taskID, terminalID string) {
 	app.realtime.SelectTerminal(taskID, terminalID)
 }
@@ -1193,9 +1197,6 @@ func cloneTaskScript(script *settings.TaskScript) *settings.TaskScript {
 }
 
 func (app *App) publishTerminalEvent(event terminal.Event) {
-	if event.Type == "output" && event.Data != "" {
-		app.realtime.ReportOutputActivity(event.TaskID, event.TerminalID)
-	}
 	if event.Type == "exited" {
 		if event.ExitReason == terminal.ExitReasonUnexpected {
 			app.realtime.RegisterTerminal(event.TaskID, event.TerminalID)

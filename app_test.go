@@ -1963,13 +1963,15 @@ func TestAppClosingExitedUnexpectedTerminalRemovesRealtimeStatus(t *testing.T) {
 	}
 }
 
-func TestAppReportsTerminalOutputActivityOnlyInOutputChangeMode(t *testing.T) {
+func TestAppReportsTerminalVisualActivityOnlyInOutputChangeMode(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	app.realtime.RegisterTerminal("task-1", "terminal-1")
 
-	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output", Data: "标题方式下的普通输出"})
+	if app.ReportTerminalVisualActivity("task-1", "terminal-1") {
+		t.Fatal("标题方式下的画面活动被接受")
+	}
 	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusIdle {
-		t.Fatalf("标题方式普通输出后的状态 = %q，期望 %q", got, realtime.StatusIdle)
+		t.Fatalf("标题方式画面活动后的状态 = %q，期望 %q", got, realtime.StatusIdle)
 	}
 
 	current, err := app.GetSettings()
@@ -1981,13 +1983,11 @@ func TestAppReportsTerminalOutputActivityOnlyInOutputChangeMode(t *testing.T) {
 		t.Fatalf("保存输出状态管理设置: %v", err)
 	}
 
-	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output"})
-	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusIdle {
-		t.Fatalf("空输出后的状态 = %q，期望 %q", got, realtime.StatusIdle)
+	if !app.ReportTerminalVisualActivity("task-1", "terminal-1") {
+		t.Fatal("输出方式下的画面活动未被接受")
 	}
-	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output", Data: "输出方式下的活动"})
 	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusWorking {
-		t.Fatalf("输出方式非空输出后的状态 = %q，期望 %q", got, realtime.StatusWorking)
+		t.Fatalf("输出方式画面活动后的状态 = %q，期望 %q", got, realtime.StatusWorking)
 	}
 
 	current.StatusManagementMode = settings.StatusManagementModeHTTP
@@ -1995,9 +1995,30 @@ func TestAppReportsTerminalOutputActivityOnlyInOutputChangeMode(t *testing.T) {
 	if _, err := app.SaveSettings(current); err != nil {
 		t.Fatalf("保存 HTTP 状态管理设置: %v", err)
 	}
-	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output", Data: "HTTP 方式下的输出"})
+	if app.ReportTerminalVisualActivity("task-1", "terminal-1") {
+		t.Fatal("HTTP 方式下的画面活动被接受")
+	}
 	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusIdle {
-		t.Fatalf("HTTP 方式普通输出后的状态 = %q，期望 %q", got, realtime.StatusIdle)
+		t.Fatalf("HTTP 方式画面活动后的状态 = %q，期望 %q", got, realtime.StatusIdle)
+	}
+}
+
+func TestAppRawTerminalOutputDoesNotReportActivity(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	app.realtime.RegisterTerminal("task-1", "terminal-1")
+
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.StatusManagementMode = settings.StatusManagementModeOutputChange
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("保存输出状态管理设置: %v", err)
+	}
+
+	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "output", Data: "原始 PTY 输出"})
+	if got := app.realtime.TerminalStatus("task-1", "terminal-1"); got != realtime.StatusIdle {
+		t.Fatalf("原始输出后的状态 = %q，期望 %q", got, realtime.StatusIdle)
 	}
 }
 

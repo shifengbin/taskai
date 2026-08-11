@@ -1,5 +1,5 @@
 import {FitAddon} from '@xterm/addon-fit'
-import {Terminal, type ITheme} from '@xterm/xterm'
+import {Terminal, type IBufferCell, type ITheme} from '@xterm/xterm'
 
 import {ClipboardSetText} from '../wailsjs/runtime/runtime'
 import {type TerminalEvent, type TerminalRecord} from './types'
@@ -19,9 +19,21 @@ interface TerminalSession {
   terminalID: string
   terminal: Terminal
   fitAddon: FitAddon
+  display: TerminalDisplay
+  suppressVisualActivity: boolean
   selectionClipboard: {enabled: boolean}
   onData: {dispose(): void}
   onSelectionChange: {dispose(): void}
+	onScroll: {dispose(): void}
+  onWriteParsed: {dispose(): void}
+}
+
+interface TerminalDisplay {
+  bufferType: 'normal' | 'alternate'
+  cells: string[]
+  columns: number
+  rows: number
+  viewportY: number
 }
 
 export class TerminalSessionRegistry {
@@ -33,12 +45,14 @@ export class TerminalSessionRegistry {
     private readonly terminalFontFamily: () => string = () => '',
     private readonly terminalFontSize: () => number = () => defaultTerminalFontSize,
     private readonly terminalTheme: () => TerminalTheme = () => normalizeTerminalTheme(),
+    private readonly onVisualActivity: (taskID: string, terminalID: string) => void = () => {},
   ) {}
 
   setFontSize(fontSize: number): void {
     const normalizedFontSize = normalizeTerminalFontSize(fontSize)
     for (const session of this.sessions.values()) {
       session.terminal.options.fontSize = normalizedFontSize
+      this.resetDisplay(session)
     }
   }
 
@@ -50,6 +64,7 @@ export class TerminalSessionRegistry {
       session.terminal.options.fontSize = normalizedFontSize
       session.terminal.options.theme = theme
       this.refreshVisibleRows(session)
+      this.resetDisplay(session)
     }
   }
 
@@ -71,7 +86,11 @@ export class TerminalSessionRegistry {
           return
         }
 
-        this.getOrCreate(event.taskId, event.terminalId)?.terminal.write(terminalExitSnapshotNotice)
+        const session = this.getOrCreate(event.taskId, event.terminalId)
+        if (session) {
+          session.suppressVisualActivity = true
+          session.terminal.write(terminalExitSnapshotNotice)
+        }
         this.closedTerminalKeys.add(key)
         return
       }
@@ -154,6 +173,8 @@ export class TerminalSessionRegistry {
     this.sessions.delete(key)
     session.onData.dispose()
     session.onSelectionChange.dispose()
+		session.onScroll.dispose()
+    session.onWriteParsed.dispose()
     session.terminal.dispose()
   }
 
@@ -205,7 +226,34 @@ export class TerminalSessionRegistry {
         void ClipboardSetText(selection).catch(() => {})
       }
     })
-    const session = {taskID, terminalID, terminal, fitAddon, selectionClipboard, onData, onSelectionChange}
+    let session: TerminalSession
+		const onScroll = terminal.onScroll(() => {
+			session.display = captureTerminalDisplay(terminal)
+		})
+    const onWriteParsed = terminal.onWriteParsed?.(() => {
+      const display = captureTerminalDisplay(terminal)
+      const suppressVisualActivity = session.suppressVisualActivity
+      session.suppressVisualActivity = false
+      if (!terminalDisplaysEqual(session.display, display)) {
+        session.display = display
+        if (!suppressVisualActivity) {
+          this.onVisualActivity(taskID, terminalID)
+        }
+      }
+    }) ?? {dispose() {}}
+    session = {
+      taskID,
+      terminalID,
+      terminal,
+      fitAddon,
+      display: captureTerminalDisplay(terminal),
+      suppressVisualActivity: false,
+      selectionClipboard,
+      onData,
+      onSelectionChange,
+		onScroll,
+      onWriteParsed,
+    }
     this.sessions.set(key, session)
     return session
   }
@@ -213,9 +261,10 @@ export class TerminalSessionRegistry {
   private fit(session: TerminalSession, onResize?: (columns: number, rows: number) => void): boolean {
     try {
       session.fitAddon.fit()
-			if (onResize && session.terminal.cols > 0 && session.terminal.rows > 0) {
+		if (onResize && session.terminal.cols > 0 && session.terminal.rows > 0) {
         onResize(session.terminal.cols, session.terminal.rows)
       }
+      this.resetDisplay(session)
       return true
     } catch {
       return false
@@ -227,6 +276,57 @@ export class TerminalSessionRegistry {
       session.terminal.refresh(0, session.terminal.rows - 1)
     }
   }
+
+  private resetDisplay(session: TerminalSession): void {
+    session.display = captureTerminalDisplay(session.terminal)
+  }
+
+}
+
+function captureTerminalDisplay(terminal: Terminal): TerminalDisplay {
+  const buffer = terminal.buffer.active
+  const cells: string[] = []
+  for (let row = 0; row < terminal.rows; row++) {
+    const line = buffer.getLine(buffer.viewportY + row)
+    for (let column = 0; column < terminal.cols; column++) {
+      const cell = line?.getCell(column)
+      cells.push(cell ? terminalCellSignature(cell) : '')
+    }
+  }
+  return {
+    bufferType: buffer.type,
+    cells,
+    columns: terminal.cols,
+    rows: terminal.rows,
+    viewportY: buffer.viewportY,
+  }
+}
+
+function terminalCellSignature(cell: IBufferCell): string {
+  return [
+    cell.getChars(),
+    cell.getWidth(),
+    cell.getFgColorMode(),
+    cell.getFgColor(),
+    cell.getBgColorMode(),
+    cell.getBgColor(),
+    cell.isBold(),
+    cell.isDim(),
+    cell.isItalic(),
+    cell.isUnderline(),
+    cell.isBlink(),
+    cell.isInverse(),
+    cell.isInvisible(),
+    cell.isStrikethrough(),
+    cell.isOverline(),
+  ].join('\u001F')
+}
+
+function terminalDisplaysEqual(left: TerminalDisplay, right: TerminalDisplay): boolean {
+  if (left.bufferType !== right.bufferType || left.columns !== right.columns || left.rows !== right.rows || left.viewportY !== right.viewportY || left.cells.length !== right.cells.length) {
+    return false
+  }
+  return left.cells.every((cell, index) => cell === right.cells[index])
 }
 
 export function terminalVisualTheme(theme?: Partial<TerminalTheme>): TerminalVisualTheme {

@@ -2,6 +2,13 @@ import {act, cleanup, fireEvent, render, screen, waitFor, within} from '@testing
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 const terminalInstances = vi.hoisted(() => [] as Array<{
+  buffer: {
+    active: {
+      getLine: ReturnType<typeof vi.fn>
+      type: 'normal'
+      viewportY: number
+    }
+  }
   cols: number
   rows: number
   attachCustomKeyEventHandler: ReturnType<typeof vi.fn>
@@ -11,6 +18,8 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   loadAddon: ReturnType<typeof vi.fn>
   onData: ReturnType<typeof vi.fn>
   onSelectionChange: ReturnType<typeof vi.fn>
+	onScroll: ReturnType<typeof vi.fn>
+  onWriteParsed: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
   paste: ReturnType<typeof vi.fn>
   options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}
@@ -25,6 +34,23 @@ const animationFrameCallbacks = vi.hoisted(() => new Map<number, FrameRequestCal
 const animationFrameID = vi.hoisted(() => ({next: 0}))
 const runtime = vi.hoisted(() => ({ClipboardGetText: vi.fn(), ClipboardSetText: vi.fn(), OnFileDrop: vi.fn(), OnFileDropOff: vi.fn()}))
 const api = vi.hoisted(() => ({writeTerminalFilePaths: vi.fn()}))
+const terminalBufferCell = {
+  getChars: () => '',
+  getWidth: () => 1,
+  getFgColorMode: () => 0,
+  getFgColor: () => 0,
+  getBgColorMode: () => 0,
+  getBgColor: () => 0,
+  isBold: () => 0,
+  isDim: () => 0,
+  isItalic: () => 0,
+  isUnderline: () => 0,
+  isBlink: () => 0,
+  isInverse: () => 0,
+  isInvisible: () => 0,
+  isStrikethrough: () => 0,
+  isOverline: () => 0,
+}
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
@@ -42,6 +68,8 @@ vi.mock('@xterm/xterm', () => ({
       this.selectionChangeListener = listener
       return {dispose: vi.fn()}
     })
+		onScroll = vi.fn(() => ({dispose: vi.fn()}))
+    onWriteParsed = vi.fn(() => ({dispose: vi.fn()}))
     open = vi.fn((container: HTMLElement) => {
       this.element = document.createElement('div')
       container.append(this.element)
@@ -51,6 +79,13 @@ vi.mock('@xterm/xterm', () => ({
     dispose = vi.fn()
     refresh = vi.fn()
 		write = vi.fn()
+    buffer = {
+      active: {
+        getLine: vi.fn(() => ({getCell: () => terminalBufferCell})),
+        type: 'normal' as const,
+        viewportY: 0,
+      },
+    }
     customKeyEventHandler: ((event: KeyboardEvent) => boolean) | undefined
     selectionChangeListener: (() => void) | undefined
 

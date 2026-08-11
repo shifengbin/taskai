@@ -85,6 +85,8 @@ export function ReorderTasks(arg1:task.Status,arg2:Array<string>):Promise<Array<
 
 export function ReportTerminalTitleActivity(arg1:string,arg2:string):Promise<boolean>;
 
+export function ReportTerminalVisualActivity(arg1:string,arg2:string):Promise<boolean>;
+
 export function ResizeTerminal(arg1:string,arg2:string,arg3:number,arg4:number):Promise<void>;
 
 export function RetryTaskLifecycleCommandChain(arg1:string):Promise<task.Task>;
