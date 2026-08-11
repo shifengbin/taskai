@@ -1004,7 +1004,11 @@ func (app *App) ResizeTerminal(taskID, terminalID string, columns, rows uint16) 
 }
 
 func (app *App) CloseTerminal(taskID, terminalID string) error {
-	return app.terminals.Close(taskID, terminalID)
+	if err := app.terminals.Close(taskID, terminalID); err != nil {
+		return err
+	}
+	app.realtime.RemoveTerminal(taskID, terminalID)
+	return nil
 }
 
 func (app *App) ReportTerminalTitleActivity(taskID, terminalID string) bool {

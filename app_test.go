@@ -1371,6 +1371,20 @@ func waitForTask(t *testing.T, app *App, taskID string, matches func(task.Task) 
 	return task.Task{}
 }
 
+func waitForRealtimeTerminalStatus(t *testing.T, app *App, taskID, terminalID string, expected realtime.Status) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if got := app.realtime.TerminalStatus(taskID, terminalID); got == expected {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := app.realtime.TerminalStatus(taskID, terminalID); got != expected {
+		t.Fatalf("等待终端实时状态超时: got=%q, want=%q", got, expected)
+	}
+}
+
 func startTaskAndWait(t *testing.T, app *App, taskID string) task.Task {
 	t.Helper()
 	if _, err := app.StartTask(taskID); err != nil {
@@ -1806,6 +1820,110 @@ func TestAppMapsTerminalExitReasonsToRealtimeStatus(t *testing.T) {
 	app.publishTerminalEvent(terminal.Event{TaskID: "task-1", TerminalID: "terminal-1", Type: "exited", ExitReason: terminal.ExitReasonClosed})
 	if got := app.realtime.TerminalPresence("task-1", "terminal-1"); got != realtime.TerminalRemoved {
 		t.Fatalf("主动关闭终端状态记录 = %q，期望 %q", got, realtime.TerminalRemoved)
+	}
+}
+
+func TestAppCloseTerminalClearsRealtimeErrorForExitedTerminal(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	app.terminals = terminal.NewManager(&capturingTerminalBackend{}, app.publishTerminalEvent)
+
+	created, err := app.CreateTask("关闭异常终端", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	createdTerminal, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	waitForRealtimeTerminalStatus(t, app, started.ID, createdTerminal.ID, realtime.StatusError)
+
+	if err := app.CloseTerminal(started.ID, createdTerminal.ID); err != nil {
+		t.Fatalf("关闭已退出终端: %v", err)
+	}
+	if got := app.realtime.TerminalPresence(started.ID, createdTerminal.ID); got != realtime.TerminalRemoved {
+		t.Fatalf("已关闭异常终端状态记录 = %q，期望 %q", got, realtime.TerminalRemoved)
+	}
+	if got := app.realtime.TaskStatus(started.ID); got != realtime.StatusIdle {
+		t.Fatalf("关闭唯一异常终端后的任务状态 = %q，期望 %q", got, realtime.StatusIdle)
+	}
+}
+
+func TestAppCloseTerminalKeepsRemainingRealtimeStatus(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	app.terminals = terminal.NewManager(&capturingTerminalBackend{}, app.publishTerminalEvent)
+
+	created, err := app.CreateTask("保留其他终端状态", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	createdTerminal, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建异常终端: %v", err)
+	}
+	waitForRealtimeTerminalStatus(t, app, started.ID, createdTerminal.ID, realtime.StatusError)
+
+	const remainingTerminalID = "remaining-terminal"
+	app.realtime.RegisterTerminal(started.ID, remainingTerminalID)
+	if !app.realtime.SetTerminalStatus(started.ID, remainingTerminalID, realtime.StatusWorking) {
+		t.Fatal("设置剩余终端实时状态失败")
+	}
+
+	if err := app.CloseTerminal(started.ID, createdTerminal.ID); err != nil {
+		t.Fatalf("关闭已退出异常终端: %v", err)
+	}
+	if got := app.realtime.TaskStatus(started.ID); got != realtime.StatusWorking {
+		t.Fatalf("关闭异常终端后的任务状态 = %q，期望剩余终端状态 %q", got, realtime.StatusWorking)
+	}
+}
+
+func TestAppCloseTerminalKeepsActiveCloseIdempotent(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	app.terminals = terminal.NewManager(activeTerminalBackend{}, app.publishTerminalEvent)
+
+	created, err := app.CreateTask("关闭活动终端", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	createdTerminal, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+
+	if err := app.CloseTerminal(started.ID, createdTerminal.ID); err != nil {
+		t.Fatalf("关闭活动终端: %v", err)
+	}
+	if got := app.realtime.TerminalPresence(started.ID, createdTerminal.ID); got != realtime.TerminalRemoved {
+		t.Fatalf("活动终端关闭后的状态记录 = %q，期望 %q", got, realtime.TerminalRemoved)
+	}
+	if err := app.CloseTerminal(started.ID, createdTerminal.ID); err != nil {
+		t.Fatalf("重复关闭活动终端: %v", err)
+	}
+}
+
+func TestAppCloseTerminalRetainsRealtimeStatusWhenCloseFails(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	backend := &failingCloseTerminalBackend{}
+	app.terminals = terminal.NewManager(backend, app.publishTerminalEvent)
+
+	created, err := app.CreateTask("关闭失败终端", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("创建任务: %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	createdTerminal, err := app.CreateTerminal(started.ID, 100, 32)
+	if err != nil {
+		t.Fatalf("创建终端: %v", err)
+	}
+	t.Cleanup(func() { backend.stop() })
+
+	if err := app.CloseTerminal(started.ID, createdTerminal.ID); err == nil {
+		t.Fatal("关闭失败终端 error = nil")
+	}
+	if got := app.realtime.TerminalPresence(started.ID, createdTerminal.ID); got != realtime.TerminalActive {
+		t.Fatalf("关闭失败终端的状态记录 = %q，期望 %q", got, realtime.TerminalActive)
 	}
 }
 
@@ -3409,6 +3527,39 @@ func (session *activeTerminalSession) Close() error {
 	_ = session.writer.Close()
 	return session.reader.Close()
 }
+
+type failingCloseTerminalBackend struct {
+	session *failingCloseTerminalSession
+}
+
+func (backend *failingCloseTerminalBackend) Start(request terminal.StartRequest) (terminal.Session, error) {
+	reader, writer := io.Pipe()
+	backend.session = &failingCloseTerminalSession{id: request.ID, reader: reader, writer: writer}
+	return backend.session, nil
+}
+
+func (backend *failingCloseTerminalBackend) stop() {
+	if backend.session == nil {
+		return
+	}
+	_ = backend.session.writer.Close()
+	_ = backend.session.reader.Close()
+}
+
+type failingCloseTerminalSession struct {
+	id     string
+	reader *io.PipeReader
+	writer *io.PipeWriter
+}
+
+func (session *failingCloseTerminalSession) ID() string { return session.id }
+func (session *failingCloseTerminalSession) Read(data []byte) (int, error) {
+	return session.reader.Read(data)
+}
+func (session *failingCloseTerminalSession) Write(data []byte) (int, error) { return len(data), nil }
+func (session *failingCloseTerminalSession) Resize(uint16, uint16) error    { return nil }
+func (session *failingCloseTerminalSession) Wait() error                    { return nil }
+func (session *failingCloseTerminalSession) Close() error                   { return errors.New("关闭终端失败") }
 
 func availableLoopbackPort(t *testing.T) int {
 	t.Helper()

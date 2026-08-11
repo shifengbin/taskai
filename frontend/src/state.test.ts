@@ -125,22 +125,22 @@ describe('终端状态路由', () => {
     expect(afterExit[0]).toEqual({id: 'one', taskId: 'task-a', state: 'exited', title: '实时标题'})
   })
 
-  it('将实时状态事件投影到对应任务和终端，并移除主动关闭终端', () => {
+  it('将关闭异常终端的实时状态事件投影到对应任务和终端', () => {
     const tasks: TaskRecord[] = [{
       id: 'task-a', title: '任务 A', description: '', status: 'running', createdAt: '2026-07-27T00:00:00Z',
     }]
-    const terminals: TerminalRecord[] = [{id: 'terminal-a', taskId: 'task-a', state: 'active'}]
+    const terminals: TerminalRecord[] = [{id: 'terminal-a', taskId: 'task-a', state: 'exited'}]
 
     const updated = applyRealtimeStatusEvent(tasks, terminals, {
       version: 3,
       taskId: 'task-a',
-      taskStatus: 'unread',
+      taskStatus: 'error',
       terminalId: 'terminal-a',
-      terminalStatus: 'unread',
+      terminalStatus: 'error',
     })
 
-    expect(updated.tasks[0].realtimeStatus).toBe('unread')
-    expect(updated.terminals[0].realtimeStatus).toBe('unread')
+    expect(updated.tasks[0].realtimeStatus).toBe('error')
+    expect(updated.terminals[0].realtimeStatus).toBe('error')
 
     const removed = applyRealtimeStatusEvent(updated.tasks, updated.terminals, {
       version: 4,
@@ -149,6 +149,7 @@ describe('终端状态路由', () => {
       terminalId: 'terminal-a',
       terminalRemoved: true,
     })
+    expect(removed.tasks[0].realtimeStatus).toBe('idle')
     expect(removed.terminals).toEqual([])
   })
 
