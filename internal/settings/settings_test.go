@@ -62,6 +62,19 @@ func TestDefaultUsesCurrentDarkTerminalTheme(t *testing.T) {
 	}
 }
 
+func TestDefaultUsesTerminalNoteTemplate(t *testing.T) {
+	current := Default(t.TempDir())
+
+	want := TerminalNoteTemplate{
+		OriginalPrefix: "原文：",
+		NotePrefix:     "备注：",
+		ListSuffix:     "",
+	}
+	if got := current.TerminalNoteTemplate; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Default() TerminalNoteTemplate = %#v, want %#v", got, want)
+	}
+}
+
 func TestNormalizeTerminalThemePreservesValidColorsAndRestoresInvalidValues(t *testing.T) {
 	current := TerminalTheme{
 		Background:          "#102030",
@@ -1090,8 +1103,8 @@ func TestValidateRequiresHTTPPortOnlyForHTTPStatusManagement(t *testing.T) {
 func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 	validated, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),
-	TaskTreeWidth: DefaultTaskTreeWidth,
-	TaskMenuItems: []TaskMenuItem{
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		TaskMenuItems: []TaskMenuItem{
 			{ID: "custom-codex", Kind: TaskMenuItemKindCommand, Name: "Codex", Command: "codex", Arguments: []string{"--full-auto"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: " prepare-codex ", Arguments: []string{" --task ", "", "  "}}},
 			{ID: TaskMenuItemOpenFolderID, Kind: TaskMenuItemKindCommand, Name: " 打开工作目录 ", Command: "rm", Arguments: []string{"-rf"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: "不得保存"}},
 			{ID: TaskMenuItemEditTaskID, Kind: TaskMenuItemKindCommand, Name: " 修改任务 "},

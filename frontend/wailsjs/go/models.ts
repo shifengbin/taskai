@@ -232,6 +232,22 @@ export namespace settings {
 		    return a;
 		}
 	}
+	export class TerminalNoteTemplate {
+	    originalPrefix: string;
+	    notePrefix: string;
+	    listSuffix: string;
+
+	    static createFrom(source: any = {}) {
+	        return new TerminalNoteTemplate(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.originalPrefix = source["originalPrefix"];
+	        this.notePrefix = source["notePrefix"];
+	        this.listSuffix = source["listSuffix"];
+	    }
+	}
 	export class TerminalShortcutStep {
 	    kind: string;
 	    text?: string;
@@ -348,6 +364,7 @@ export namespace settings {
 	    terminalFontSize: number;
 	    terminalTheme: TerminalTheme;
 	    terminalShortcuts: TerminalShortcut[];
+	    terminalNoteTemplate: TerminalNoteTemplate;
 	    windowMaximized: boolean;
 	    shellPath: string;
 	    taskMenuItems: TaskMenuItem[];
@@ -377,6 +394,7 @@ export namespace settings {
 	        this.terminalFontSize = source["terminalFontSize"];
 	        this.terminalTheme = this.convertValues(source["terminalTheme"], TerminalTheme);
 	        this.terminalShortcuts = this.convertValues(source["terminalShortcuts"], TerminalShortcut);
+	        this.terminalNoteTemplate = this.convertValues(source["terminalNoteTemplate"], TerminalNoteTemplate);
 	        this.windowMaximized = source["windowMaximized"];
 	        this.shellPath = source["shellPath"];
 	        this.taskMenuItems = this.convertValues(source["taskMenuItems"], TaskMenuItem);
@@ -785,4 +803,3 @@ export namespace terminal {
 	}
 
 }
-

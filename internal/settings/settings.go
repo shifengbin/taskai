@@ -188,6 +188,12 @@ type TerminalTheme struct {
 	BrightWhite         string `json:"brightWhite"`
 }
 
+type TerminalNoteTemplate struct {
+	OriginalPrefix string `json:"originalPrefix"`
+	NotePrefix     string `json:"notePrefix"`
+	ListSuffix     string `json:"listSuffix"`
+}
+
 type TerminalShortcutStepKind string
 
 const (
@@ -218,6 +224,7 @@ type Settings struct {
 	TerminalFontSize             int                      `json:"terminalFontSize"`
 	TerminalTheme                TerminalTheme            `json:"terminalTheme"`
 	TerminalShortcuts            []TerminalShortcut       `json:"terminalShortcuts"`
+	TerminalNoteTemplate         TerminalNoteTemplate     `json:"terminalNoteTemplate"`
 	WindowMaximized              bool                     `json:"windowMaximized"`
 	ShellPath                    string                   `json:"shellPath"`
 	TaskMenuItems                []TaskMenuItem           `json:"taskMenuItems"`
@@ -243,6 +250,7 @@ func Default(applicationDataDirectory string) Settings {
 		TerminalFontSize:         DefaultTerminalFontSize,
 		TerminalTheme:            DefaultTerminalTheme(),
 		TerminalShortcuts:        []TerminalShortcut{},
+		TerminalNoteTemplate:     DefaultTerminalNoteTemplate(),
 		ShellPath:                DefaultShellPath(),
 		TaskMenuItems:            DefaultTaskMenuItems(),
 		ActiveTaskStatus:         DefaultActiveTaskStatus,
@@ -254,6 +262,13 @@ func Default(applicationDataDirectory string) Settings {
 		TaskTemplates:            DefaultTaskTemplates(),
 		ActiveTaskTemplateID:     DefaultBranchTaskTemplateID,
 		PresetVersion:            CurrentPresetVersion,
+	}
+}
+
+func DefaultTerminalNoteTemplate() TerminalNoteTemplate {
+	return TerminalNoteTemplate{
+		OriginalPrefix: "原文：",
+		NotePrefix:     "备注：",
 	}
 }
 

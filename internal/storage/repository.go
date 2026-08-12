@@ -69,6 +69,9 @@ func (repository *Repository) Load() (Data, error) {
 			if _, present := rawSettings["terminalShortcuts"]; !present {
 				data.Settings.TerminalShortcuts = []settings.TerminalShortcut{}
 			}
+			if _, present := rawSettings["terminalNoteTemplate"]; !present {
+				data.Settings.TerminalNoteTemplate = settings.DefaultTerminalNoteTemplate()
+			}
 		}
 	}
 
