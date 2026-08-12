@@ -876,7 +876,7 @@ describe('App confirmation flows', () => {
 
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
-		gitScanDepth: 2,
+		gitScanDepth: 3,
       taskTreeWidth: 360,
 		colorScheme: 'dark',
 		terminalFontFamily: '',
@@ -905,12 +905,13 @@ describe('App confirmation flows', () => {
 
     await user.click(await screen.findByRole('button', {name: '设置'}))
     const depth = screen.getByRole('spinbutton', {name: 'Git 最大扫描深度'})
-    expect(depth).toHaveValue(2)
+    expect(depth).toHaveValue(3)
+    expect(screen.getByText(/默认扫描到第 3 层/)).toBeInTheDocument()
     await user.clear(depth)
-    await user.type(depth, '3')
+    await user.type(depth, '2')
     await user.click(screen.getByRole('button', {name: '保存'}))
 
-    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({gitScanDepth: 3})))
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({gitScanDepth: 2})))
   })
 
   it('打开设置时仅显示当前终端字体摘要', async () => {
@@ -1096,7 +1097,7 @@ describe('App confirmation flows', () => {
 
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
-		gitScanDepth: 2,
+		gitScanDepth: 3,
       taskTreeWidth: 360,
 		colorScheme: 'light',
 		terminalFontFamily: '',
@@ -1129,7 +1130,7 @@ describe('App confirmation flows', () => {
 
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
-		gitScanDepth: 2,
+		gitScanDepth: 3,
       taskTreeWidth: 360,
 		colorScheme: 'light',
 		terminalFontFamily: '',

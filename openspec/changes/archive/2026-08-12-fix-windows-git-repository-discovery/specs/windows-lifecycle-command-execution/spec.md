@@ -1,23 +1,4 @@
-# windows-lifecycle-command-execution Specification
-
-## Purpose
-定义 Windows 上生命周期命令链后台进程的无控制台窗口执行边界，并保持既有输入输出与交互语义。
-## Requirements
-### Requirement: Windows 生命周期链后台进程不显示控制台窗口
-
-系统 SHALL 在 Windows 上以不创建可见控制台窗口的方式启动生命周期命令链直接执行的后台子进程，包括经用户配置 Shell 执行的自定义命令和内置 Git 命令。系统 MUST 保持这些进程的工作目录、环境变量、标准输入、标准输出、标准错误、退出状态和链内执行顺序的既有语义。
-
-#### Scenario: 执行自定义 Shell 命令时不显示窗口
-- **WHEN** Windows 用户执行包含自定义命令的生命周期命令链，且该命令经 `cmd.exe`、PowerShell 或其他已配置 Shell 启动
-- **THEN** 系统不显示该命令启动产生的控制台窗口，并按既有规则将其标准输出传给下一条自定义命令
-
-#### Scenario: 执行内置 Git 命令时不显示窗口
-- **WHEN** Windows 用户执行包含 Git 克隆或 Git 分支操作的生命周期命令链
-- **THEN** 系统不显示直接执行 Git 进程产生的控制台窗口，并继续按既有规则报告 Git 的输出和错误
-
-#### Scenario: 命令失败仍保留失败信息
-- **WHEN** Windows 上无窗口执行的生命周期命令以非零状态退出
-- **THEN** 系统仍将该命令的标准错误和退出失败原因写入生命周期链失败状态
+## MODIFIED Requirements
 
 ### Requirement: 无窗口限制仅适用于生命周期链后台进程
 

@@ -1,13 +1,136 @@
 package repositorygit
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"taskai/internal/settings"
 )
+
+func TestServiceOnlyRunsGitForMarkedRepositoryCandidates(t *testing.T) {
+	workspacePath := t.TempDir()
+	repositoryPath := filepath.Join(workspacePath, "repository")
+	for _, path := range []string{
+		filepath.Join(workspacePath, "ordinary", "nested"),
+		filepath.Join(repositoryPath, ".git"),
+	} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q) error = %v", path, err)
+		}
+	}
+
+	var invokedDirectories []string
+	service := &Service{runGit: func(directory string, arguments ...string) ([]byte, error) {
+		invokedDirectories = append(invokedDirectories, directory)
+		switch arguments[0] {
+		case "rev-parse":
+			return []byte(repositoryPath + "\n"), nil
+		case "symbolic-ref":
+			return []byte("main\n"), nil
+		case "status", "remote":
+			return nil, nil
+		default:
+			return nil, errors.New("unexpected Git command")
+		}
+	}}
+
+	repositories, err := service.List(workspacePath, 3)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if got, want := repositoryPaths(repositories), []string{"repository"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("List() paths = %#v，期望 %#v", got, want)
+	}
+	for _, directory := range invokedDirectories {
+		if directory != repositoryPath {
+			t.Fatalf("普通目录启动了 Git: %q，全部调用 = %#v", directory, invokedDirectories)
+		}
+	}
+}
+
+func TestServiceSkipsInvalidAndOutsideRepositoryCandidates(t *testing.T) {
+	workspacePath := t.TempDir()
+	validPath := filepath.Join(workspacePath, "valid")
+	invalidPath := filepath.Join(workspacePath, "invalid")
+	outsideCandidatePath := filepath.Join(workspacePath, "outside-candidate")
+	outsidePath := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outsidePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", outsidePath, err)
+	}
+	for _, path := range []string{validPath, invalidPath, outsideCandidatePath} {
+		if err := os.MkdirAll(filepath.Join(path, ".git"), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q) error = %v", path, err)
+		}
+	}
+
+	service := &Service{runGit: func(directory string, arguments ...string) ([]byte, error) {
+		if arguments[0] == "rev-parse" {
+			switch directory {
+			case invalidPath:
+				return nil, errors.New("invalid repository")
+			case outsideCandidatePath:
+				return []byte(outsidePath + "\n"), nil
+			default:
+				return []byte(directory + "\n"), nil
+			}
+		}
+		if arguments[0] == "symbolic-ref" {
+			return []byte("main\n"), nil
+		}
+		return nil, nil
+	}}
+
+	repositories, err := service.List(workspacePath, 2)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if got, want := repositoryPaths(repositories), []string{"valid"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("List() paths = %#v，期望 %#v", got, want)
+	}
+}
+
+func TestServiceKeepsOtherRepositoriesVisibleWhenBasicStatusFails(t *testing.T) {
+	workspacePath := t.TempDir()
+	availablePath := filepath.Join(workspacePath, "available")
+	brokenPath := filepath.Join(workspacePath, "broken")
+	for _, path := range []string{availablePath, brokenPath} {
+		if err := os.MkdirAll(filepath.Join(path, ".git"), 0o700); err != nil {
+			t.Fatalf("MkdirAll(%q) error = %v", path, err)
+		}
+	}
+
+	service := &Service{runGit: func(directory string, arguments ...string) ([]byte, error) {
+		if arguments[0] == "rev-parse" {
+			return []byte(directory + "\n"), nil
+		}
+		if directory == brokenPath && arguments[0] == "status" {
+			return nil, errors.New("status unavailable")
+		}
+		if arguments[0] == "symbolic-ref" {
+			return []byte("main\n"), nil
+		}
+		return nil, nil
+	}}
+
+	repositories, err := service.List(workspacePath, 2)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(repositories) != 2 {
+		t.Fatalf("List() repositories = %#v", repositories)
+	}
+	if repositories[0].Path != "available" || repositories[0].Action != ActionSync {
+		t.Fatalf("可用仓库状态 = %#v", repositories[0])
+	}
+	if repositories[1].Path != "broken" || repositories[1].Action != ActionNone || !strings.Contains(repositories[1].Notice, "读取仓库状态失败") {
+		t.Fatalf("失败仓库状态 = %#v", repositories[1])
+	}
+}
 
 func TestServiceListsRepositoriesAndChoosesPrimaryAction(t *testing.T) {
 	workspacePath := t.TempDir()
@@ -165,6 +288,28 @@ func TestServiceLimitsRepositoryScanDepth(t *testing.T) {
 	}
 	if got, want := repositoryPaths(deep), []string{".", "child", filepath.Join("child", "grandchild")}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("List() depth 3 paths = %#v，期望 %#v", got, want)
+	}
+}
+
+func TestServiceDefaultDepthFindsDefaultLifecycleRepositoryLayout(t *testing.T) {
+	workspacePath := t.TempDir()
+	repositoryPath := filepath.Join(workspacePath, "workspaces", "project")
+	executeGit(t, repositoryPath, "init", "--initial-branch=main")
+
+	repositories, err := NewService().List(workspacePath, settings.DefaultGitScanDepth)
+	if err != nil {
+		t.Fatalf("List() default depth error = %v", err)
+	}
+	if got, want := repositoryPaths(repositories), []string{filepath.Join("workspaces", "project")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("List() default depth paths = %#v，期望 %#v", got, want)
+	}
+
+	shallow, err := NewService().List(workspacePath, 2)
+	if err != nil {
+		t.Fatalf("List() explicit depth 2 error = %v", err)
+	}
+	if len(shallow) != 0 {
+		t.Fatalf("List() explicit depth 2 = %#v，期望不进入第 3 层", shallow)
 	}
 }
 

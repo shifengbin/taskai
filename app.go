@@ -17,6 +17,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"taskai/internal/application"
+	"taskai/internal/backgroundprocess"
 	"taskai/internal/fonts"
 	"taskai/internal/lifecycle"
 	"taskai/internal/quickinput"
@@ -1621,7 +1622,7 @@ func commandProcessForPlatform(platform, shellPath, command string, arguments []
 }
 
 func configureCommandProcess(process *exec.Cmd, directory string, environment []string) {
-	lifecycle.ConfigureBackgroundProcess(process)
+	backgroundprocess.Configure(process)
 	process.Dir = directory
 	if process.Env == nil {
 		process.Env = os.Environ()

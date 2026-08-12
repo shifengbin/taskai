@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"taskai/internal/backgroundprocess"
 )
 
 type Action string
@@ -33,10 +36,14 @@ type Repository struct {
 	Action             Action `json:"action"`
 }
 
-type Service struct{}
+type gitRunner func(directory string, arguments ...string) ([]byte, error)
+
+type Service struct {
+	runGit gitRunner
+}
 
 func NewService() *Service {
-	return &Service{}
+	return &Service{runGit: runGit}
 }
 
 func (service *Service) List(workspacePath string, maximumDepth int) ([]Repository, error) {
@@ -47,7 +54,7 @@ func (service *Service) List(workspacePath string, maximumDepth int) ([]Reposito
 	if err != nil {
 		return nil, err
 	}
-	directories, err := findRepositoryDirectories(workspace, maximumDepth)
+	directories, err := findRepositoryDirectories(workspace, maximumDepth, service.executeGit)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +62,12 @@ func (service *Service) List(workspacePath string, maximumDepth int) ([]Reposito
 	for _, directory := range directories {
 		repository, err := service.status(workspace, directory)
 		if err != nil {
-			return nil, err
+			relativePath, relativeErr := safeRelativePath(workspace, directory)
+			if relativeErr != nil {
+				continue
+			}
+			repositories = append(repositories, Repository{Path: relativePath, Notice: err.Error(), Action: ActionNone})
+			continue
 		}
 		repositories = append(repositories, repository)
 	}
@@ -79,10 +91,10 @@ func (service *Service) Commit(workspacePath, repositoryPath, message string) (R
 	if !current.Dirty {
 		return current, fmt.Errorf("仓库没有待提交的改动")
 	}
-	if _, err := runGit(directory, "add", "-A"); err != nil {
+	if _, err := service.executeGit(directory, "add", "-A"); err != nil {
 		return current, gitError("暂存全部改动失败", err)
 	}
-	if _, err := runGit(directory, "commit", "-m", message); err != nil {
+	if _, err := service.executeGit(directory, "commit", "-m", message); err != nil {
 		return current, gitError("提交改动失败", err)
 	}
 	return service.status(workspace, directory)
@@ -104,12 +116,12 @@ func (service *Service) Publish(workspacePath, repositoryPath string) (Repositor
 		return current, fmt.Errorf("当前仓库未处于本地分支，无法发布分支")
 	}
 	if current.Remote == "" {
-		return current, remoteConfigurationError(directory)
+		return current, service.remoteConfigurationError(directory)
 	}
 	if current.RemoteBranchExists {
 		return current, fmt.Errorf("远程已存在当前分支，请同步远程")
 	}
-	if _, err := runGit(directory, "push", "-u", current.Remote, current.Branch); err != nil {
+	if _, err := service.executeGit(directory, "push", "-u", current.Remote, current.Branch); err != nil {
 		return current, gitError("发布分支失败", err)
 	}
 	return service.status(workspace, directory)
@@ -131,7 +143,7 @@ func (service *Service) Sync(workspacePath, repositoryPath string) (Repository, 
 		return current, fmt.Errorf("当前仓库未处于本地分支，无法同步远程")
 	}
 	if current.Remote == "" {
-		return current, remoteConfigurationError(directory)
+		return current, service.remoteConfigurationError(directory)
 	}
 	if current.Notice != "" {
 		return current, fmt.Errorf("%s", current.Notice)
@@ -140,17 +152,17 @@ func (service *Service) Sync(workspacePath, repositoryPath string) (Repository, 
 		return current, fmt.Errorf("远程不存在当前分支，请先发布分支")
 	}
 	if !current.HasUpstream {
-		if _, err := runGit(directory, "fetch", current.Remote, current.Branch); err != nil {
+		if _, err := service.executeGit(directory, "fetch", current.Remote, current.Branch); err != nil {
 			return current, gitError("读取远程分支失败", err)
 		}
-		if _, err := runGit(directory, "branch", "--set-upstream-to="+current.Remote+"/"+current.Branch); err != nil {
+		if _, err := service.executeGit(directory, "branch", "--set-upstream-to="+current.Remote+"/"+current.Branch); err != nil {
 			return current, gitError("设置上游分支失败", err)
 		}
 	}
-	if _, err := runGit(directory, "pull", current.Remote, current.Branch); err != nil {
+	if _, err := service.executeGit(directory, "pull", current.Remote, current.Branch); err != nil {
 		return current, gitError("拉取远程分支失败", err)
 	}
-	if _, err := runGit(directory, "push", current.Remote, current.Branch); err != nil {
+	if _, err := service.executeGit(directory, "push", current.Remote, current.Branch); err != nil {
 		return current, gitError("推送远程分支失败", err)
 	}
 	return service.status(workspace, directory)
@@ -161,12 +173,12 @@ func (service *Service) status(workspace, directory string) (Repository, error) 
 	if err != nil {
 		return Repository{}, err
 	}
-	dirtyOutput, err := runGit(directory, "status", "--porcelain", "--untracked-files=all")
+	dirtyOutput, err := service.executeGit(directory, "status", "--porcelain", "--untracked-files=all")
 	if err != nil {
 		return Repository{}, gitError("读取仓库状态失败", err)
 	}
-	branch, _ := runGit(directory, "symbolic-ref", "--quiet", "--short", "HEAD")
-	remotesOutput, err := runGit(directory, "remote")
+	branch, _ := service.executeGit(directory, "symbolic-ref", "--quiet", "--short", "HEAD")
+	remotesOutput, err := service.executeGit(directory, "remote")
 	if err != nil {
 		return Repository{}, gitError("读取远程仓库失败", err)
 	}
@@ -191,16 +203,16 @@ func (service *Service) status(workspace, directory string) (Repository, error) 
 		repository.Action = ActionSync
 		return repository, nil
 	}
-	remoteHead, err := remoteBranchHead(directory, remote, repository.Branch)
+	remoteHead, err := service.remoteBranchHead(directory, remote, repository.Branch)
 	if err != nil {
 		repository.Notice = err.Error()
 		repository.Action = ActionSync
 		return repository, nil
 	}
 	repository.RemoteBranchExists = remoteHead != ""
-	repository.HasUpstream = hasUpstream(directory)
+	repository.HasUpstream = service.hasUpstream(directory)
 	if repository.RemoteBranchExists {
-		repository.Synchronized = isSynchronized(directory, remote, repository.Branch, remoteHead)
+		repository.Synchronized = service.isSynchronized(directory, remote, repository.Branch, remoteHead)
 		repository.Action = ActionSync
 		return repository, nil
 	}
@@ -208,7 +220,7 @@ func (service *Service) status(workspace, directory string) (Repository, error) 
 	return repository, nil
 }
 
-func findRepositoryDirectories(workspace string, maximumDepth int) ([]string, error) {
+func findRepositoryDirectories(workspace string, maximumDepth int, runGit gitRunner) ([]string, error) {
 	directories := map[string]struct{}{}
 	err := filepath.WalkDir(workspace, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -236,21 +248,18 @@ func findRepositoryDirectories(workspace string, maximumDepth int) ([]string, er
 		if depth > maximumDepth {
 			return filepath.SkipDir
 		}
-		topLevel, err := gitTopLevel(path)
-		if err != nil {
-			if depth == maximumDepth {
-				return filepath.SkipDir
+		marker, markerErr := os.Lstat(filepath.Join(path, ".git"))
+		if markerErr == nil && marker.Mode()&os.ModeSymlink == 0 && (marker.IsDir() || marker.Mode().IsRegular()) {
+			topLevel, gitErr := gitTopLevel(path, runGit)
+			if gitErr == nil {
+				canonicalTopLevel, canonicalErr := filepath.EvalSymlinks(topLevel)
+				if canonicalErr == nil {
+					if _, relativeErr := safeRelativePath(workspace, canonicalTopLevel); relativeErr == nil {
+						directories[canonicalTopLevel] = struct{}{}
+					}
+				}
 			}
-			return nil
 		}
-		canonicalTopLevel, err := filepath.EvalSymlinks(topLevel)
-		if err != nil {
-			return nil
-		}
-		if _, err := safeRelativePath(workspace, canonicalTopLevel); err != nil {
-			return nil
-		}
-		directories[canonicalTopLevel] = struct{}{}
 		if depth == maximumDepth {
 			return filepath.SkipDir
 		}
@@ -295,7 +304,7 @@ func resolveRepository(workspacePath, repositoryPath string) (string, string, er
 	if _, err := safeRelativePath(workspace, canonicalDirectory); err != nil {
 		return "", "", err
 	}
-	topLevel, err := gitTopLevel(canonicalDirectory)
+	topLevel, err := gitTopLevel(canonicalDirectory, runGit)
 	if err != nil {
 		return "", "", fmt.Errorf("指定目录不是 Git 仓库")
 	}
@@ -354,7 +363,7 @@ func safeRelativePath(root, candidate string) (string, error) {
 	return filepath.Clean(relativePath), nil
 }
 
-func gitTopLevel(directory string) (string, error) {
+func gitTopLevel(directory string, runGit gitRunner) (string, error) {
 	output, err := runGit(directory, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
@@ -377,8 +386,8 @@ func selectRemote(remotes []string) (string, string) {
 	return "", "存在多个远程仓库但没有 origin，请配置要使用的远程仓库"
 }
 
-func remoteBranchHead(directory, remote, branch string) (string, error) {
-	output, err := runGit(directory, "ls-remote", "--exit-code", "--heads", remote, "refs/heads/"+branch)
+func (service *Service) remoteBranchHead(directory, remote, branch string) (string, error) {
+	output, err := service.executeGit(directory, "ls-remote", "--exit-code", "--heads", remote, "refs/heads/"+branch)
 	if err == nil {
 		fields := strings.Fields(string(output))
 		if len(fields) > 0 {
@@ -392,21 +401,21 @@ func remoteBranchHead(directory, remote, branch string) (string, error) {
 	return "", gitError("读取远程分支失败", err)
 }
 
-func hasUpstream(directory string) bool {
-	_, err := runGit(directory, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+func (service *Service) hasUpstream(directory string) bool {
+	_, err := service.executeGit(directory, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
 	return err == nil
 }
 
-func isSynchronized(directory, remote, branch, remoteHead string) bool {
-	upstream, err := runGit(directory, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+func (service *Service) isSynchronized(directory, remote, branch, remoteHead string) bool {
+	upstream, err := service.executeGit(directory, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
 	if err != nil || strings.TrimSpace(string(upstream)) != remote+"/"+branch {
 		return false
 	}
-	trackedHead, err := runGit(directory, "rev-parse", remote+"/"+branch)
+	trackedHead, err := service.executeGit(directory, "rev-parse", remote+"/"+branch)
 	if err != nil || strings.TrimSpace(string(trackedHead)) != remoteHead {
 		return false
 	}
-	differences, err := runGit(directory, "rev-list", "--left-right", "--count", remote+"/"+branch+"...HEAD")
+	differences, err := service.executeGit(directory, "rev-list", "--left-right", "--count", remote+"/"+branch+"...HEAD")
 	if err != nil {
 		return false
 	}
@@ -414,8 +423,8 @@ func isSynchronized(directory, remote, branch, remoteHead string) bool {
 	return len(counts) == 2 && counts[0] == "0" && counts[1] == "0"
 }
 
-func remoteConfigurationError(directory string) error {
-	remotesOutput, err := runGit(directory, "remote")
+func (service *Service) remoteConfigurationError(directory string) error {
+	remotesOutput, err := service.executeGit(directory, "remote")
 	if err != nil {
 		return gitError("读取远程仓库失败", err)
 	}
@@ -447,17 +456,30 @@ func (err *commandError) ExitCode() int {
 }
 
 func runGit(directory string, arguments ...string) ([]byte, error) {
-	command := exec.Command("git", arguments...)
-	command.Dir = directory
-	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	var output bytes.Buffer
 	var standardError bytes.Buffer
-	command.Stdout = &output
-	command.Stderr = &standardError
+	command := gitCommand(directory, &output, &standardError, arguments...)
 	if err := command.Run(); err != nil {
 		return output.Bytes(), &commandError{output: strings.TrimSpace(standardError.String()), err: err}
 	}
 	return output.Bytes(), nil
+}
+
+func (service *Service) executeGit(directory string, arguments ...string) ([]byte, error) {
+	if service.runGit == nil {
+		return runGit(directory, arguments...)
+	}
+	return service.runGit(directory, arguments...)
+}
+
+func gitCommand(directory string, output, standardError io.Writer, arguments ...string) *exec.Cmd {
+	command := exec.Command("git", arguments...)
+	backgroundprocess.Configure(command)
+	command.Dir = directory
+	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	command.Stdout = output
+	command.Stderr = standardError
+	return command
 }
 
 func exitCode(err error) int {

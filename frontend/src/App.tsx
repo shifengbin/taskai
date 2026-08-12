@@ -1142,7 +1142,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   const updateSettingsDraft = (update: Partial<SettingsRecord>) => {
     setSettingsDraft((current) => ({
       workspaceRoot: current?.workspaceRoot ?? settings?.workspaceRoot ?? '',
-      gitScanDepth: current?.gitScanDepth ?? settings?.gitScanDepth ?? 2,
+      gitScanDepth: current?.gitScanDepth ?? settings?.gitScanDepth ?? 3,
       taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
 		colorScheme: current?.colorScheme ?? colorScheme,
 		terminalFontFamily: current?.terminalFontFamily ?? settings?.terminalFontFamily ?? '',
@@ -1255,7 +1255,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                   const draftMenuItems = cloneTaskMenuItems(taskMenuItems)
 				  setSettingsDraft(settings ? {
 				    ...settings,
-                    gitScanDepth: settings.gitScanDepth ?? 2,
+                    gitScanDepth: settings.gitScanDepth ?? 3,
                     colorScheme,
 					terminalFontFamily: settings.terminalFontFamily ?? '',
 						terminalFontSize: normalizeTerminalFontSize(settings.terminalFontSize),
@@ -1778,7 +1778,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
               {settingsTab === 'workspace' && <div className="grid gap-3">
                 <Field label="新任务工作区根目录" hint="仅影响之后开始执行的任务，已有任务保持各自目录快照。"><Input required value={settingsDraft?.workspaceRoot ?? ''} onChange={(event) => updateSettingsDraft({workspaceRoot: event.target.value})}/></Field>
-                <Field label="Git 最大扫描深度" hint="任务目录为第 1 层，默认扫描到第 2 层。较小的值可减少 Git 仓库扫描时间。"><Input required type="number" min={1} max={10} value={settingsDraft?.gitScanDepth ?? 2} onChange={(event) => updateSettingsDraft({gitScanDepth: Number(event.target.value)})}/></Field>
+                <Field label="Git 最大扫描深度" hint="任务目录为第 1 层，默认扫描到第 3 层，可覆盖 workspaces 下的项目仓库。较小的值可减少 Git 仓库扫描时间。"><Input required type="number" min={1} max={10} value={settingsDraft?.gitScanDepth ?? 3} onChange={(event) => updateSettingsDraft({gitScanDepth: Number(event.target.value)})}/></Field>
                 <Field label="颜色模式">
                   <select className={selectClass} value={settingsDraft?.colorScheme ?? colorScheme} onChange={(event) => updateSettingsDraft({colorScheme: event.target.value as ColorScheme})}>
                     <option value="light">亮色</option>
