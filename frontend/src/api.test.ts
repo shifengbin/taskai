@@ -89,6 +89,27 @@ describe('api.saveSettings', () => {
 			},
 		})
 	})
+
+	it('保留备注模板字段', async () => {
+		const settings: SettingsRecord = {
+			workspaceRoot: '/tmp/workspaces',
+			taskTreeWidth: 360,
+			colorScheme: 'light',
+			shellPath: '/bin/sh',
+			taskMenuItems: [],
+			activeTaskStatus: 'pending',
+			statusManagementMode: 'title-change',
+			statusManagementHTTPPort: 0,
+			httpServiceEnabled: false,
+			terminalNoteTemplate: {originalPrefix: '引用：', notePrefix: '处理：', listSuffix: '请处理'},
+		}
+
+		await api.saveSettings(settings)
+
+		expect(saveSettings.mock.calls[0][0]).toMatchObject({
+			terminalNoteTemplate: {originalPrefix: '引用：', notePrefix: '处理：', listSuffix: '请处理'},
+		})
+	})
 })
 
 describe('api.lifecyclePresets', () => {

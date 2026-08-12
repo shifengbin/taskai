@@ -101,9 +101,26 @@ vi.mock('./terminal-session', () => ({
 vi.mock('./components/TerminalView', async () => {
   const {terminalDisplayName} = await vi.importActual<typeof import('./types')>('./types')
   return {
-    TerminalView: ({terminal, onAliasChange}: {terminal: {title?: string, alias?: string}, onAliasChange?: (alias: string | undefined) => void}) => <>
+			TerminalView: ({terminal, notes = [], noteTemplate, clearNotesAfterAction = true, onAddNote, onClearNotes, onClearNotesAfterActionChange, onClose, onAliasChange}: {
+      terminal: {title?: string, alias?: string}
+      notes?: Array<{original: string, note: string}>
+      noteTemplate?: {originalPrefix: string}
+				clearNotesAfterAction?: boolean
+      onAddNote?: (note: {original: string, note: string}) => void
+      onClearNotes?: () => void
+				onClearNotesAfterActionChange?: (clearNotesAfterAction: boolean) => void
+				onClose?: () => void
+      onAliasChange?: (alias: string | undefined) => void
+    }) => <>
       <div>终端视图</div>
       <button type="button" onClick={() => onAliasChange?.('前端调试')}>设置右侧终端别名</button>
+			<button type="button" onClick={() => onAddNote?.({original: '终端原文', note: '终端备注'})}>添加右侧终端备注</button>
+			<button type="button" onClick={() => onClearNotes?.()}>清空右侧终端备注</button>
+			<button type="button" onClick={() => onClearNotesAfterActionChange?.(!clearNotesAfterAction)}>切换右侧终端备注操作后清空</button>
+			<button type="button" onClick={() => onClose?.()}>关闭右侧终端</button>
+			<div data-testid="right-terminal-note-count">{`右侧终端备注 ${notes.length}`}</div>
+			<div data-testid="right-terminal-note-template">{noteTemplate?.originalPrefix}</div>
+			<div data-testid="right-terminal-note-clear-after-action">{clearNotesAfterAction ? '清空' : '保留'}</div>
       <div data-testid="terminal-view-title-container">
         <div data-testid="terminal-view-title" aria-label="右侧终端标题">{terminalDisplayName(terminal)}</div>
       </div>
@@ -866,6 +883,7 @@ describe('App confirmation flows', () => {
 		terminalFontSize: 13,
 		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
 		terminalShortcuts: [],
+		terminalNoteTemplate: {originalPrefix: '原文：', notePrefix: '备注：', listSuffix: ''},
 		windowMaximized: undefined,
 		shellPath: '/bin/sh',
       taskMenuItems: fixedTaskMenuItems,
@@ -1085,6 +1103,7 @@ describe('App confirmation flows', () => {
 		terminalFontSize: 13,
 		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
 		terminalShortcuts: [],
+		terminalNoteTemplate: {originalPrefix: '原文：', notePrefix: '备注：', listSuffix: ''},
 		windowMaximized: undefined,
 		shellPath: '/bin/zsh',
       taskMenuItems: fixedTaskMenuItems,
@@ -1117,6 +1136,7 @@ describe('App confirmation flows', () => {
 		terminalFontSize: 13,
 		terminalTheme: expect.objectContaining({background: '#070A16', foreground: '#E8ECFF'}),
 		terminalShortcuts: [],
+		terminalNoteTemplate: {originalPrefix: '原文：', notePrefix: '备注：', listSuffix: ''},
 		windowMaximized: undefined,
 		shellPath: '/custom/shell',
       taskMenuItems: fixedTaskMenuItems,
@@ -2851,6 +2871,102 @@ describe('App confirmation flows', () => {
 
     expect(screen.getByText('终端视图')).toBeInTheDocument()
   })
+
+	it('终端退出时清空仅属于该终端的运行期备注', async () => {
+		const user = userEvent.setup()
+		let terminalEventListener: ((event: {taskId: string; terminalId: string; type: 'exited'; exitReason: 'unexpected'; exitCode: number}) => void) | undefined
+		runtime.EventsOn.mockImplementation((eventName, listener) => {
+			if (eventName === 'task-terminal:event') {
+				terminalEventListener = listener
+			}
+		})
+		bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('tab', {name: /执行中/}))
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+		await user.click(await screen.findByRole('button', {name: '添加右侧终端备注'}))
+		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('1'))
+
+		if (!terminalEventListener) {
+			throw new Error('未注册终端事件监听器')
+		}
+		act(() => terminalEventListener?.({taskId: 'task-1', terminalId: 'terminal-1', type: 'exited', exitReason: 'unexpected', exitCode: 1}))
+
+		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('0'))
+	})
+
+	it('在设置中编辑并保存终端备注模板', async () => {
+		const user = userEvent.setup()
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '终端备注'}))
+		fireEvent.change(screen.getByRole('textbox', {name: '原文前缀'}), {target: {value: '[原文] '}})
+		fireEvent.change(screen.getByRole('textbox', {name: '备注前缀'}), {target: {value: '[备注] '}})
+		fireEvent.change(screen.getByRole('textbox', {name: '列表统一后缀'}), {target: {value: '请汇总处理'}})
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
+			terminalNoteTemplate: {originalPrefix: '[原文] ', notePrefix: '[备注] ', listSuffix: '请汇总处理'},
+		})))
+		bindings.CreateTerminal.mockResolvedValue({id: 'terminal-1', taskId: 'task-1', state: 'active'})
+		await user.click(screen.getByRole('tab', {name: /执行中/}))
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+		await waitFor(() => expect(screen.getByTestId('right-terminal-note-template')).toHaveTextContent('[原文]'))
+	})
+
+	it('取消终端备注模板草稿时保留上次保存的内容', async () => {
+		const user = userEvent.setup()
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '终端备注'}))
+		fireEvent.change(screen.getByRole('textbox', {name: '原文前缀'}), {target: {value: '临时前缀'}})
+		await user.click(screen.getByRole('button', {name: '取消'}))
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '终端备注'}))
+		expect(screen.getByRole('textbox', {name: '原文前缀'})).toHaveValue('原文：')
+		expect(bindings.SaveSettings).not.toHaveBeenCalled()
+	})
+
+	it('备注操作后的清空偏好按终端保存，并在主动关闭后释放', async () => {
+		const user = userEvent.setup()
+		bindings.CreateTerminal
+			.mockResolvedValueOnce({id: 'terminal-1', taskId: 'task-1', state: 'active', title: '终端一'})
+			.mockResolvedValueOnce({id: 'terminal-2', taskId: 'task-1', state: 'active', title: '终端二'})
+			.mockResolvedValueOnce({id: 'terminal-1', taskId: 'task-1', state: 'active', title: '新终端一'})
+		bindings.CloseTerminal.mockResolvedValue(undefined)
+		render(<App/>)
+
+		await user.click(await screen.findByRole('tab', {name: /执行中/}))
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+		await user.click(await screen.findByRole('button', {name: '添加右侧终端备注'}))
+		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('1'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('清空')
+		await user.click(screen.getByRole('button', {name: '切换右侧终端备注操作后清空'}))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('保留')
+
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('0'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('清空')
+
+		await user.click(screen.getByTestId('task-tree-terminal-title-terminal-1').closest('[role="button"]')!)
+		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('1'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('保留')
+		await user.click(screen.getByRole('button', {name: '关闭右侧终端'}))
+		await waitFor(() => expect(bindings.CloseTerminal).toHaveBeenCalledWith('task-1', 'terminal-1'))
+
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
+		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('0'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('清空')
+	})
 
   it('主动关闭终端成功后从树和右侧终端视图移除', async () => {
     const user = userEvent.setup()

@@ -69,6 +69,14 @@ describe('clampTaskTreeWidth', () => {
 		expect(settings.defaultLifecyclePresetId).toBe('deploy')
 	})
 
+	it('Wails 模型转换终端备注模板', () => {
+		const settings = wailsSettings.Settings.createFrom({
+			terminalNoteTemplate: {originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'},
+		})
+
+		expect(settings.terminalNoteTemplate).toEqual({originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'})
+	})
+
 	it('别名优先显示，空白别名恢复实际终端名称', () => {
 		const terminal = {title: ' npm run dev ', alias: ' 前端调试 '}
 

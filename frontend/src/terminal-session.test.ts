@@ -437,6 +437,22 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].paste).toHaveBeenCalledTimes(1)
   })
 
+  it('仅返回活动会话的当前选区，并忽略缺失或已关闭会话', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+
+    expect(registry.selectionText('task-1', 'terminal-1')).toBe('')
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'ready'})
+    terminalInstances[0].getSelection.mockReturnValue('选中的终端内容')
+
+    expect(registry.selectionText('task-1', 'terminal-1')).toBe('选中的终端内容')
+    expect(registry.selectionText('task-1', 'terminal-2')).toBe('')
+
+    registry.dispose('task-1', 'terminal-1')
+
+    expect(registry.selectionText('task-1', 'terminal-1')).toBe('')
+  })
+
   it('仅为活动会话注册终端按键处理器', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
     const handler = vi.fn(() => false)

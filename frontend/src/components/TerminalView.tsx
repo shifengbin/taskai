@@ -1,15 +1,16 @@
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from 'react'
-import {ClipboardPaste, Terminal as TerminalIcon} from 'lucide-react'
+import {ClipboardCopy, ClipboardPaste, MessageSquarePlus, Send, Terminal as TerminalIcon} from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
-import {type QuickInput, type TerminalRecord, type TerminalShortcut} from '../types'
+import {type QuickInput, type TerminalNoteTemplate, type TerminalRecord, type TerminalShortcut} from '../types'
 import {findTerminalShortcut, terminalShortcutApplies, terminalShortcutInput} from '../terminal-shortcuts'
+import {defaultTerminalNoteTemplate, formatTerminalNotes, type TerminalNote} from '../terminal-notes'
 import {api} from '../api'
 import {defaultTerminalFontSize} from '../terminal-font-size'
 import {type TerminalTheme} from '../terminal-theme'
-import {ClipboardGetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
-import {IconButton, Input, Popover, PopoverContent, PopoverTrigger} from './ui'
+import {ClipboardGetText, ClipboardSetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
+import {Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, IconButton, Input, Popover, PopoverContent, PopoverTrigger, Textarea} from './ui'
 import {TerminalName} from './TerminalName'
 
 interface TerminalViewProps {
@@ -17,22 +18,33 @@ interface TerminalViewProps {
   sessionRegistry: TerminalSessionRegistry
   quickInputs?: QuickInput[]
   terminalShortcuts?: TerminalShortcut[]
+	notes?: TerminalNote[]
+	noteTemplate?: TerminalNoteTemplate
   fontSize?: number
   terminalTheme?: Partial<TerminalTheme>
   onResize(columns: number, rows: number): void
   onClose(): void
   onError?(error: unknown): void
+	onAddNote?(note: TerminalNote): void
+	onClearNotes?(): void
+	clearNotesAfterAction?: boolean
+	onClearNotesAfterActionChange?(clearNotesAfterAction: boolean): void
   onAliasChange?(alias: string | undefined): void
 }
 
-export function TerminalView({terminal, sessionRegistry, quickInputs = [], terminalShortcuts = [], fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError, onAliasChange = () => {}}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, quickInputs = [], terminalShortcuts = [], notes = [], noteTemplate = defaultTerminalNoteTemplate, fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError, onAddNote = () => {}, onClearNotes = () => {}, clearNotesAfterAction = true, onClearNotesAfterActionChange = () => {}, onAliasChange = () => {}}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const quickInputSearchRef = useRef<HTMLInputElement>(null)
+  const noteInputRef = useRef<HTMLTextAreaElement>(null)
   const onResizeRef = useRef(onResize)
   const onErrorRef = useRef(onError)
   const [quickInputSelectorOpen, setQuickInputSelectorOpen] = useState(false)
   const [quickInputSearch, setQuickInputSearch] = useState('')
   const [selectedQuickInputIndex, setSelectedQuickInputIndex] = useState(0)
+	const [selectionNote, setSelectionNote] = useState<{original: string, left: number, top: number}>()
+	const [noteInputOpen, setNoteInputOpen] = useState(false)
+	const [noteText, setNoteText] = useState('')
+	const [notesPanelOpen, setNotesPanelOpen] = useState(false)
   const resolvedTerminalTheme = useMemo(() => terminalVisualTheme(terminalTheme), [terminalTheme])
   const taskAIMouseClipboardEnabled = terminal.disableTaskAIMouseClipboard !== true
   const quickInputHotkey = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC')
@@ -60,6 +72,55 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
     setQuickInputSearch('')
     sessionRegistry.focus(terminal.taskId, terminal.id)
   }
+
+	const closeNoteInput = () => {
+		setNoteInputOpen(false)
+		setNoteText('')
+		setSelectionNote(undefined)
+		sessionRegistry.focus(terminal.taskId, terminal.id)
+	}
+
+	const saveNote = () => {
+		if (!selectionNote || !noteText.trim()) {
+			return
+		}
+		onAddNote({original: selectionNote.original, note: noteText})
+		closeNoteInput()
+	}
+
+	const sendNotes = () => {
+		if (notes.length === 0) {
+			return
+		}
+		const wrote = sessionRegistry.pasteInput(terminal.taskId, terminal.id, formatTerminalNotes(notes, noteTemplate))
+		completeNotesAction()
+		if (!wrote) {
+			onErrorRef.current?.(new Error('终端已关闭，无法发送备注'))
+		}
+	}
+
+	const copyNotes = async () => {
+		if (notes.length === 0) {
+			return
+		}
+		try {
+			if (!await ClipboardSetText(formatTerminalNotes(notes, noteTemplate))) {
+				onErrorRef.current?.(new Error('无法写入系统剪贴板'))
+			}
+		} catch (error) {
+			onErrorRef.current?.(error)
+		} finally {
+			completeNotesAction()
+		}
+	}
+
+	const completeNotesAction = () => {
+		if (clearNotesAfterAction) {
+			onClearNotes()
+		}
+		setNotesPanelOpen(false)
+		sessionRegistry.focus(terminal.taskId, terminal.id)
+	}
 
   const insertQuickInput = (quickInput: QuickInput) => {
     if (!sessionRegistry.pasteInput(terminal.taskId, terminal.id, quickInput.content)) {
@@ -114,6 +175,20 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
       quickInputSearchRef.current?.focus()
     }
   }, [quickInputSelectorOpen])
+
+	useEffect(() => {
+		if (noteInputOpen) {
+			noteInputRef.current?.focus()
+		}
+	}, [noteInputOpen])
+
+	useEffect(() => {
+		if (terminal.state !== 'active') {
+			setSelectionNote(undefined)
+			setNoteInputOpen(false)
+			setNotesPanelOpen(false)
+		}
+	}, [terminal.state])
 
   useEffect(() => {
 		if (terminal.state !== 'active') {
@@ -177,7 +252,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
   }, [terminal.id, terminal.state, terminal.taskId])
 
   return (
-    <div className="taskai-terminal grid h-full min-w-0" style={{gridTemplateRows: '40px minmax(0, 1fr)'}}>
+    <div className="taskai-terminal grid h-full min-w-0" style={{gridTemplateRows: '40px minmax(0, 1fr)'}} onPointerDown={() => setSelectionNote(undefined)}>
       <div className="taskai-terminal__header flex items-center gap-2 border-b border-snap-outline bg-snap-surface px-2" data-testid="terminal-view-header">
         <TerminalIcon className="h-4 w-4 shrink-0 text-snap-cobalt"/>
         <div data-testid="terminal-view-title-container" style={{flex: 1, minWidth: 0}}>
@@ -188,7 +263,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
             className="block w-full truncate font-display text-sm font-bold text-snap-ink"
           />
         </div>
-        {terminal.state === 'active' && (
+	        {terminal.state === 'active' && (
           <div className="taskai-terminal__quick-input-actions flex shrink-0 items-center" data-testid="terminal-view-actions">
             <Popover
               open={quickInputSelectorOpen}
@@ -262,21 +337,71 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
                 </div>
               </PopoverContent>
             </Popover>
+				<Popover open={notesPanelOpen} onOpenChange={setNotesPanelOpen}>
+					<PopoverTrigger asChild>
+						<IconButton aria-label={`终端备注（${notes.length} 条）`} title={`终端备注（${notes.length} 条）`} className="relative h-7 w-7">
+							<MessageSquarePlus className="h-4 w-4"/>
+							{notes.length > 0 && <span aria-hidden className="absolute -right-1 -top-1 min-w-4 rounded-full bg-snap-cobalt px-1 text-[10px] font-bold leading-4 text-snap-surface">{notes.length}</span>}
+						</IconButton>
+					</PopoverTrigger>
+					<PopoverContent align="end" className="w-96 p-3">
+						<div className="grid gap-3">
+							<div className="flex items-center justify-between gap-2">
+								<span className="font-display text-sm font-bold text-snap-ink">终端备注</span>
+								<span className="text-xs text-snap-muted">{notes.length} 条</span>
+							</div>
+							{notes.length === 0 ? <p className="py-3 text-sm text-snap-muted">还没有备注</p> : <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
+								{notes.map((note, index) => <div key={`${note.original}-${note.note}-${index}`} className="grid gap-1 rounded-snap border border-snap-outline bg-snap-surface p-2 text-sm">
+									<p className="whitespace-pre-wrap text-snap-ink">原文：{note.original}</p>
+									<p className="whitespace-pre-wrap text-snap-muted">备注：{note.note}</p>
+								</div>)}
+							</div>}
+							<div className="flex flex-wrap items-center justify-end gap-2">
+								<label className="mr-auto flex cursor-pointer items-center gap-2 text-xs font-bold text-snap-ink">
+									<Checkbox id={`terminal-note-clear-${terminal.id}`} checked={clearNotesAfterAction} onCheckedChange={(checked) => onClearNotesAfterActionChange(checked === true)}/>
+									<span>操作后清空</span>
+								</label>
+								<Button variant="secondary" size="sm" disabled={notes.length === 0} onClick={() => void copyNotes()}><ClipboardCopy className="h-4 w-4"/>复制到剪贴板</Button>
+								<Button variant="primary" size="sm" disabled={notes.length === 0} onClick={sendNotes}><Send className="h-4 w-4"/>发送到终端</Button>
+							</div>
+						</div>
+					</PopoverContent>
+				</Popover>
           </div>
         )}
       </div>
       <div
-        ref={containerRef}
+		ref={containerRef}
         className="taskai-terminal__content relative min-h-0 overflow-hidden p-1"
         data-testid="terminal-content"
-			onContextMenu={terminal.state === 'active' && taskAIMouseClipboardEnabled ? (event) => {
+		onContextMenu={terminal.state === 'active' && taskAIMouseClipboardEnabled ? (event) => {
           event.preventDefault()
           void ClipboardGetText().then((clipboard) => {
             if (clipboard) {
               sessionRegistry.pasteInput(terminal.taskId, terminal.id, clipboard)
             }
           }).catch(() => {})
-        } : undefined}
+		} : undefined}
+		onPointerUp={(event) => {
+			if (terminal.state !== 'active' || !taskAIMouseClipboardEnabled) {
+				return
+			}
+			const clientX = Number.isFinite(event.clientX) ? event.clientX : 0
+			const clientY = Number.isFinite(event.clientY) ? event.clientY : 0
+			requestAnimationFrame(() => {
+				const original = sessionRegistry.selectionText(terminal.taskId, terminal.id)
+				const bounds = containerRef.current?.getBoundingClientRect()
+				if (!original || !bounds) {
+					setSelectionNote(undefined)
+					return
+				}
+				setSelectionNote({
+					original,
+					left: clampNoteButtonPosition(clientX - bounds.left + 8, bounds.width),
+					top: clampNoteButtonPosition(clientY - bounds.top + 8, bounds.height),
+				})
+			})
+		}}
         style={{backgroundColor: resolvedTerminalTheme.background, '--wails-drop-target': 'drop'} as CSSProperties}
       >
         <div
@@ -287,11 +412,41 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
             backgroundSize: '4px 4px',
           }}
         />
+			{selectionNote && terminal.state === 'active' && taskAIMouseClipboardEnabled && <IconButton
+				aria-label="添加备注"
+				title="添加备注"
+				className="absolute z-10 h-8 w-8 border-snap-cobalt bg-snap-overlay opacity-70 hover:opacity-100"
+				style={{left: selectionNote.left, top: selectionNote.top}}
+				onPointerDown={(event) => event.stopPropagation()}
+				onClick={() => setNoteInputOpen(true)}
+			>
+				<MessageSquarePlus className="h-4 w-4"/>
+			</IconButton>}
       </div>
+		<Dialog open={noteInputOpen} onOpenChange={(open) => { if (!open) closeNoteInput() }}>
+			<DialogContent onPointerDown={(event) => event.stopPropagation()}>
+				<DialogHeader>
+					<DialogTitle>添加终端备注</DialogTitle>
+				</DialogHeader>
+				<div className="grid gap-2">
+					<span className="text-xs font-bold uppercase tracking-wide text-snap-muted">原文</span>
+					<pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-snap border border-snap-outline bg-snap-surface p-3 font-mono text-sm text-snap-ink">{selectionNote?.original}</pre>
+					<Textarea ref={noteInputRef} aria-label="备注内容" rows={4} placeholder="输入备注…" value={noteText} onChange={(event) => setNoteText(event.target.value)}/>
+				</div>
+				<DialogFooter>
+					<Button variant="secondary" onClick={closeNoteInput}>取消</Button>
+					<Button variant="primary" disabled={!noteText.trim()} onClick={saveNote}>保存备注</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
     </div>
   )
 }
 
 function quickInputContentPreview(content: string): string {
   return content.replaceAll('\n', ' ↵ ').replaceAll('\t', ' ⇥ ')
+}
+
+function clampNoteButtonPosition(position: number, containerSize: number): number {
+	return Math.max(0, Math.min(position, Math.max(0, containerSize - 40)))
 }

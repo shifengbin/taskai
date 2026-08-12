@@ -278,6 +278,181 @@ describe('TerminalView', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法插入快捷输入'}))
   })
 
+  it('鼠标选中非空文本后打开备注输入并保存到当前终端', () => {
+    const onAddNote = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        noteTemplate={{originalPrefix: '原文：', notePrefix: '备注：', listSuffix: ''}}
+        onAddNote={onAddNote}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    terminalInstances[0].getSelection.mockReturnValue('编译失败')
+
+    fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 32, clientY: 40})
+    act(() => runAnimationFrame())
+
+    const addNote = screen.getByRole('button', {name: '添加备注'})
+    expect(addNote).toHaveClass('opacity-70')
+    expect(addNote).toHaveStyle({left: '0px', top: '0px'})
+    fireEvent.click(addNote)
+
+    expect(screen.getByRole('dialog')).toHaveTextContent('编译失败')
+    const noteInput = screen.getByRole('textbox', {name: '备注内容'})
+    fireEvent.pointerDown(noteInput)
+    expect(screen.getByRole('dialog')).toHaveTextContent('编译失败')
+    const save = screen.getByRole('button', {name: '保存备注'})
+    expect(save).toBeDisabled()
+    fireEvent.change(noteInput, {target: {value: '检查依赖版本'}})
+    fireEvent.click(save)
+
+    expect(onAddNote).toHaveBeenCalledWith({original: '编译失败', note: '检查依赖版本'})
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(terminalInstances[0].focus).toHaveBeenCalled()
+  })
+
+	it('点击终端其他区域时收起选区备注入口', () => {
+		const registry = new TerminalSessionRegistry(vi.fn())
+		render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()}/>)
+		terminalInstances[0].getSelection.mockReturnValue('编译失败')
+
+		fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 32, clientY: 40})
+		act(() => runAnimationFrame())
+		expect(screen.getByRole('button', {name: '添加备注'})).toBeInTheDocument()
+
+		fireEvent.pointerDown(screen.getByTestId('terminal-view-header'))
+		expect(screen.queryByRole('button', {name: '添加备注'})).not.toBeInTheDocument()
+	})
+
+  it('空选区或禁用鼠标剪贴板的终端不显示备注入口', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const {rerender} = render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()}/>)
+
+    fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 20, clientY: 20})
+    runAnimationFrame()
+    expect(screen.queryByRole('button', {name: '添加备注'})).not.toBeInTheDocument()
+
+    terminalInstances[0].getSelection.mockReturnValue('不应读取')
+    rerender(<TerminalView terminal={{...terminal, disableTaskAIMouseClipboard: true}} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()}/>)
+    fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 20, clientY: 20})
+    runAnimationFrame()
+
+    expect(screen.queryByRole('button', {name: '添加备注'})).not.toBeInTheDocument()
+  })
+
+  it('默认勾选操作后清空时复制当前终端备注汇总并清空', async () => {
+    const onClearNotes = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        notes={[{original: '一', note: '甲'}, {original: '二', note: '乙'}]}
+        noteTemplate={{originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'}}
+        onClearNotes={onClearNotes}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
+
+    expect(screen.getByRole('checkbox', {name: '操作后清空'})).toBeChecked()
+    fireEvent.click(screen.getByRole('button', {name: '复制到剪贴板'}))
+
+    await waitFor(() => expect(runtime.ClipboardSetText).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n'))
+    expect(onClearNotes).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].paste).not.toHaveBeenCalled()
+  })
+
+  it('取消操作后清空时复制和发送均保留当前终端备注', async () => {
+    const onClearNotes = vi.fn()
+		const onClearNotesAfterActionChange = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        notes={[{original: '一', note: '甲'}, {original: '二', note: '乙'}]}
+        noteTemplate={{originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'}}
+        clearNotesAfterAction={false}
+        onClearNotes={onClearNotes}
+			onClearNotesAfterActionChange={onClearNotesAfterActionChange}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
+
+    const clearAfterAction = screen.getByRole('checkbox', {name: '操作后清空'})
+		expect(clearAfterAction).not.toBeChecked()
+		fireEvent.click(clearAfterAction)
+		expect(onClearNotesAfterActionChange).toHaveBeenCalledWith(true)
+    fireEvent.click(screen.getByRole('button', {name: '复制到剪贴板'}))
+    await waitFor(() => expect(runtime.ClipboardSetText).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n'))
+    expect(onClearNotes).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
+    fireEvent.click(screen.getByRole('button', {name: '发送到终端'}))
+
+    expect(terminalInstances[0].paste).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n')
+    expect(onClearNotes).not.toHaveBeenCalled()
+  })
+
+  it('从标题栏发送当前终端备注，并在发送后清空', () => {
+    const onClearNotes = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        notes={[{original: '一', note: '甲'}, {original: '二', note: '乙'}]}
+        noteTemplate={{originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'}}
+        onClearNotes={onClearNotes}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
+
+    expect(screen.getByText('原文：一')).toBeInTheDocument()
+    expect(screen.getByText('备注：乙')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', {name: '发送到终端'}))
+
+    expect(terminalInstances[0].paste).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n')
+    expect(onClearNotes).toHaveBeenCalledOnce()
+  })
+
+  it('目标会话关闭时仍清空备注并提示错误', () => {
+    const onClearNotes = vi.fn()
+    const onError = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        notes={[{original: '一', note: '甲'}]}
+        onClearNotes={onClearNotes}
+        onError={onError}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    registry.dispose(terminal.taskId, terminal.id)
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（1 条）'}))
+    fireEvent.click(screen.getByRole('button', {name: '发送到终端'}))
+
+    expect(onClearNotes).toHaveBeenCalledOnce()
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({message: '终端已关闭，无法发送备注'}))
+  })
+
   it('双击标题后将规范化别名交给父级', () => {
     const onAliasChange = vi.fn()
     const namedTerminal = {...terminal, title: 'zsh'}

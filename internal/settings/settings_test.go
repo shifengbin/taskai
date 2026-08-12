@@ -91,6 +91,19 @@ func TestDefaultUsesCurrentDarkTerminalTheme(t *testing.T) {
 	}
 }
 
+func TestDefaultUsesTerminalNoteTemplate(t *testing.T) {
+	current := Default(t.TempDir())
+
+	want := TerminalNoteTemplate{
+		OriginalPrefix: "原文：",
+		NotePrefix:     "备注：",
+		ListSuffix:     "",
+	}
+	if got := current.TerminalNoteTemplate; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Default() TerminalNoteTemplate = %#v, want %#v", got, want)
+	}
+}
+
 func TestNormalizeTerminalThemePreservesValidColorsAndRestoresInvalidValues(t *testing.T) {
 	current := TerminalTheme{
 		Background:          "#102030",

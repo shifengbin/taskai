@@ -200,6 +200,75 @@ func TestRepositoryLoadsMissingTerminalThemeAsDefault(t *testing.T) {
 	}
 }
 
+func TestRepositoryLoadsMissingTerminalNoteTemplateAsDefault(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents, err := json.Marshal(map[string]any{
+		"tasks": []task.Task{},
+		"settings": map[string]any{
+			"workspaceRoot": filepath.Join(t.TempDir(), "workspaces"),
+			"taskTreeWidth": settings.DefaultTaskTreeWidth,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := data.Settings.TerminalNoteTemplate, settings.DefaultTerminalNoteTemplate(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Load() TerminalNoteTemplate = %#v, want %#v", got, want)
+	}
+
+	persisted, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var stored struct {
+		Settings settings.Settings `json:"settings"`
+	}
+	if err := json.Unmarshal(persisted, &stored); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got, want := stored.Settings.TerminalNoteTemplate, settings.DefaultTerminalNoteTemplate(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("持久化 TerminalNoteTemplate = %#v, want %#v", got, want)
+	}
+}
+
+func TestRepositoryPreservesExplicitEmptyTerminalNoteTemplate(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents, err := json.Marshal(map[string]any{
+		"tasks": []task.Task{},
+		"settings": map[string]any{
+			"workspaceRoot": filepath.Join(t.TempDir(), "workspaces"),
+			"taskTreeWidth": settings.DefaultTaskTreeWidth,
+			"terminalNoteTemplate": map[string]string{
+				"originalPrefix": "",
+				"notePrefix":     "",
+				"listSuffix":     "",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := data.Settings.TerminalNoteTemplate, (settings.TerminalNoteTemplate{}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Load() TerminalNoteTemplate = %#v, want %#v", got, want)
+	}
+}
+
 func TestRepositoryReturnsDefaultsForMissingDataFile(t *testing.T) {
 	defaults := settings.Default(t.TempDir())
 	repository := New(filepath.Join(t.TempDir(), "state.json"), defaults)
