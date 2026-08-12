@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 
-import {appendTerminalNote, clearTerminalNotes, clearTaskTerminalNotes, formatTerminalNotes, terminalNotesForSession} from './terminal-notes'
+import {appendTerminalNote, clearTaskTerminalNoteClearPreferences, clearTaskTerminalNotes, clearTerminalNoteClearPreferences, clearTerminalNotes, formatTerminalNotes, setTerminalNoteClearAfterAction, terminalNoteClearAfterActionForSession, terminalNotesForSession} from './terminal-notes'
 import {terminalEventKey} from './state'
 
 const template = {originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'}
@@ -47,5 +47,29 @@ describe('terminal notes', () => {
 		expect(terminalNotesForSession(cleared, firstKey)).toEqual([])
 		expect(terminalNotesForSession(cleared, secondKey)).toEqual([])
 		expect(terminalNotesForSession(cleared, otherTaskKey)).toEqual([{original: '三', note: '丙'}])
+	})
+
+	it('按终端会话保存操作后清空偏好，并在任务清理时释放', () => {
+		const firstKey = terminalEventKey('task-1', 'terminal-1')
+		const secondKey = terminalEventKey('task-1', 'terminal-2')
+		const otherTaskKey = terminalEventKey('task-2', 'terminal-1')
+		const preferences = setTerminalNoteClearAfterAction(
+			setTerminalNoteClearAfterAction(
+				setTerminalNoteClearAfterAction({}, firstKey, false),
+				secondKey,
+				true,
+			),
+			otherTaskKey,
+			false,
+		)
+
+		expect(terminalNoteClearAfterActionForSession({}, firstKey)).toBe(true)
+		expect(terminalNoteClearAfterActionForSession(preferences, firstKey)).toBe(false)
+		expect(terminalNoteClearAfterActionForSession(preferences, secondKey)).toBe(true)
+		expect(terminalNoteClearAfterActionForSession(clearTerminalNoteClearPreferences(preferences, firstKey), firstKey)).toBe(true)
+		const clearedTask = clearTaskTerminalNoteClearPreferences(preferences, 'task-1')
+		expect(terminalNoteClearAfterActionForSession(clearedTask, firstKey)).toBe(true)
+		expect(terminalNoteClearAfterActionForSession(clearedTask, secondKey)).toBe(true)
+		expect(terminalNoteClearAfterActionForSession(clearedTask, otherTaskKey)).toBe(false)
 	})
 })
