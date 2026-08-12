@@ -8,9 +8,15 @@ interface TerminalNameProps {
   onAliasChange(alias: string | undefined): void
   className?: string
   testId?: string
+  tooltipPlacement?: {
+    side: 'top' | 'right' | 'bottom' | 'left'
+    align: 'start' | 'center' | 'end'
+    sideOffset: number
+    avoidCollisions?: boolean
+  }
 }
 
-export function TerminalName({terminal, onAliasChange, className, testId}: TerminalNameProps) {
+export function TerminalName({terminal, onAliasChange, className, testId, tooltipPlacement}: TerminalNameProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -73,7 +79,7 @@ export function TerminalName({terminal, onAliasChange, className, testId}: Termi
   return (
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>{name}</TooltipTrigger>
-      <TooltipContent data-testid="terminal-alias-details">
+      <TooltipContent data-testid="terminal-alias-details" className={tooltipPlacement ? 'pointer-events-none' : undefined} {...tooltipPlacement}>
         <span data-testid="terminal-alias-actual-name" className="block">标题: {details.actualName}</span>
         <span data-testid="terminal-alias-command" className="block">命令: {details.command}</span>
       </TooltipContent>

@@ -76,4 +76,24 @@ describe('TerminalName', () => {
 
     expect(screen.queryByTestId('terminal-alias-details')).not.toBeInTheDocument()
   })
+
+  it('按调用场景定位提示且不接收鼠标事件', async () => {
+    render(
+      <TooltipProvider delayDuration={0}>
+        <TerminalName
+          terminal={{...terminal, alias: '前端调试'}}
+          onAliasChange={vi.fn()}
+          tooltipPlacement={{side: 'right', align: 'start', sideOffset: 8, avoidCollisions: false}}
+        />
+      </TooltipProvider>,
+    )
+
+    fireEvent.pointerMove(screen.getByText('前端调试'))
+
+    const tooltip = await screen.findByTestId('terminal-alias-details')
+    expect(tooltip).toHaveAttribute('data-side', 'right')
+    expect(tooltip).toHaveAttribute('data-align', 'start')
+    expect(tooltip).toHaveClass('pointer-events-none')
+    expect(tooltip.parentElement).toHaveStyle({transform: 'translate(8px, 0px)'})
+  })
 })
