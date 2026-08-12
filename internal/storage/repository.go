@@ -118,6 +118,10 @@ func normalizeQuickInputs(inputs []quickinput.QuickInput) ([]quickinput.QuickInp
 
 func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, error) {
 	changed := false
+	if data.Settings.GitScanDepth == 0 {
+		data.Settings.GitScanDepth = settings.DefaultGitScanDepth
+		changed = true
+	}
 	normalizedTerminalFontSize := settings.NormalizeTerminalFontSize(data.Settings.TerminalFontSize)
 	if data.Settings.TerminalFontSize != normalizedTerminalFontSize {
 		data.Settings.TerminalFontSize = normalizedTerminalFontSize

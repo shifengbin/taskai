@@ -5,6 +5,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest'
 
 import {TaskTree} from './TaskTree'
 import type {TaskMenuItem, TaskRecord, TerminalRecord} from '../types'
+import {TooltipProvider} from './ui'
 
 const appStyles = readFileSync('src/App.css', 'utf8')
 const motionStyles = readFileSync('src/style.css', 'utf8')
@@ -105,6 +106,34 @@ describe('TaskTree', () => {
     fireEvent.keyDown(screen.getByRole('textbox', {name: '终端别名'}), {key: 'Enter'})
 
     expect(onAliasChange).toHaveBeenCalledWith(namedTerminal, '前端调试')
+  })
+
+  it('将别名终端提示固定在任务树终端项右侧', async () => {
+    render(
+      <TooltipProvider delayDuration={0}>
+        <TaskTree
+          tasks={[runningTask]}
+          terminals={[{...terminal, title: 'npm run dev', command: 'zsh', alias: '前端调试'}]}
+          selectedTerminalId={undefined}
+          onSelectTask={vi.fn()}
+          onSelectTerminal={vi.fn()}
+          onCreateTerminal={vi.fn()}
+          onEditTask={vi.fn()}
+          onOpenTaskFolder={vi.fn()}
+          onStartTask={vi.fn()}
+          onFinishTask={vi.fn()}
+          activeStatus="running"
+          onChangeStatus={vi.fn()}
+        />
+      </TooltipProvider>,
+    )
+
+    fireEvent.pointerMove(screen.getByTestId('task-tree-terminal-title-terminal-1'))
+
+    const tooltip = await screen.findByTestId('terminal-alias-details')
+    expect(tooltip).toHaveAttribute('data-side', 'right')
+    expect(tooltip).toHaveAttribute('data-align', 'start')
+    expect(tooltip.parentElement).toHaveStyle({transform: 'translate(8px, 0px)'})
   })
 
   it('打开任务操作菜单时标记所属任务的操作区域为活动', async () => {

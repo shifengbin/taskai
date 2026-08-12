@@ -19,6 +19,7 @@ import (
 	"taskai/internal/lifecycle"
 	"taskai/internal/quickinput"
 	"taskai/internal/realtime"
+	"taskai/internal/repositorygit"
 	"taskai/internal/settings"
 	"taskai/internal/task"
 	"taskai/internal/terminal"
@@ -94,6 +95,153 @@ func TestAppExposesTaskAndSettingsBindings(t *testing.T) {
 	}
 	if listed[0].Status != task.StatusRunning {
 		t.Fatalf("退出清理不应改变任务状态: %#v", listed[0])
+	}
+}
+
+func TestAppManagesGitRepositoriesOnlyInsideTaskWorkspace(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.WorkspaceRoot = filepath.Join(t.TempDir(), "workspaces")
+	current.DefaultLifecyclePresetID = ""
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	created, err := app.CreateTask("管理仓库", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	if err := os.MkdirAll(started.WorkspacePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	runGitInDirectory(t, started.WorkspacePath, "init", "--initial-branch=main")
+	runGitInDirectory(t, started.WorkspacePath, "config", "user.name", "测试用户")
+	runGitInDirectory(t, started.WorkspacePath, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(started.WorkspacePath, "README.md"), []byte("new\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	repositories, err := app.ListTaskGitRepositories(started.ID)
+	if err != nil {
+		t.Fatalf("ListTaskGitRepositories() error = %v", err)
+	}
+	if len(repositories) != 1 || repositories[0].Action != repositorygit.ActionCommit {
+		t.Fatalf("ListTaskGitRepositories() = %#v", repositories)
+	}
+	if _, err := app.CommitTaskGitRepository(started.ID, "../outside", "不应执行"); err == nil || !strings.Contains(err.Error(), "仓库路径无效") {
+		t.Fatalf("CommitTaskGitRepository() error = %v", err)
+	}
+	committed, err := app.CommitTaskGitRepository(started.ID, ".", "初始提交")
+	if err != nil {
+		t.Fatalf("CommitTaskGitRepository() error = %v", err)
+	}
+	if committed.Dirty || committed.Action != repositorygit.ActionSync {
+		t.Fatalf("CommitTaskGitRepository() = %#v", committed)
+	}
+}
+
+func TestAppListsGitRepositoriesForCompletedTaskWorkspace(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.WorkspaceRoot = filepath.Join(t.TempDir(), "workspaces")
+	current.DefaultLifecyclePresetID = ""
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	created, err := app.CreateTask("已完成仓库", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	finished := finishTaskAndWait(t, app, started.ID)
+	if finished.Status != task.StatusCompleted {
+		t.Fatalf("FinishTask() = %#v", finished)
+	}
+	if err := os.MkdirAll(started.WorkspacePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	runGitInDirectory(t, started.WorkspacePath, "init", "--initial-branch=main")
+
+	repositories, err := app.ListTaskGitRepositories(finished.ID)
+	if err != nil {
+		t.Fatalf("ListTaskGitRepositories() error = %v", err)
+	}
+	if len(repositories) != 1 || repositories[0].Path != "." {
+		t.Fatalf("ListTaskGitRepositories() = %#v", repositories)
+	}
+}
+
+func TestAppListsGitRepositoriesWithConfiguredScanDepth(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.WorkspaceRoot = filepath.Join(t.TempDir(), "workspaces")
+	current.DefaultLifecyclePresetID = ""
+	current.GitScanDepth = 2
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	created, err := app.CreateTask("扫描深度", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	childPath := filepath.Join(started.WorkspacePath, "child")
+	grandchildPath := filepath.Join(childPath, "grandchild")
+	if err := os.MkdirAll(grandchildPath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	for _, directory := range []string{childPath, grandchildPath} {
+		runGitInDirectory(t, directory, "init", "--initial-branch=main")
+	}
+
+	shallow, err := app.ListTaskGitRepositories(started.ID)
+	if err != nil {
+		t.Fatalf("ListTaskGitRepositories() depth 2 error = %v", err)
+	}
+	if got := gitRepositoryPaths(shallow); !reflect.DeepEqual(got, []string{"child"}) {
+		t.Fatalf("depth 2 paths = %#v", got)
+	}
+
+	current.GitScanDepth = 3
+	if _, err := app.SaveSettings(current); err != nil {
+		t.Fatalf("SaveSettings() depth 3 error = %v", err)
+	}
+	deep, err := app.ListTaskGitRepositories(started.ID)
+	if err != nil {
+		t.Fatalf("ListTaskGitRepositories() depth 3 error = %v", err)
+	}
+	if got := gitRepositoryPaths(deep); !reflect.DeepEqual(got, []string{"child", filepath.Join("child", "grandchild")}) {
+		t.Fatalf("depth 3 paths = %#v", got)
+	}
+}
+
+func TestAppReportsTaskGitWorkspaceOnlyAfterDirectoryExists(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	created, err := app.CreateTaskWithExtraInfoAndLifecycleChains("未创建目录", "", task.DefaultColor, nil, map[task.LifecycleHook]string{})
+	if err != nil {
+		t.Fatalf("CreateTaskWithExtraInfoAndLifecycleChains() error = %v", err)
+	}
+	started := startTaskAndWait(t, app, created.ID)
+	if started.WorkspacePath == "" {
+		t.Fatal("任务缺少预期工作目录路径")
+	}
+	if app.HasTaskGitWorkspace(started.ID) {
+		t.Fatal("目录尚未创建时 HasTaskGitWorkspace() = true")
+	}
+	if err := os.MkdirAll(started.WorkspacePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if !app.HasTaskGitWorkspace(started.ID) {
+		t.Fatal("目录已创建时 HasTaskGitWorkspace() = false")
 	}
 }
 
@@ -1412,6 +1560,23 @@ func runGitTestCommand(t *testing.T, arguments ...string) string {
 		t.Fatalf("git %v error = %v: %s", arguments, err, output)
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func runGitInDirectory(t *testing.T, directory string, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", arguments...)
+	command.Dir = directory
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v error = %v: %s", arguments, err, output)
+	}
+}
+
+func gitRepositoryPaths(repositories []repositorygit.Repository) []string {
+	paths := make([]string, 0, len(repositories))
+	for _, repository := range repositories {
+		paths = append(paths, repository.Path)
+	}
+	return paths
 }
 
 func TestAppRecordsFailingLifecycleCommandDetails(t *testing.T) {

@@ -1,6 +1,7 @@
 import type {TerminalTheme} from './terminal-theme'
 
 export type TaskStatus = 'pending' | 'running' | 'completed'
+export type TaskGitAction = 'none' | 'commit' | 'publish' | 'sync'
 export type TerminalState = 'active' | 'exited'
 export type TerminalExitReason = 'normal' | 'unexpected' | 'closed' | 'task-ended' | 'application-shutdown'
 export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
@@ -107,6 +108,18 @@ export interface TaskRecord {
   lifecycleExecution?: LifecycleExecution
   lifecycleExecutionWatermark?: LifecycleExecutionWatermark
   realtimeStatus?: RealtimeStatus
+}
+
+export interface TaskGitRepository {
+	path: string
+	branch?: string
+	remote?: string
+	notice?: string
+	dirty: boolean
+	hasUpstream?: boolean
+	remoteBranchExists?: boolean
+	synchronized?: boolean
+	action: TaskGitAction
 }
 
 export interface TaskTemplateField {
@@ -225,6 +238,7 @@ export interface RealtimeStatusEvent {
 
 export interface SettingsRecord {
 	workspaceRoot: string
+	gitScanDepth?: number
 	taskTreeWidth: number
 	colorScheme: ColorScheme
 	terminalFontFamily?: string

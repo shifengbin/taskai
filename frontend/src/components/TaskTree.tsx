@@ -622,6 +622,7 @@ export function TaskTree({
                             onAliasChange={(alias) => onAliasChange?.(terminal, alias)}
                             testId={`task-tree-terminal-title-${terminal.id}`}
                             className="block"
+                            tooltipPlacement={{side: 'right', align: 'start', sideOffset: 8, avoidCollisions: false}}
                           />
                         </div>
                         <TerminalStatusDot status={terminalRealtimeStatus(terminal)}/>

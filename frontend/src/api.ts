@@ -24,6 +24,7 @@ import {
 	DeleteLifecyclePreset,
 	DeleteQuickInput,
   HasRunningTasks,
+	HasTaskGitWorkspace,
 	ListTasks,
 	ListExtraInfoCatalogues,
 	ListExtraInfos,
@@ -32,9 +33,11 @@ import {
 	ListLifecycleCommands,
 	ListLifecyclePresets,
 	ListQuickInputs,
+	ListTaskGitRepositories,
 	ListTerminalFonts,
 	OpenTaskFolder,
-  PrepareQuit,
+	PrepareQuit,
+	PublishTaskGitRepository,
 	ReorderTasks,
 	ReorderQuickInputs,
 	ReportTerminalTitleActivity,
@@ -53,6 +56,8 @@ import {
 	SelectTerminal,
 	SetTaskShelved,
 	StartTask,
+	SyncTaskGitRepository,
+	CommitTaskGitRepository,
 	RetryTaskLifecycleCommandChain,
 	UpdateTask,
 	UpdateTaskWithExtraInfo,
@@ -67,7 +72,7 @@ import {task as taskModel} from '../wailsjs/go/models'
 import {quickinput as quickInputModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskGitRepository, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord} from './types'
 import {normalizeTerminalTheme} from './terminal-theme'
 
 export const api = {
@@ -105,6 +110,14 @@ export const api = {
 		const inputs = await ListQuickInputs()
 		return Array.isArray(inputs) ? inputs as unknown as QuickInput[] : []
 	},
+	listTaskGitRepositories: async (taskID: string) => {
+		const repositories = await ListTaskGitRepositories(taskID)
+		return Array.isArray(repositories) ? repositories as unknown as TaskGitRepository[] : []
+	},
+	hasTaskGitWorkspace: (taskID: string) => HasTaskGitWorkspace(taskID),
+	commitTaskGitRepository: (taskID: string, repositoryPath: string, message: string) => CommitTaskGitRepository(taskID, repositoryPath, message) as unknown as Promise<TaskGitRepository>,
+	publishTaskGitRepository: (taskID: string, repositoryPath: string) => PublishTaskGitRepository(taskID, repositoryPath) as unknown as Promise<TaskGitRepository>,
+	syncTaskGitRepository: (taskID: string, repositoryPath: string) => SyncTaskGitRepository(taskID, repositoryPath) as unknown as Promise<TaskGitRepository>,
 	saveQuickInput: (input: QuickInput) => SaveQuickInput(quickInputModel.QuickInput.createFrom(input)) as unknown as Promise<QuickInput>,
 	deleteQuickInput: (inputID: string) => DeleteQuickInput(inputID),
 	reorderQuickInputs: (inputIDs: string[]) => ReorderQuickInputs(inputIDs) as unknown as Promise<QuickInput[]>,

@@ -10,6 +10,10 @@ export function CloseTerminal(arg1, arg2) {
   return window['go']['main']['App']['CloseTerminal'](arg1, arg2);
 }
 
+export function CommitTaskGitRepository(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CommitTaskGitRepository'](arg1, arg2, arg3);
+}
+
 export function CopyLifecycleCommandChain(arg1) {
   return window['go']['main']['App']['CopyLifecycleCommandChain'](arg1);
 }
@@ -102,6 +106,10 @@ export function HasRunningTasks() {
   return window['go']['main']['App']['HasRunningTasks']();
 }
 
+export function HasTaskGitWorkspace(arg1) {
+  return window['go']['main']['App']['HasTaskGitWorkspace'](arg1);
+}
+
 export function ListExtraInfoCatalogues() {
   return window['go']['main']['App']['ListExtraInfoCatalogues']();
 }
@@ -130,6 +138,10 @@ export function ListQuickInputs() {
   return window['go']['main']['App']['ListQuickInputs']();
 }
 
+export function ListTaskGitRepositories(arg1) {
+  return window['go']['main']['App']['ListTaskGitRepositories'](arg1);
+}
+
 export function ListTasks() {
   return window['go']['main']['App']['ListTasks']();
 }
@@ -144,6 +156,10 @@ export function OpenTaskFolder(arg1) {
 
 export function PrepareQuit() {
   return window['go']['main']['App']['PrepareQuit']();
+}
+
+export function PublishTaskGitRepository(arg1, arg2) {
+  return window['go']['main']['App']['PublishTaskGitRepository'](arg1, arg2);
 }
 
 export function ReorderQuickInputs(arg1) {
@@ -220,6 +236,10 @@ export function SetTaskShelved(arg1, arg2) {
 
 export function StartTask(arg1) {
   return window['go']['main']['App']['StartTask'](arg1);
+}
+
+export function SyncTaskGitRepository(arg1, arg2) {
+  return window['go']['main']['App']['SyncTaskGitRepository'](arg1, arg2);
 }
 
 export function UpdateTask(arg1, arg2, arg3, arg4) {
