@@ -13,6 +13,82 @@ import (
 	"taskai/internal/task"
 )
 
+func TestRepositorySeedsCompanyFrameworkForNewInstallation(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	repository := New(dataPath, settings.Default(t.TempDir()))
+
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	assertCompanyFrameworkDefaults(t, data.Settings)
+
+	reloaded, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("第二次 Load() error = %v", err)
+	}
+	assertCompanyFrameworkDefaults(t, reloaded.Settings)
+}
+
+func TestRepositoryPreservesExistingLifecycleDefaults(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	current := settings.Default(t.TempDir())
+	current.LifecycleChains = settings.DefaultLifecycleChains()
+	updateIndex := lifecycleCommandChainIndex(current.LifecycleChains, settings.LifecycleChainUpdateRepositoriesID)
+	current.LifecycleChains[updateIndex].Name = "自定义仓库同步"
+	current.LifecyclePresets = []settings.LifecyclePreset{{
+		ID:     "user.lifecycle-preset",
+		Name:   "用户预设",
+		Chains: map[task.LifecycleHook]string{task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID},
+	}}
+	current.DefaultLifecyclePresetID = "user.lifecycle-preset"
+	contents, err := json.Marshal(Data{Tasks: []task.Task{}, Settings: current})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if data.Settings.DefaultLifecyclePresetID != "user.lifecycle-preset" || !reflect.DeepEqual(data.Settings.LifecyclePresets, current.LifecyclePresets) {
+		t.Fatalf("已有预设被改写: %#v，默认 = %q", data.Settings.LifecyclePresets, data.Settings.DefaultLifecyclePresetID)
+	}
+	updateIndex = lifecycleCommandChainIndex(data.Settings.LifecycleChains, settings.LifecycleChainUpdateRepositoriesID)
+	if updateIndex < 0 || data.Settings.LifecycleChains[updateIndex].Name != "自定义仓库同步" {
+		t.Fatalf("已有仓库更新链被改写: %#v", data.Settings.LifecycleChains)
+	}
+	if lifecyclePresetIndex(data.Settings.LifecyclePresets, settings.CompanyFrameworkLifecyclePresetID) >= 0 {
+		t.Fatalf("已有设置被补入公司框架: %#v", data.Settings.LifecyclePresets)
+	}
+}
+
+func assertCompanyFrameworkDefaults(t *testing.T, current settings.Settings) {
+	t.Helper()
+	if current.DefaultLifecyclePresetID != settings.CompanyFrameworkLifecyclePresetID || len(current.LifecyclePresets) != 2 {
+		t.Fatalf("新安装预设 = %#v，默认 = %q", current.LifecyclePresets, current.DefaultLifecyclePresetID)
+	}
+	companyIndex := lifecyclePresetIndex(current.LifecyclePresets, settings.CompanyFrameworkLifecyclePresetID)
+	if companyIndex < 0 {
+		t.Fatalf("新安装缺少公司框架: %#v", current.LifecyclePresets)
+	}
+	wantChains := map[task.LifecycleHook]string{
+		task.LifecycleHookBeforeStart: settings.LifecycleChainIterationsAIID,
+		task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+		task.LifecycleHookUpdateTask:  settings.LifecycleChainUpdateRepositoriesID,
+	}
+	if !reflect.DeepEqual(current.LifecyclePresets[companyIndex].Chains, wantChains) {
+		t.Fatalf("公司框架映射 = %#v，期望 %#v", current.LifecyclePresets[companyIndex].Chains, wantChains)
+	}
+	updateIndex := lifecycleCommandChainIndex(current.LifecycleChains, settings.LifecycleChainUpdateRepositoriesID)
+	if updateIndex < 0 || current.LifecycleChains[updateIndex].Name != "更新框架仓库" {
+		t.Fatalf("新安装仓库更新链 = %#v", current.LifecycleChains)
+	}
+}
+
 func TestRepositoryLoadsPersistedColorScheme(t *testing.T) {
 	dataPath := filepath.Join(t.TempDir(), "state.json")
 	contents, err := json.Marshal(map[string]any{
@@ -431,6 +507,10 @@ func TestRepositorySeedsRepositoryPresetChainsOnlyOnce(t *testing.T) {
 	if lifecycleCommandChainIndex(data.Settings.LifecycleChains, "preset.lifecycle-chain.iterations-ai") < 0 || lifecycleCommandChainIndex(data.Settings.LifecycleChains, "preset.lifecycle-chain.update-repositories") < 0 {
 		t.Fatalf("迁移后的预置链 = %#v", data.Settings.LifecycleChains)
 	}
+	updateIndex := lifecycleCommandChainIndex(data.Settings.LifecycleChains, settings.LifecycleChainUpdateRepositoriesID)
+	if data.Settings.LifecycleChains[updateIndex].Name != "更新仓库" || data.Settings.DefaultLifecyclePresetID != settings.DefaultLifecyclePresetID || len(data.Settings.LifecyclePresets) != 1 {
+		t.Fatalf("历史数据迁移语义被改写: 链 = %#v，预设 = %#v，默认 = %q", data.Settings.LifecycleChains[updateIndex], data.Settings.LifecyclePresets, data.Settings.DefaultLifecyclePresetID)
+	}
 	if err := repository.DeleteLifecycleCommandChain("preset.lifecycle-chain.iterations-ai"); err != nil {
 		t.Fatalf("DeleteLifecycleCommandChain() error = %v", err)
 	}
@@ -534,6 +614,9 @@ func TestRepositoryMigratesVersionThreeDefaultBranchPresetChains(t *testing.T) {
 
 func versionThreeRepositoryPresetSettings(workspaceRoot string) settings.Settings {
 	current := settings.Default(workspaceRoot)
+	current.LifecycleChains = settings.DefaultLifecycleChains()
+	current.LifecyclePresets = settings.DefaultLifecyclePresets()
+	current.DefaultLifecyclePresetID = settings.DefaultLifecyclePresetID
 	current.PresetVersion = 3
 	for index := range current.LifecycleChains {
 		switch current.LifecycleChains[index].ID {
@@ -1463,7 +1546,11 @@ func TestRepositorySaveSettingsPreservesLifecycleConfiguration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			current.Settings.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = chain.ID
+			defaultPresetIndex := lifecyclePresetIndex(current.Settings.LifecyclePresets, current.Settings.DefaultLifecyclePresetID)
+			if defaultPresetIndex < 0 {
+				t.Fatalf("找不到当前默认预设: %#v", current.Settings.LifecyclePresets)
+			}
+			current.Settings.LifecyclePresets[defaultPresetIndex].Chains[task.LifecycleHookBeforeStart] = chain.ID
 			if err := repository.Save(current); err != nil {
 				t.Fatalf("Save() error = %v", err)
 			}
@@ -1528,7 +1615,8 @@ func TestRepositoryManagesLifecyclePresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListLifecyclePresets() error = %v", err)
 	}
-	if len(listed) != 2 || listed[1].Chains[task.LifecycleHookPostStart] != chain.ID {
+	presetIndex := lifecyclePresetIndex(listed, preset.ID)
+	if len(listed) != 3 || presetIndex < 0 || listed[presetIndex].Chains[task.LifecycleHookPostStart] != chain.ID {
 		t.Fatalf("列出的预设 = %#v", listed)
 	}
 	copy, err := repository.CopyLifecyclePreset(preset.ID)
@@ -1574,7 +1662,7 @@ func TestRepositoryManagesLifecyclePresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.Settings.DefaultLifecyclePresetID != "" || len(loaded.Settings.LifecyclePresets) != 2 {
+	if loaded.Settings.DefaultLifecyclePresetID != "" || len(loaded.Settings.LifecyclePresets) != 3 {
 		t.Fatalf("删除默认预设后的设置 = %#v", loaded.Settings)
 	}
 	if got := loaded.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID}) {

@@ -32,6 +32,7 @@ const (
 	CurrentPresetVersion               = 6
 	DefaultBranchTaskTemplateID        = "preset.task-template.default-branch"
 	DefaultLifecyclePresetID           = "preset.lifecycle-preset.default"
+	CompanyFrameworkLifecyclePresetID  = "preset.lifecycle-preset.company-framework"
 	LifecycleChainIterationsAIID       = "preset.lifecycle-chain.iterations-ai"
 	LifecycleChainUpdateRepositoriesID = "preset.lifecycle-chain.update-repositories"
 	IterationsAIRepository             = "git@gitlab.jiandan100.cn:webdev/iterations-ai.git"
@@ -264,9 +265,9 @@ func Default(applicationDataDirectory string) Settings {
 		ActiveTaskStatus:         DefaultActiveTaskStatus,
 		StatusManagementMode:     DefaultStatusManagementMode,
 		LifecycleCommands:        DefaultLifecycleCommands(),
-		LifecycleChains:          DefaultLifecycleChains(),
-		LifecyclePresets:         DefaultLifecyclePresets(),
-		DefaultLifecyclePresetID: DefaultLifecyclePresetID,
+		LifecycleChains:          newInstallationLifecycleChains(),
+		LifecyclePresets:         newInstallationLifecyclePresets(),
+		DefaultLifecyclePresetID: CompanyFrameworkLifecyclePresetID,
 		TaskTemplates:            DefaultTaskTemplates(),
 		ActiveTaskTemplateID:     DefaultBranchTaskTemplateID,
 		PresetVersion:            CurrentPresetVersion,
@@ -318,6 +319,16 @@ func DefaultLifecycleCommands() []LifecycleCommand {
 
 func DefaultLifecycleChains() []LifecycleCommandChain {
 	return defaultLifecycleChainsVersionFour()
+}
+
+func newInstallationLifecycleChains() []LifecycleCommandChain {
+	chains := DefaultLifecycleChains()
+	for index := range chains {
+		if chains[index].ID == LifecycleChainUpdateRepositoriesID {
+			chains[index].Name = "更新框架仓库"
+		}
+	}
+	return chains
 }
 
 func defaultLifecycleChainsVersionFour() []LifecycleCommandChain {
@@ -571,6 +582,18 @@ func DefaultLifecyclePresets() []LifecyclePreset {
 		Name:   "默认预设",
 		Chains: DefaultLifecyclePresetChains(),
 	}}
+}
+
+func newInstallationLifecyclePresets() []LifecyclePreset {
+	return append(DefaultLifecyclePresets(), LifecyclePreset{
+		ID:   CompanyFrameworkLifecyclePresetID,
+		Name: "公司框架",
+		Chains: map[LifecycleHook]string{
+			LifecycleHookBeforeStart: LifecycleChainIterationsAIID,
+			LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
+			LifecycleHookUpdateTask:  LifecycleChainUpdateRepositoriesID,
+		},
+	})
 }
 
 func (current Settings) DefaultLifecyclePresetChains() map[LifecycleHook]string {

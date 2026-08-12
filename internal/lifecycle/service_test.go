@@ -1,10 +1,12 @@
 package lifecycle
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +87,34 @@ func TestServiceCreatesTaskFromDefaultLifecyclePreset(t *testing.T) {
 	}
 	if want := map[task.LifecycleHook]string{task.LifecycleHookPostStart: chain.ID}; !reflect.DeepEqual(created.LifecycleChains, want) {
 		t.Fatalf("CreateTask() 生命周期链 = %#v，期望 %#v", created.LifecycleChains, want)
+	}
+}
+
+func TestServiceCreatesTaskFromCompanyFrameworkDefaultPreset(t *testing.T) {
+	dataDirectory := t.TempDir()
+	repository := storage.New(filepath.Join(dataDirectory, "state.json"), settings.Default(dataDirectory))
+	service := New(repository, &closerStub{}, func() time.Time {
+		return time.Date(2026, time.August, 12, 10, 0, 0, 0, time.UTC)
+	})
+
+	created, err := service.CreateTask("使用公司框架", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	want := map[task.LifecycleHook]string{
+		task.LifecycleHookBeforeStart: settings.LifecycleChainIterationsAIID,
+		task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+		task.LifecycleHookUpdateTask:  settings.LifecycleChainUpdateRepositoriesID,
+	}
+	if !reflect.DeepEqual(created.LifecycleChains, want) {
+		t.Fatalf("CreateTask() 生命周期链 = %#v，期望 %#v", created.LifecycleChains, want)
+	}
+	encoded, err := json.Marshal(created)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(encoded), "lifecyclePreset") {
+		t.Fatalf("任务不应保存预设关联: %s", encoded)
 	}
 }
 
