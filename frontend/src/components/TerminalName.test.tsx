@@ -96,4 +96,50 @@ describe('TerminalName', () => {
     expect(tooltip).toHaveClass('pointer-events-none')
     expect(tooltip.parentElement).toHaveStyle({transform: 'translate(8px, 0px)'})
   })
+
+  it('行内显示别名、实际标题和启动命令且不创建提示，编辑时只使用别名', () => {
+    const onAliasChange = vi.fn()
+    const namedTerminal = {...terminal, alias: '前端调试'}
+    const {rerender} = render(
+      <TooltipProvider delayDuration={0}>
+        <TerminalName
+          terminal={namedTerminal}
+          onAliasChange={onAliasChange}
+          detailsDisplay="inline-session-details"
+        />
+      </TooltipProvider>,
+    )
+
+    const inlineName = screen.getByText('前端调试(npm run dev:zsh)')
+    expect(inlineName).not.toHaveAttribute('data-state')
+    expect(screen.queryByTestId('terminal-alias-details')).not.toBeInTheDocument()
+    expect(inlineName).not.toHaveTextContent('原标题')
+
+    fireEvent.doubleClick(inlineName)
+    expect(screen.getByRole('textbox', {name: '终端别名'})).toHaveValue('前端调试')
+    fireEvent.keyDown(screen.getByRole('textbox', {name: '终端别名'}), {key: 'Escape'})
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <TerminalName
+          terminal={terminal}
+          onAliasChange={onAliasChange}
+          detailsDisplay="inline-session-details"
+        />
+      </TooltipProvider>,
+    )
+    expect(screen.getByText('npm run dev')).toBeInTheDocument()
+    expect(screen.queryByText(/zsh/)).not.toBeInTheDocument()
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <TerminalName
+          terminal={{...namedTerminal, command: '  '}}
+          onAliasChange={onAliasChange}
+          detailsDisplay="inline-session-details"
+        />
+      </TooltipProvider>,
+    )
+    expect(screen.getByText('前端调试(npm run dev:未提供启动命令)')).toBeInTheDocument()
+  })
 })

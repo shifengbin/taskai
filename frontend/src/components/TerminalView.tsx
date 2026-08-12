@@ -260,6 +260,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
             terminal={terminal}
             onAliasChange={onAliasChange}
             testId="terminal-view-title"
+            detailsDisplay="inline-session-details"
             className="block w-full truncate font-display text-sm font-bold text-snap-ink"
           />
         </div>

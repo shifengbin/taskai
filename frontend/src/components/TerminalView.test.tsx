@@ -473,7 +473,7 @@ describe('TerminalView', () => {
     expect(onAliasChange).toHaveBeenCalledWith('前端调试')
   })
 
-  it('右侧标题栏继续使用默认的终端提示定位', async () => {
+  it('右侧标题栏直接显示实际标题和启动命令且不显示提示', () => {
     render(
       <TooltipProvider delayDuration={0}>
         <TerminalView
@@ -485,12 +485,12 @@ describe('TerminalView', () => {
       </TooltipProvider>,
     )
 
-    fireEvent.pointerMove(screen.getByTestId('terminal-view-title'))
-
-    const tooltip = await screen.findByTestId('terminal-alias-details')
-    expect(tooltip).toHaveAttribute('data-side', 'top')
-    expect(tooltip).toHaveAttribute('data-align', 'center')
-    expect(tooltip).not.toHaveClass('pointer-events-none')
+    const title = screen.getByTestId('terminal-view-title')
+    expect(title).toHaveTextContent('前端调试(npm run dev:zsh)')
+    expect(title).not.toHaveTextContent('原标题')
+    expect(title).not.toHaveAttribute('data-state')
+    fireEvent.pointerMove(title)
+    expect(screen.queryByTestId('terminal-alias-details')).not.toBeInTheDocument()
   })
 
   it('将已配置的 Shift+Enter 作为一次有序输入写入终端', () => {
