@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,6 +58,51 @@ func TestResolveDefaultDirectoryFallsBackWhenMacOSHomeIsUnavailable(t *testing.T
 	want := filepath.Join(configurationDirectory, "taskai")
 	if got != want {
 		t.Fatalf("Home 不可用时数据目录 = %q，期望 %q", got, want)
+	}
+}
+
+func TestResolveDefaultDirectoryFallsBackWhenMacOSHomeDirectoryIsNotWritable(t *testing.T) {
+	homeDirectory := t.TempDir()
+	configurationDirectory := filepath.Join(t.TempDir(), "Library", "Application Support")
+	newDirectory := filepath.Join(homeDirectory, ".taskai")
+	got := resolveDefaultDirectory("darwin", directoryDependencies{
+		userHomeDir:   func() (string, error) { return homeDirectory, nil },
+		userConfigDir: func() (string, error) { return configurationDirectory, nil },
+		tempDir:       t.TempDir,
+		ensureDirectory: func(path string) error {
+			if path == newDirectory {
+				return errors.New("home is read only")
+			}
+			return os.MkdirAll(path, 0o700)
+		},
+	})
+	want := filepath.Join(configurationDirectory, "taskai")
+	if got != want {
+		t.Fatalf("Home 不可写时数据目录 = %q，期望 %q", got, want)
+	}
+}
+
+func TestResolveDefaultDirectoryFallsBackWhenExistingMacOSDirectoryIsNotWritable(t *testing.T) {
+	homeDirectory := t.TempDir()
+	configurationDirectory := filepath.Join(t.TempDir(), "Library", "Application Support")
+	newDirectory := filepath.Join(homeDirectory, ".taskai")
+	if err := os.Mkdir(newDirectory, 0o700); err != nil {
+		t.Fatalf("创建新配置目录: %v", err)
+	}
+	got := resolveDefaultDirectory("darwin", directoryDependencies{
+		userHomeDir:   func() (string, error) { return homeDirectory, nil },
+		userConfigDir: func() (string, error) { return configurationDirectory, nil },
+		tempDir:       t.TempDir,
+		ensureDirectory: func(path string) error {
+			if path == newDirectory {
+				return errors.New("existing directory is read only")
+			}
+			return os.MkdirAll(path, 0o700)
+		},
+	})
+	want := filepath.Join(configurationDirectory, "taskai")
+	if got != want {
+		t.Fatalf("现有新目录不可写时数据目录 = %q，期望 %q", got, want)
 	}
 }
 
@@ -132,6 +178,90 @@ func TestResolveDefaultDirectoryPrefersExistingMacOSDirectoryWithoutMerging(t *t
 	}
 }
 
+func TestResolveDefaultDirectoryFallsBackToOldDataWhenNewMacOSPathIsNotDirectory(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		create func(*testing.T, string)
+	}{
+		{name: "普通文件", create: func(t *testing.T, path string) {
+			if err := os.WriteFile(path, []byte("occupied"), 0o600); err != nil {
+				t.Fatalf("创建占位文件: %v", err)
+			}
+		}},
+		{name: "失效符号链接", create: func(t *testing.T, path string) {
+			if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), path); err != nil {
+				t.Fatalf("创建失效符号链接: %v", err)
+			}
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			homeDirectory := t.TempDir()
+			oldDirectory := filepath.Join(homeDirectory, "Library", "Application Support", "taskai")
+			newDirectory := filepath.Join(homeDirectory, ".taskai")
+			writeData(t, oldDirectory, filepath.Join(oldDirectory, "workspaces"))
+			testCase.create(t, newDirectory)
+
+			got := resolveDefaultDirectory("darwin", realDirectoryDependencies(homeDirectory))
+			if got != oldDirectory {
+				t.Fatalf("新路径不是目录时数据目录 = %q，期望 %q", got, oldDirectory)
+			}
+			if _, err := os.Lstat(newDirectory); err != nil {
+				t.Fatalf("不得修改新路径占位节点: %v", err)
+			}
+		})
+	}
+}
+
+func TestResolveDefaultDirectoryAcceptsSymlinkToExistingMacOSDirectory(t *testing.T) {
+	homeDirectory := t.TempDir()
+	newDirectory := filepath.Join(homeDirectory, ".taskai")
+	targetDirectory := t.TempDir()
+	if err := os.Symlink(targetDirectory, newDirectory); err != nil {
+		t.Fatalf("创建目录符号链接: %v", err)
+	}
+
+	got := resolveDefaultDirectory("darwin", realDirectoryDependencies(homeDirectory))
+	if got != newDirectory {
+		t.Fatalf("目录符号链接的数据目录 = %q，期望 %q", got, newDirectory)
+	}
+}
+
+func TestResolveDefaultDirectoryUsesNewDataWhenConcurrentMigrationPublishesFirst(t *testing.T) {
+	homeDirectory := t.TempDir()
+	oldDirectory := filepath.Join(homeDirectory, "Library", "Application Support", "taskai")
+	newDirectory := filepath.Join(homeDirectory, ".taskai")
+	writeData(t, oldDirectory, filepath.Join(oldDirectory, "workspaces"))
+
+	ready := make(chan struct{}, 2)
+	release := make(chan struct{})
+	dependencies := realDirectoryDependencies(homeDirectory)
+	dependencies.rename = func(source, destination string) error {
+		ready <- struct{}{}
+		<-release
+		return publishDirectory(source, destination)
+	}
+	results := make(chan string, 2)
+	var waitGroup sync.WaitGroup
+	for range 2 {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			results <- resolveDefaultDirectory("darwin", dependencies)
+		}()
+	}
+	<-ready
+	<-ready
+	close(release)
+	waitGroup.Wait()
+	close(results)
+
+	for got := range results {
+		if got != newDirectory {
+			t.Fatalf("并发迁移后的数据目录 = %q，期望 %q", got, newDirectory)
+		}
+	}
+}
+
 func TestResolveDefaultDirectoryFallsBackToOldMacOSDataWhenMigrationFails(t *testing.T) {
 	for _, testCase := range []struct {
 		name      string
@@ -142,6 +272,12 @@ func TestResolveDefaultDirectoryFallsBackToOldMacOSDataWhenMigrationFails(t *tes
 		}},
 		{name: "保存失败", configure: func(dependencies *directoryDependencies) {
 			dependencies.rewriteWorkspaceRoot = func(string, string, string) error { return errors.New("save failed") }
+		}},
+		{name: "同步文件失败", configure: func(dependencies *directoryDependencies) {
+			dependencies.syncFile = func(string) error { return errors.New("file sync failed") }
+		}},
+		{name: "同步目录失败", configure: func(dependencies *directoryDependencies) {
+			dependencies.syncDirectory = func(string) error { return errors.New("directory sync failed") }
 		}},
 		{name: "发布失败", configure: func(dependencies *directoryDependencies) {
 			dependencies.rename = func(string, string) error { return errors.New("rename failed") }

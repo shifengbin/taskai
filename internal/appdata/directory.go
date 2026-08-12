@@ -1,6 +1,7 @@
 package appdata
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,8 +16,11 @@ type directoryDependencies struct {
 	userHomeDir          func() (string, error)
 	userConfigDir        func() (string, error)
 	tempDir              func() string
+	ensureDirectory      func(string) error
 	copyFile             func(string, string) error
 	rewriteWorkspaceRoot func(string, string, string) error
+	syncFile             func(string) error
+	syncDirectory        func(string) error
 	rename               func(string, string) error
 }
 
@@ -25,8 +29,11 @@ func DefaultDirectory() string {
 		userHomeDir:          os.UserHomeDir,
 		userConfigDir:        os.UserConfigDir,
 		tempDir:              os.TempDir,
+		ensureDirectory:      ensureWritableDirectory,
 		copyFile:             copyFile,
 		rewriteWorkspaceRoot: rewriteWorkspaceRoot,
+		syncFile:             syncFilePath,
+		syncDirectory:        syncDirectoryPath,
 		rename:               publishDirectory,
 	})
 }
@@ -38,11 +45,20 @@ func resolveDefaultDirectory(operatingSystem string, dependencies directoryDepen
 	if dependencies.tempDir == nil {
 		dependencies.tempDir = os.TempDir
 	}
+	if dependencies.ensureDirectory == nil {
+		dependencies.ensureDirectory = ensureWritableDirectory
+	}
 	if dependencies.copyFile == nil {
 		dependencies.copyFile = copyFile
 	}
 	if dependencies.rewriteWorkspaceRoot == nil {
 		dependencies.rewriteWorkspaceRoot = rewriteWorkspaceRoot
+	}
+	if dependencies.syncFile == nil {
+		dependencies.syncFile = syncFilePath
+	}
+	if dependencies.syncDirectory == nil {
+		dependencies.syncDirectory = syncDirectoryPath
 	}
 	if dependencies.rename == nil {
 		dependencies.rename = publishDirectory
@@ -68,17 +84,44 @@ func resolveDefaultDirectory(operatingSystem string, dependencies directoryDepen
 	}
 
 	newDirectory := filepath.Join(homeDirectory, ".taskai")
-	if pathExists(newDirectory) {
-		return newDirectory
+	newDirectoryState := directoryState(newDirectory)
+	oldDirectory := ""
+	oldDataExists := false
+	if configurationErr == nil {
+		oldDirectory = filepath.Join(configurationDirectory, "taskai")
+		oldDataExists = regularFileExists(filepath.Join(oldDirectory, "tasks.json"))
+	}
+	if newDirectoryState == directoryUsable {
+		if err := dependencies.ensureDirectory(newDirectory); err == nil {
+			return newDirectory
+		}
+		if oldDataExists {
+			return oldDirectory
+		}
+		return fallbackDirectory(configurationDirectory, configurationErr, dependencies)
+	}
+	if newDirectoryState == directoryOccupied {
+		if oldDataExists {
+			return oldDirectory
+		}
+		return fallbackDirectory(configurationDirectory, configurationErr, dependencies)
 	}
 	if configurationErr != nil {
-		return newDirectory
+		if err := dependencies.ensureDirectory(newDirectory); err == nil {
+			return newDirectory
+		}
+		return fallbackDirectory(configurationDirectory, configurationErr, dependencies)
 	}
-	oldDirectory := filepath.Join(configurationDirectory, "taskai")
-	if !pathExists(filepath.Join(oldDirectory, "tasks.json")) {
-		return newDirectory
+	if !oldDataExists {
+		if err := dependencies.ensureDirectory(newDirectory); err == nil {
+			return newDirectory
+		}
+		return fallbackDirectory(configurationDirectory, configurationErr, dependencies)
 	}
 	if err := migrateDirectory(oldDirectory, newDirectory, dependencies); err != nil {
+		if directoryState(newDirectory) == directoryUsable && dependencies.ensureDirectory(newDirectory) == nil {
+			return newDirectory
+		}
 		return oldDirectory
 	}
 	return newDirectory
@@ -105,6 +148,12 @@ func migrateDirectory(oldDirectory, newDirectory string, dependencies directoryD
 		if err := dependencies.rewriteWorkspaceRoot(temporaryDataPath, oldDefaultWorkspace, newDefaultWorkspace); err != nil {
 			return fmt.Errorf("update default workspace: %w", err)
 		}
+	}
+	if err := dependencies.syncFile(temporaryDataPath); err != nil {
+		return fmt.Errorf("sync migrated configuration: %w", err)
+	}
+	if err := dependencies.syncDirectory(temporaryDirectory); err != nil {
+		return fmt.Errorf("sync migration directory: %w", err)
 	}
 	if err := dependencies.rename(temporaryDirectory, newDirectory); err != nil {
 		return fmt.Errorf("publish migrated configuration: %w", err)
@@ -148,10 +197,99 @@ func copyFile(source, destination string) error {
 		output.Close()
 		return err
 	}
+	if err := output.Sync(); err != nil {
+		output.Close()
+		return err
+	}
 	return output.Close()
 }
 
-func pathExists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil
+type dataDirectoryState int
+
+const (
+	directoryMissing dataDirectoryState = iota
+	directoryUsable
+	directoryOccupied
+)
+
+func directoryState(path string) dataDirectoryState {
+	info, err := os.Stat(path)
+	if err == nil {
+		if info.IsDir() {
+			return directoryUsable
+		}
+		return directoryOccupied
+	}
+	if _, linkErr := os.Lstat(path); linkErr == nil {
+		return directoryOccupied
+	}
+	return directoryMissing
+}
+
+func regularFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func ensureWritableDirectory(path string) error {
+	created := false
+	if err := os.Mkdir(path, 0o700); err != nil {
+		if !errors.Is(err, os.ErrExist) || directoryState(path) != directoryUsable {
+			return err
+		}
+	} else {
+		created = true
+	}
+	probe, err := os.CreateTemp(path, ".taskai-write-check-*")
+	if err != nil {
+		if created {
+			os.Remove(path)
+		}
+		return err
+	}
+	probePath := probe.Name()
+	if err := probe.Close(); err != nil {
+		os.Remove(probePath)
+		if created {
+			os.Remove(path)
+		}
+		return err
+	}
+	if err := os.Remove(probePath); err != nil {
+		if created {
+			os.Remove(path)
+		}
+		return err
+	}
+	return nil
+}
+
+func fallbackDirectory(configurationDirectory string, configurationErr error, dependencies directoryDependencies) string {
+	if configurationErr == nil {
+		fallback := filepath.Join(configurationDirectory, "taskai")
+		if dependencies.ensureDirectory(fallback) == nil {
+			return fallback
+		}
+	}
+	fallback := filepath.Join(dependencies.tempDir(), "taskai")
+	_ = dependencies.ensureDirectory(fallback)
+	return fallback
+}
+
+func syncFilePath(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return file.Sync()
+}
+
+func syncDirectoryPath(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
