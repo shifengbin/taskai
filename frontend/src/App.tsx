@@ -53,10 +53,15 @@ import {TerminalView} from './components/TerminalView'
 import {TerminalSessionRegistry} from './terminal-session'
 import {
 	appendTerminalNote,
+	clearTaskTerminalNoteClearPreferences,
 	clearTaskTerminalNotes,
+	clearTerminalNoteClearPreferences,
 	clearTerminalNotes,
 	defaultTerminalNoteTemplate,
+	setTerminalNoteClearAfterAction,
+	terminalNoteClearAfterActionForSession,
 	terminalNotesForSession,
+	type TerminalNoteClearPreferencesBySession,
 	type TerminalNotesBySession,
 } from './terminal-notes'
 import {uniqueProgramNames} from './terminal-shortcuts'
@@ -151,8 +156,9 @@ const terminalBrightAnsiColorFields: Array<{key: keyof TerminalTheme, label: str
 
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
-  const [terminals, setTerminals] = useState<TerminalRecord[]>([])
+	const [terminals, setTerminals] = useState<TerminalRecord[]>([])
 	const [terminalNotes, setTerminalNotes] = useState<TerminalNotesBySession>({})
+	const [terminalNoteClearPreferences, setTerminalNoteClearPreferences] = useState<TerminalNoteClearPreferencesBySession>({})
 	const [settings, setSettings] = useState<SettingsRecord>()
 	const [extraInfoTemplates, setExtraInfoTemplates] = useState<ExtraInfoTemplate[]>([])
 	const [extraInfos, setExtraInfos] = useState<ExtraInfo[]>([])
@@ -298,6 +304,7 @@ export default function App() {
     const unsubscribe = api.onTerminalEvent((event) => {
 		if (event.type === 'exited') {
 			setTerminalNotes((current) => clearTerminalNotes(current, terminalEventKey(event.taskId, event.terminalId)))
+			setTerminalNoteClearPreferences((current) => clearTerminalNoteClearPreferences(current, terminalEventKey(event.taskId, event.terminalId)))
 		}
       if (finishedTerminalTaskIDs.current.has(event.taskId)) {
         return
@@ -326,7 +333,9 @@ export default function App() {
       pendingTerminalEvents.current.clear()
       registeredTerminalKeys.current.clear()
       finishedTerminalTaskIDs.current.clear()
-      terminalTitleValues.current.clear()
+		terminalTitleValues.current.clear()
+		setTerminalNotes({})
+		setTerminalNoteClearPreferences({})
 			if (startFeedbackTimeout.current) {
 				clearTimeout(startFeedbackTimeout.current)
 			}
@@ -852,8 +861,9 @@ export default function App() {
       const completed = await api.finishTask(finishTask.id)
       setTasks((current) => mergeLifecycleTask(current, completed))
       finishedTerminalTaskIDs.current.add(finishTask.id)
-      terminalSessions.current?.disposeTask(finishTask.id)
+		terminalSessions.current?.disposeTask(finishTask.id)
 		setTerminalNotes((current) => clearTaskTerminalNotes(current, finishTask.id))
+		setTerminalNoteClearPreferences((current) => clearTaskTerminalNoteClearPreferences(current, finishTask.id))
       clearTaskTerminalTracking(finishTask.id, terminalTitleParserStates.current, pendingTerminalEvents.current, registeredTerminalKeys.current)
       setTerminals((current) => current.filter((terminal) => terminal.taskId !== finishTask.id))
       if (selectedTaskID === finishTask.id) {
@@ -919,8 +929,9 @@ export default function App() {
 const closeTerminal = async (terminal: TerminalRecord) => {
   try {
     await api.closeTerminal(terminal.taskId, terminal.id)
-    terminalSessions.current?.dispose(terminal.taskId, terminal.id)
+		terminalSessions.current?.dispose(terminal.taskId, terminal.id)
 		setTerminalNotes((current) => clearTerminalNotes(current, terminalEventKey(terminal.taskId, terminal.id)))
+		setTerminalNoteClearPreferences((current) => clearTerminalNoteClearPreferences(current, terminalEventKey(terminal.taskId, terminal.id)))
     setTerminals((current) => current.filter((currentTerminal) => (
       currentTerminal.id !== terminal.id || currentTerminal.taskId !== terminal.taskId
     )))
@@ -957,6 +968,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			const deletedTaskIDSet = new Set(selectedDeletableTaskIDs)
 			setTasks(remainingTasks)
 			setTerminalNotes((current) => selectedDeletableTaskIDs.reduce((remaining, taskID) => clearTaskTerminalNotes(remaining, taskID), current))
+			setTerminalNoteClearPreferences((current) => selectedDeletableTaskIDs.reduce((remaining, taskID) => clearTaskTerminalNoteClearPreferences(remaining, taskID), current))
 				setTerminals((current) => current.filter((terminal) => !deletedTaskIDSet.has(terminal.taskId)))
 				setExpandedTasks((current) => Object.fromEntries(Object.entries(current).filter(([taskID]) => !deletedTaskIDSet.has(taskID))))
 				for (const taskID of deletedTaskIDSet) {
@@ -1373,8 +1385,10 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				terminalShortcuts={settings?.terminalShortcuts}
 					notes={terminalNotesForSession(terminalNotes, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id))}
 					noteTemplate={settings?.terminalNoteTemplate ?? defaultTerminalNoteTemplate}
+					clearNotesAfterAction={terminalNoteClearAfterActionForSession(terminalNoteClearPreferences, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id))}
 					onAddNote={(note) => setTerminalNotes((current) => appendTerminalNote(current, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id), note))}
 					onClearNotes={() => setTerminalNotes((current) => clearTerminalNotes(current, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id)))}
+					onClearNotesAfterActionChange={(clearAfterAction) => setTerminalNoteClearPreferences((current) => setTerminalNoteClearAfterAction(current, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id), clearAfterAction))}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onError={(error) => showError(error, setMessage)}
                 onClose={() => void closeTerminal(selectedTerminal)}

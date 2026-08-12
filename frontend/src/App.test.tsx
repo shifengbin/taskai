@@ -96,12 +96,14 @@ vi.mock('./terminal-session', () => ({
 vi.mock('./components/TerminalView', async () => {
   const {terminalDisplayName} = await vi.importActual<typeof import('./types')>('./types')
   return {
-			TerminalView: ({terminal, notes = [], noteTemplate, onAddNote, onClearNotes, onClose, onAliasChange}: {
+			TerminalView: ({terminal, notes = [], noteTemplate, clearNotesAfterAction = true, onAddNote, onClearNotes, onClearNotesAfterActionChange, onClose, onAliasChange}: {
       terminal: {title?: string, alias?: string}
       notes?: Array<{original: string, note: string}>
       noteTemplate?: {originalPrefix: string}
+				clearNotesAfterAction?: boolean
       onAddNote?: (note: {original: string, note: string}) => void
       onClearNotes?: () => void
+				onClearNotesAfterActionChange?: (clearNotesAfterAction: boolean) => void
 				onClose?: () => void
       onAliasChange?: (alias: string | undefined) => void
     }) => <>
@@ -109,9 +111,11 @@ vi.mock('./components/TerminalView', async () => {
       <button type="button" onClick={() => onAliasChange?.('前端调试')}>设置右侧终端别名</button>
 			<button type="button" onClick={() => onAddNote?.({original: '终端原文', note: '终端备注'})}>添加右侧终端备注</button>
 			<button type="button" onClick={() => onClearNotes?.()}>清空右侧终端备注</button>
+			<button type="button" onClick={() => onClearNotesAfterActionChange?.(!clearNotesAfterAction)}>切换右侧终端备注操作后清空</button>
 			<button type="button" onClick={() => onClose?.()}>关闭右侧终端</button>
 			<div data-testid="right-terminal-note-count">{`右侧终端备注 ${notes.length}`}</div>
 			<div data-testid="right-terminal-note-template">{noteTemplate?.originalPrefix}</div>
+			<div data-testid="right-terminal-note-clear-after-action">{clearNotesAfterAction ? '清空' : '保留'}</div>
       <div data-testid="terminal-view-title-container">
         <div data-testid="terminal-view-title" aria-label="右侧终端标题">{terminalDisplayName(terminal)}</div>
       </div>
@@ -2831,7 +2835,7 @@ describe('App confirmation flows', () => {
 		expect(bindings.SaveSettings).not.toHaveBeenCalled()
 	})
 
-	it('备注在同一任务的不同终端间隔离，并在主动关闭后释放', async () => {
+	it('备注操作后的清空偏好按终端保存，并在主动关闭后释放', async () => {
 		const user = userEvent.setup()
 		bindings.CreateTerminal
 			.mockResolvedValueOnce({id: 'terminal-1', taskId: 'task-1', state: 'active', title: '终端一'})
@@ -2845,19 +2849,25 @@ describe('App confirmation flows', () => {
 		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
 		await user.click(await screen.findByRole('button', {name: '添加右侧终端备注'}))
 		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('1'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('清空')
+		await user.click(screen.getByRole('button', {name: '切换右侧终端备注操作后清空'}))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('保留')
 
 		await user.click(screen.getByRole('button', {name: '任务操作'}))
 		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
 		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('0'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('清空')
 
 		await user.click(screen.getByTestId('task-tree-terminal-title-terminal-1').closest('[role="button"]')!)
 		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('1'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('保留')
 		await user.click(screen.getByRole('button', {name: '关闭右侧终端'}))
 		await waitFor(() => expect(bindings.CloseTerminal).toHaveBeenCalledWith('task-1', 'terminal-1'))
 
 		await user.click(screen.getByRole('button', {name: '任务操作'}))
 		await user.click(screen.getByRole('menuitem', {name: '新增终端'}))
 		await waitFor(() => expect(screen.getByTestId('right-terminal-note-count')).toHaveTextContent('0'))
+		expect(screen.getByTestId('right-terminal-note-clear-after-action')).toHaveTextContent('清空')
 	})
 
   it('主动关闭终端成功后从树和右侧终端视图移除', async () => {
