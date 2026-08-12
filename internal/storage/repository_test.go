@@ -161,6 +161,54 @@ func TestRepositoryLoadsMissingGitScanDepthAsDefault(t *testing.T) {
 	}
 }
 
+func TestRepositoryMigratesLegacyDefaultGitScanDepthAndKeepsLaterOverride(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	legacy := settings.Default(t.TempDir())
+	legacy.PresetVersion = 5
+	legacy.GitScanDepth = 2
+	contents, err := json.Marshal(Data{Tasks: []task.Task{}, Settings: legacy})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if data.Settings.PresetVersion != settings.CurrentPresetVersion || data.Settings.GitScanDepth != 3 {
+		t.Fatalf("迁移后的设置 = version %d, depth %d", data.Settings.PresetVersion, data.Settings.GitScanDepth)
+	}
+
+	persisted, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var stored Data
+	if err := json.Unmarshal(persisted, &stored); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if stored.Settings.GitScanDepth != 3 {
+		t.Fatalf("持久化 GitScanDepth = %d，期望 3", stored.Settings.GitScanDepth)
+	}
+
+	override := data.Settings
+	override.GitScanDepth = 2
+	if _, err := repository.SaveSettings(override); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	reloaded, err := repository.Load()
+	if err != nil {
+		t.Fatalf("再次 Load() error = %v", err)
+	}
+	if reloaded.Settings.GitScanDepth != 2 {
+		t.Fatalf("显式保存后的 GitScanDepth = %d，期望 2", reloaded.Settings.GitScanDepth)
+	}
+}
+
 func TestRepositoryLoadsMissingTerminalThemeAsDefault(t *testing.T) {
 	dataPath := filepath.Join(t.TempDir(), "state.json")
 	contents, err := json.Marshal(map[string]any{

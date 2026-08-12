@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"os/exec"
+
+	"taskai/internal/backgroundprocess"
 )
 
 type GitInvocation struct {
@@ -45,7 +47,7 @@ func NewDirectGitExecutor() *DirectGitExecutor {
 
 func (executor *DirectGitExecutor) Run(invocation GitInvocation) (CommandResult, error) {
 	process := exec.Command("git", invocation.Arguments...)
-	ConfigureBackgroundProcess(process)
+	backgroundprocess.Configure(process)
 	process.Dir = invocation.Directory
 	var output bytes.Buffer
 	var standardError bytes.Buffer

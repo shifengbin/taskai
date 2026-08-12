@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"taskai/internal/backgroundprocess"
 )
 
 type ShellCommandExecutor struct {
@@ -19,7 +21,7 @@ func NewShellCommandExecutor() *ShellCommandExecutor {
 
 func (executor *ShellCommandExecutor) Run(invocation CommandInvocation) (CommandResult, error) {
 	process := shellCommandProcess(executor.platform, invocation.ShellPath, invocation.Command, invocation.Arguments)
-	ConfigureBackgroundProcess(process)
+	backgroundprocess.Configure(process)
 	process.Dir = invocation.Directory
 	process.Stdin = bytes.NewReader(invocation.Input)
 	if process.Env == nil {

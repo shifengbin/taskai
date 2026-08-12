@@ -1,6 +1,6 @@
 //go:build windows
 
-package lifecycle
+package backgroundprocess
 
 import (
 	"os/exec"
@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func ConfigureBackgroundProcess(process *exec.Cmd) {
+func Configure(process *exec.Cmd) {
 	process.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NO_WINDOW,

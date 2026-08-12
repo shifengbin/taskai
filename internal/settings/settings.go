@@ -17,7 +17,7 @@ const DefaultTaskTreeWidth = 360
 const MinimumTaskTreeWidth = 280
 
 const (
-	DefaultGitScanDepth = 2
+	DefaultGitScanDepth = 3
 	MinimumGitScanDepth = 1
 	MaximumGitScanDepth = 10
 )
@@ -29,7 +29,7 @@ const (
 )
 
 const (
-	CurrentPresetVersion               = 5
+	CurrentPresetVersion               = 6
 	DefaultBranchTaskTemplateID        = "preset.task-template.default-branch"
 	DefaultLifecyclePresetID           = "preset.lifecycle-preset.default"
 	LifecycleChainIterationsAIID       = "preset.lifecycle-chain.iterations-ai"
@@ -448,6 +448,9 @@ func ApplyPresetMigration(next Settings) (Settings, bool) {
 		}}
 		next.DefaultLifecyclePresetID = DefaultLifecyclePresetID
 		next.LegacyLifecycleDefaultChains = nil
+	}
+	if next.PresetVersion < 6 && next.GitScanDepth == 2 {
+		next.GitScanDepth = DefaultGitScanDepth
 	}
 	next.PresetVersion = CurrentPresetVersion
 	return next, true

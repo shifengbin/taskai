@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -33,6 +34,50 @@ func TestDefaultUsesApplicationDataWorkspaces(t *testing.T) {
 	}
 	if settings.GitScanDepth != DefaultGitScanDepth {
 		t.Errorf("Default() GitScanDepth = %d，期望 %d", settings.GitScanDepth, DefaultGitScanDepth)
+	}
+	if settings.GitScanDepth != 3 {
+		t.Errorf("Default() GitScanDepth = %d，期望覆盖 workspaces/<项目> 的第 3 层", settings.GitScanDepth)
+	}
+}
+
+func TestApplyPresetMigrationUpdatesLegacyDefaultGitScanDepthOnce(t *testing.T) {
+	legacy := Default(t.TempDir())
+	legacy.PresetVersion = 5
+	legacy.GitScanDepth = 2
+
+	migrated, changed := ApplyPresetMigration(legacy)
+	if !changed || migrated.PresetVersion != CurrentPresetVersion {
+		t.Fatalf("迁移结果 = (%d, %t)，期望 (%d, true)", migrated.PresetVersion, changed, CurrentPresetVersion)
+	}
+	if migrated.GitScanDepth != 3 {
+		t.Fatalf("迁移后的 GitScanDepth = %d，期望 3", migrated.GitScanDepth)
+	}
+
+	migrated.GitScanDepth = 2
+	reloaded, changed := ApplyPresetMigration(migrated)
+	if changed {
+		t.Fatal("完成迁移后显式保存深度 2 不应再次触发迁移")
+	}
+	if reloaded.GitScanDepth != 2 {
+		t.Fatalf("显式保存后的 GitScanDepth = %d，期望 2", reloaded.GitScanDepth)
+	}
+}
+
+func TestApplyPresetMigrationKeepsLegacyNonDefaultGitScanDepth(t *testing.T) {
+	for _, depth := range []int{1, 3, MaximumGitScanDepth} {
+		t.Run(strconv.Itoa(depth), func(t *testing.T) {
+			legacy := Default(t.TempDir())
+			legacy.PresetVersion = 5
+			legacy.GitScanDepth = depth
+
+			migrated, changed := ApplyPresetMigration(legacy)
+			if !changed || migrated.PresetVersion != CurrentPresetVersion {
+				t.Fatalf("迁移结果 = (%d, %t)，期望 (%d, true)", migrated.PresetVersion, changed, CurrentPresetVersion)
+			}
+			if migrated.GitScanDepth != depth {
+				t.Fatalf("迁移后的 GitScanDepth = %d，期望保留 %d", migrated.GitScanDepth, depth)
+			}
+		})
 	}
 }
 
