@@ -343,6 +343,61 @@ describe('TerminalView', () => {
     expect(screen.queryByRole('button', {name: '添加备注'})).not.toBeInTheDocument()
   })
 
+  it('默认勾选操作后清空时复制当前终端备注汇总并清空', async () => {
+    const onClearNotes = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        notes={[{original: '一', note: '甲'}, {original: '二', note: '乙'}]}
+        noteTemplate={{originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'}}
+        onClearNotes={onClearNotes}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
+
+    expect(screen.getByRole('checkbox', {name: '操作后清空'})).toBeChecked()
+    fireEvent.click(screen.getByRole('button', {name: '复制到剪贴板'}))
+
+    await waitFor(() => expect(runtime.ClipboardSetText).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n'))
+    expect(onClearNotes).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].paste).not.toHaveBeenCalled()
+  })
+
+  it('取消操作后清空时复制和发送均保留当前终端备注', async () => {
+    const onClearNotes = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(
+      <TerminalView
+        terminal={terminal}
+        sessionRegistry={registry}
+        notes={[{original: '一', note: '甲'}, {original: '二', note: '乙'}]}
+        noteTemplate={{originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'}}
+        clearNotesAfterAction={false}
+        onClearNotes={onClearNotes}
+        onResize={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
+
+    expect(screen.getByRole('checkbox', {name: '操作后清空'})).not.toBeChecked()
+    fireEvent.click(screen.getByRole('button', {name: '复制到剪贴板'}))
+    await waitFor(() => expect(runtime.ClipboardSetText).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n'))
+    expect(onClearNotes).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
+    fireEvent.click(screen.getByRole('button', {name: '发送到终端'}))
+
+    expect(terminalInstances[0].paste).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n')
+    expect(onClearNotes).not.toHaveBeenCalled()
+  })
+
   it('从标题栏发送当前终端备注，并在发送后清空', () => {
     const onClearNotes = vi.fn()
     const registry = new TerminalSessionRegistry(vi.fn())

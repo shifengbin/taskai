@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from 'react'
-import {ClipboardPaste, MessageSquarePlus, Send, Terminal as TerminalIcon} from 'lucide-react'
+import {ClipboardCopy, ClipboardPaste, MessageSquarePlus, Send, Terminal as TerminalIcon} from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
@@ -9,8 +9,8 @@ import {defaultTerminalNoteTemplate, formatTerminalNotes, type TerminalNote} fro
 import {api} from '../api'
 import {defaultTerminalFontSize} from '../terminal-font-size'
 import {type TerminalTheme} from '../terminal-theme'
-import {ClipboardGetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
-import {Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, IconButton, Input, Popover, PopoverContent, PopoverTrigger, Textarea} from './ui'
+import {ClipboardGetText, ClipboardSetText, OnFileDrop, OnFileDropOff} from '../../wailsjs/runtime/runtime'
+import {Button, Checkbox, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, IconButton, Input, Popover, PopoverContent, PopoverTrigger, Textarea} from './ui'
 import {TerminalName} from './TerminalName'
 
 interface TerminalViewProps {
@@ -27,10 +27,12 @@ interface TerminalViewProps {
   onError?(error: unknown): void
 	onAddNote?(note: TerminalNote): void
 	onClearNotes?(): void
+	clearNotesAfterAction?: boolean
+	onClearNotesAfterActionChange?(clearNotesAfterAction: boolean): void
   onAliasChange?(alias: string | undefined): void
 }
 
-export function TerminalView({terminal, sessionRegistry, quickInputs = [], terminalShortcuts = [], notes = [], noteTemplate = defaultTerminalNoteTemplate, fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError, onAddNote = () => {}, onClearNotes = () => {}, onAliasChange = () => {}}: TerminalViewProps) {
+export function TerminalView({terminal, sessionRegistry, quickInputs = [], terminalShortcuts = [], notes = [], noteTemplate = defaultTerminalNoteTemplate, fontSize = defaultTerminalFontSize, terminalTheme, onResize, onClose, onError, onAddNote = () => {}, onClearNotes = () => {}, clearNotesAfterAction = true, onClearNotesAfterActionChange = () => {}, onAliasChange = () => {}}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const quickInputSearchRef = useRef<HTMLInputElement>(null)
   const noteInputRef = useRef<HTMLTextAreaElement>(null)
@@ -91,12 +93,33 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 			return
 		}
 		const wrote = sessionRegistry.pasteInput(terminal.taskId, terminal.id, formatTerminalNotes(notes, noteTemplate))
-		onClearNotes()
-		setNotesPanelOpen(false)
-		sessionRegistry.focus(terminal.taskId, terminal.id)
+		completeNotesAction()
 		if (!wrote) {
 			onErrorRef.current?.(new Error('终端已关闭，无法发送备注'))
 		}
+	}
+
+	const copyNotes = async () => {
+		if (notes.length === 0) {
+			return
+		}
+		try {
+			if (!await ClipboardSetText(formatTerminalNotes(notes, noteTemplate))) {
+				onErrorRef.current?.(new Error('无法写入系统剪贴板'))
+			}
+		} catch (error) {
+			onErrorRef.current?.(error)
+		} finally {
+			completeNotesAction()
+		}
+	}
+
+	const completeNotesAction = () => {
+		if (clearNotesAfterAction) {
+			onClearNotes()
+		}
+		setNotesPanelOpen(false)
+		sessionRegistry.focus(terminal.taskId, terminal.id)
 	}
 
   const insertQuickInput = (quickInput: QuickInput) => {
@@ -333,7 +356,14 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 									<p className="whitespace-pre-wrap text-snap-muted">备注：{note.note}</p>
 								</div>)}
 							</div>}
-							<Button variant="primary" size="sm" disabled={notes.length === 0} onClick={sendNotes}><Send className="mr-1 h-4 w-4"/>发送到终端</Button>
+							<div className="flex flex-wrap items-center justify-end gap-2">
+								<label className="mr-auto flex cursor-pointer items-center gap-2 text-xs font-bold text-snap-ink">
+									<Checkbox id={`terminal-note-clear-${terminal.id}`} checked={clearNotesAfterAction} onCheckedChange={(checked) => onClearNotesAfterActionChange(checked === true)}/>
+									<span>操作后清空</span>
+								</label>
+								<Button variant="secondary" size="sm" disabled={notes.length === 0} onClick={() => void copyNotes()}><ClipboardCopy className="h-4 w-4"/>复制到剪贴板</Button>
+								<Button variant="primary" size="sm" disabled={notes.length === 0} onClick={sendNotes}><Send className="h-4 w-4"/>发送到终端</Button>
+							</div>
 						</div>
 					</PopoverContent>
 				</Popover>
