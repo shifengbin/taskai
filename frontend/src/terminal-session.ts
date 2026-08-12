@@ -147,6 +147,15 @@ export class TerminalSessionRegistry {
     return true
   }
 
+  selectionText(taskID: string, terminalID: string): string {
+    const key = terminalSessionKey(taskID, terminalID)
+    const session = this.sessions.get(key)
+    if (!session || this.closedTerminalKeys.has(key)) {
+      return ''
+    }
+    return session.terminal.getSelection()
+  }
+
   setCustomKeyEventHandler(taskID: string, terminalID: string, handler?: (event: KeyboardEvent) => boolean): boolean {
 		const key = terminalSessionKey(taskID, terminalID)
 		const session = this.sessions.get(key)

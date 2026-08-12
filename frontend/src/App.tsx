@@ -51,6 +51,14 @@ import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalShortcutSettings} from './components/TerminalShortcutSettings'
 import {TerminalView} from './components/TerminalView'
 import {TerminalSessionRegistry} from './terminal-session'
+import {
+	appendTerminalNote,
+	clearTaskTerminalNotes,
+	clearTerminalNotes,
+	defaultTerminalNoteTemplate,
+	terminalNotesForSession,
+	type TerminalNotesBySession,
+} from './terminal-notes'
 import {uniqueProgramNames} from './terminal-shortcuts'
 import {resolveTerminalFontFamily} from './terminal-font'
 import {defaultTerminalFontSize, maximumTerminalFontSize, minimumTerminalFontSize, normalizeTerminalFontSize, terminalFontSizePercent} from './terminal-font-size'
@@ -144,6 +152,7 @@ const terminalBrightAnsiColorFields: Array<{key: keyof TerminalTheme, label: str
 export default function App() {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
   const [terminals, setTerminals] = useState<TerminalRecord[]>([])
+	const [terminalNotes, setTerminalNotes] = useState<TerminalNotesBySession>({})
 	const [settings, setSettings] = useState<SettingsRecord>()
 	const [extraInfoTemplates, setExtraInfoTemplates] = useState<ExtraInfoTemplate[]>([])
 	const [extraInfos, setExtraInfos] = useState<ExtraInfo[]>([])
@@ -200,8 +209,9 @@ export default function App() {
 	const selectedTerminalFont = fontOptions.find((candidate) => candidate.family === (settingsDraft?.terminalFontFamily?.trim() ?? '')) ?? defaultTerminalFontCandidate
 	const terminalFontSizeDraft = normalizeTerminalFontSize(settingsDraft?.terminalFontSize)
 	const terminalThemeDraft = normalizeTerminalTheme(settingsDraft?.terminalTheme)
+	const terminalNoteTemplateDraft = settingsDraft?.terminalNoteTemplate ?? settings?.terminalNoteTemplate ?? defaultTerminalNoteTemplate
 	const terminalSelectionOpacity = terminalThemeSelectionOpacity(terminalThemeDraft)
-	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'shortcuts' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
+	const [settingsTab, setSettingsTab] = useState<'workspace' | 'shell' | 'shortcuts' | 'notes' | 'menu' | 'status' | 'lifecycle' | 'templates'>('workspace')
   const [statusHelpOpen, setStatusHelpOpen] = useState(false)
   const [taskMenuItemDraft, setTaskMenuItemDraft] = useState<TaskMenuItem>()
   const [taskMenuItemEditorMode, setTaskMenuItemEditorMode] = useState<'create' | 'edit'>()
@@ -266,7 +276,7 @@ export default function App() {
 		const [loadedTasks, loadedSettings, loadedShells, loadedExtraInfoTemplates, loadedExtraInfos, loadedQuickInputs] = await Promise.all([api.listTasks(), api.getSettings(), api.detectShells(), api.listExtraInfoTemplates(), api.listExtraInfos(), api.listQuickInputs()])
         setTasks(loadedTasks)
 		const loadedTerminalTheme = normalizeTerminalTheme(loadedSettings.terminalTheme)
-		setSettings({...loadedSettings, terminalTheme: loadedTerminalTheme})
+		setSettings({...loadedSettings, terminalTheme: loadedTerminalTheme, terminalNoteTemplate: loadedSettings.terminalNoteTemplate ?? defaultTerminalNoteTemplate})
 		terminalFontFamily.current = loadedSettings.terminalFontFamily ?? ''
 		terminalFontSize.current = normalizeTerminalFontSize(loadedSettings.terminalFontSize)
 		terminalTheme.current = loadedTerminalTheme
@@ -286,6 +296,9 @@ export default function App() {
       }
     })()
     const unsubscribe = api.onTerminalEvent((event) => {
+		if (event.type === 'exited') {
+			setTerminalNotes((current) => clearTerminalNotes(current, terminalEventKey(event.taskId, event.terminalId)))
+		}
       if (finishedTerminalTaskIDs.current.has(event.taskId)) {
         return
       }
@@ -840,6 +853,7 @@ export default function App() {
       setTasks((current) => mergeLifecycleTask(current, completed))
       finishedTerminalTaskIDs.current.add(finishTask.id)
       terminalSessions.current?.disposeTask(finishTask.id)
+		setTerminalNotes((current) => clearTaskTerminalNotes(current, finishTask.id))
       clearTaskTerminalTracking(finishTask.id, terminalTitleParserStates.current, pendingTerminalEvents.current, registeredTerminalKeys.current)
       setTerminals((current) => current.filter((terminal) => terminal.taskId !== finishTask.id))
       if (selectedTaskID === finishTask.id) {
@@ -906,6 +920,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   try {
     await api.closeTerminal(terminal.taskId, terminal.id)
     terminalSessions.current?.dispose(terminal.taskId, terminal.id)
+		setTerminalNotes((current) => clearTerminalNotes(current, terminalEventKey(terminal.taskId, terminal.id)))
     setTerminals((current) => current.filter((currentTerminal) => (
       currentTerminal.id !== terminal.id || currentTerminal.taskId !== terminal.taskId
     )))
@@ -941,6 +956,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 			const remainingTasks = await api.deleteTasks(selectedDeletableTaskIDs)
 			const deletedTaskIDSet = new Set(selectedDeletableTaskIDs)
 			setTasks(remainingTasks)
+			setTerminalNotes((current) => selectedDeletableTaskIDs.reduce((remaining, taskID) => clearTaskTerminalNotes(remaining, taskID), current))
 				setTerminals((current) => current.filter((terminal) => !deletedTaskIDSet.has(terminal.taskId)))
 				setExpandedTasks((current) => Object.fromEntries(Object.entries(current).filter(([taskID]) => !deletedTaskIDSet.has(taskID))))
 				for (const taskID of deletedTaskIDSet) {
@@ -974,7 +990,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
     try {
 		const saved = await api.saveSettings(settingsDraft)
 		const savedTerminalTheme = normalizeTerminalTheme(saved.terminalTheme)
-		setSettings({...saved, terminalTheme: savedTerminalTheme})
+		setSettings({...saved, terminalTheme: savedTerminalTheme, terminalNoteTemplate: saved.terminalNoteTemplate ?? defaultTerminalNoteTemplate})
 		terminalFontFamily.current = saved.terminalFontFamily ?? ''
 		terminalFontSize.current = normalizeTerminalFontSize(saved.terminalFontSize)
 		terminalTheme.current = savedTerminalTheme
@@ -1119,6 +1135,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 		terminalFontSize: normalizeTerminalFontSize(current?.terminalFontSize ?? settings?.terminalFontSize),
 		terminalTheme: normalizeTerminalTheme(current?.terminalTheme ?? settings?.terminalTheme),
 		terminalShortcuts: current?.terminalShortcuts ?? settings?.terminalShortcuts ?? [],
+		terminalNoteTemplate: current?.terminalNoteTemplate ?? settings?.terminalNoteTemplate ?? defaultTerminalNoteTemplate,
       shellPath: current?.shellPath ?? settings?.shellPath ?? detectedShells[0] ?? '',
       taskMenuItems: current?.taskMenuItems ?? cloneTaskMenuItems(taskMenuItems),
 		activeTaskStatus: current?.activeTaskStatus ?? settings?.activeTaskStatus ?? activeTaskStatus,
@@ -1229,6 +1246,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 						terminalFontSize: normalizeTerminalFontSize(settings.terminalFontSize),
 						terminalTheme: normalizeTerminalTheme(settings.terminalTheme),
 						terminalShortcuts: settings.terminalShortcuts ?? [],
+						terminalNoteTemplate: settings.terminalNoteTemplate ?? defaultTerminalNoteTemplate,
                     shellPath: settings.shellPath || detectedShells[0] || '',
 						taskMenuItems: draftMenuItems,
 						statusManagementMode: settings.statusManagementMode ?? 'title-change',
@@ -1351,8 +1369,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 sessionRegistry={terminalSessions.current!}
                 quickInputs={quickInputs}
                 fontSize={normalizeTerminalFontSize(settings?.terminalFontSize)}
-				terminalTheme={settings?.terminalTheme}
+                terminalTheme={settings?.terminalTheme}
 				terminalShortcuts={settings?.terminalShortcuts}
+					notes={terminalNotesForSession(terminalNotes, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id))}
+					noteTemplate={settings?.terminalNoteTemplate ?? defaultTerminalNoteTemplate}
+					onAddNote={(note) => setTerminalNotes((current) => appendTerminalNote(current, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id), note))}
+					onClearNotes={() => setTerminalNotes((current) => clearTerminalNotes(current, terminalEventKey(selectedTerminal.taskId, selectedTerminal.id)))}
                 onResize={(columns, rows) => void api.resizeTerminal(selectedTerminal.taskId, selectedTerminal.id, columns, rows).catch((error) => showError(error, setMessage))}
                 onError={(error) => showError(error, setMessage)}
                 onClose={() => void closeTerminal(selectedTerminal)}
@@ -1724,11 +1746,12 @@ const closeTerminal = async (terminal: TerminalRecord) => {
           </SnapDialogHeader>
           <SnapScrollArea className="max-h-[62vh] min-w-0">
             <div className="grid min-w-0 gap-4 px-1">
-              <SnapTabs value={settingsTab} onValueChange={(value) => setSettingsTab(value as 'workspace' | 'shell' | 'shortcuts' | 'menu' | 'status' | 'lifecycle' | 'templates')}>
+              <SnapTabs value={settingsTab} onValueChange={(value) => setSettingsTab(value as 'workspace' | 'shell' | 'shortcuts' | 'notes' | 'menu' | 'status' | 'lifecycle' | 'templates')}>
                 <SnapTabsList className="overflow-x-auto snap-no-scrollbar" aria-label="设置分类">
                   <SnapTabsTrigger className="flex-none min-w-max" value="workspace">工作区与外观</SnapTabsTrigger>
                   <SnapTabsTrigger className="flex-none min-w-max" value="shell">终端 Shell</SnapTabsTrigger>
                   <SnapTabsTrigger className="flex-none min-w-max" value="shortcuts">终端快捷键</SnapTabsTrigger>
+									<SnapTabsTrigger className="flex-none min-w-max" value="notes">终端备注</SnapTabsTrigger>
                   <SnapTabsTrigger className="flex-none min-w-max" value="menu">菜单管理</SnapTabsTrigger>
                   <SnapTabsTrigger className="flex-none min-w-max" value="status">实时状态</SnapTabsTrigger>
                   <SnapTabsTrigger className="flex-none min-w-max" value="lifecycle">生命周期编排</SnapTabsTrigger>
@@ -1893,6 +1916,16 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 ])}
                 onChange={(terminalShortcuts) => updateSettingsDraft({terminalShortcuts})}
               />}
+
+							{settingsTab === 'notes' && <div className="grid gap-4">
+								<div className="grid gap-1">
+									<span className="font-display text-sm font-bold text-snap-ink">备注发送模板</span>
+									<span className="text-sm text-snap-muted">每条备注按“原文、备注”两行输出；发送时会在全部记录后追加统一后缀和换行。</span>
+								</div>
+								<Field label="原文前缀"><Textarea rows={2} value={terminalNoteTemplateDraft.originalPrefix} onChange={(event) => updateSettingsDraft({terminalNoteTemplate: {...terminalNoteTemplateDraft, originalPrefix: event.target.value}})}/></Field>
+								<Field label="备注前缀"><Textarea rows={2} value={terminalNoteTemplateDraft.notePrefix} onChange={(event) => updateSettingsDraft({terminalNoteTemplate: {...terminalNoteTemplateDraft, notePrefix: event.target.value}})}/></Field>
+								<Field label="列表统一后缀" hint="可留空。发送时仍会保留结尾换行。"><Textarea rows={3} value={terminalNoteTemplateDraft.listSuffix} onChange={(event) => updateSettingsDraft({terminalNoteTemplate: {...terminalNoteTemplateDraft, listSuffix: event.target.value}})}/></Field>
+							</div>}
 
               {settingsTab === 'menu' && <div className="grid gap-3">
                 <div className="flex items-center justify-between gap-3">
