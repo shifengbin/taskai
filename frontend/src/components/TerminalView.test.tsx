@@ -117,6 +117,7 @@ vi.mock('../../wailsjs/runtime/runtime', () => runtime)
 vi.mock('../api', () => ({api}))
 
 import {TerminalView} from './TerminalView'
+import {TooltipProvider} from './ui'
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
 
 const terminal = {id: 'terminal-1', taskId: 'task-1', state: 'active' as const}
@@ -295,6 +296,26 @@ describe('TerminalView', () => {
     fireEvent.keyDown(screen.getByRole('textbox', {name: '终端别名'}), {key: 'Enter'})
 
     expect(onAliasChange).toHaveBeenCalledWith('前端调试')
+  })
+
+  it('右侧标题栏继续使用默认的终端提示定位', async () => {
+    render(
+      <TooltipProvider delayDuration={0}>
+        <TerminalView
+          terminal={{...terminal, title: 'npm run dev', command: 'zsh', alias: '前端调试'}}
+          sessionRegistry={new TerminalSessionRegistry(vi.fn())}
+          onResize={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </TooltipProvider>,
+    )
+
+    fireEvent.pointerMove(screen.getByTestId('terminal-view-title'))
+
+    const tooltip = await screen.findByTestId('terminal-alias-details')
+    expect(tooltip).toHaveAttribute('data-side', 'top')
+    expect(tooltip).toHaveAttribute('data-align', 'center')
+    expect(tooltip).not.toHaveClass('pointer-events-none')
   })
 
   it('将已配置的 Shift+Enter 作为一次有序输入写入终端', () => {
