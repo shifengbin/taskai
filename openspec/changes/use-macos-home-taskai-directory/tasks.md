@@ -27,7 +27,7 @@
 
 ## 5. 构建、确认与交付
 
-- [ ] 5.1 运行 `go test -race ./...`、`cd frontend && npm test && npm run build` 以及 `openspec validate use-macos-home-taskai-directory --strict`，修复本变更引入的所有失败后重新验证。
+- [x] 5.1 运行 `go test -race ./...`、`cd frontend && npm test && npm run build` 以及 `openspec validate use-macos-home-taskai-directory --strict`，修复本变更引入的所有失败后重新验证。
 - [ ] 5.2 在 macOS 上执行 `./scripts/build-macos.sh` 编译应用，打开生成的 TaskAI `.app` 且保持程序运行，复查设置中的默认工作区路径并等待用户确认。
 - [ ] 5.3 用户确认后，将 worktree 功能分支合并回当前工作区项目分支；若出现冲突则解决冲突，并再次运行相关测试和 `./scripts/build-macos.sh` 验证合并结果。
 - [ ] 5.4 同步中文设计与实施文档，将完成后的 OpenSpec 规格合入主规格并归档 `use-macos-home-taskai-directory` 变更。

@@ -174,6 +174,34 @@ func TestResolveDefaultDirectoryFallsBackToOldMacOSDataWhenMigrationFails(t *tes
 	}
 }
 
+func TestPublishDirectoryDoesNotReplaceExistingDestination(t *testing.T) {
+	parentDirectory := t.TempDir()
+	sourceDirectory := filepath.Join(parentDirectory, "source")
+	destinationDirectory := filepath.Join(parentDirectory, "destination")
+	if err := os.Mkdir(sourceDirectory, 0o700); err != nil {
+		t.Fatalf("创建源目录: %v", err)
+	}
+	if err := os.Mkdir(destinationDirectory, 0o700); err != nil {
+		t.Fatalf("创建目标目录: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDirectory, "source.txt"), []byte("source"), 0o600); err != nil {
+		t.Fatalf("写入源目录: %v", err)
+	}
+	if err := publishDirectory(sourceDirectory, destinationDirectory); err == nil {
+		t.Fatal("目标目录已存在时发布应失败")
+	}
+	if got := readFile(t, filepath.Join(sourceDirectory, "source.txt")); string(got) != "source" {
+		t.Fatalf("失败后的源文件 = %q，期望保留", got)
+	}
+	entries, err := os.ReadDir(destinationDirectory)
+	if err != nil {
+		t.Fatalf("读取目标目录: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("失败后的目标目录内容 = %v，期望为空", entries)
+	}
+}
+
 func realDirectoryDependencies(homeDirectory string) directoryDependencies {
 	return directoryDependencies{
 		userHomeDir:   func() (string, error) { return homeDirectory, nil },

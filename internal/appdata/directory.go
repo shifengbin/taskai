@@ -27,7 +27,7 @@ func DefaultDirectory() string {
 		tempDir:              os.TempDir,
 		copyFile:             copyFile,
 		rewriteWorkspaceRoot: rewriteWorkspaceRoot,
-		rename:               os.Rename,
+		rename:               publishDirectory,
 	})
 }
 
@@ -45,7 +45,7 @@ func resolveDefaultDirectory(operatingSystem string, dependencies directoryDepen
 		dependencies.rewriteWorkspaceRoot = rewriteWorkspaceRoot
 	}
 	if dependencies.rename == nil {
-		dependencies.rename = os.Rename
+		dependencies.rename = publishDirectory
 	}
 
 	configurationDirectory, configurationErr := dependencies.userConfigDir()
