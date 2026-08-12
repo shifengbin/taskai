@@ -370,6 +370,7 @@ describe('TerminalView', () => {
 
   it('取消操作后清空时复制和发送均保留当前终端备注', async () => {
     const onClearNotes = vi.fn()
+		const onClearNotesAfterActionChange = vi.fn()
     const registry = new TerminalSessionRegistry(vi.fn())
     render(
       <TerminalView
@@ -379,6 +380,7 @@ describe('TerminalView', () => {
         noteTemplate={{originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'}}
         clearNotesAfterAction={false}
         onClearNotes={onClearNotes}
+			onClearNotesAfterActionChange={onClearNotesAfterActionChange}
         onResize={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -386,7 +388,10 @@ describe('TerminalView', () => {
 
     fireEvent.click(screen.getByRole('button', {name: '终端备注（2 条）'}))
 
-    expect(screen.getByRole('checkbox', {name: '操作后清空'})).not.toBeChecked()
+    const clearAfterAction = screen.getByRole('checkbox', {name: '操作后清空'})
+		expect(clearAfterAction).not.toBeChecked()
+		fireEvent.click(clearAfterAction)
+		expect(onClearNotesAfterActionChange).toHaveBeenCalledWith(true)
     fireEvent.click(screen.getByRole('button', {name: '复制到剪贴板'}))
     await waitFor(() => expect(runtime.ClipboardSetText).toHaveBeenCalledWith('原文：一\n备注：甲\n原文：二\n备注：乙\n请处理\n'))
     expect(onClearNotes).not.toHaveBeenCalled()
