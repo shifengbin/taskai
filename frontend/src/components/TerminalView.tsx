@@ -394,7 +394,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 			</IconButton>}
       </div>
 		<Dialog open={noteInputOpen} onOpenChange={(open) => { if (!open) closeNoteInput() }}>
-			<DialogContent>
+			<DialogContent onPointerDown={(event) => event.stopPropagation()}>
 				<DialogHeader>
 					<DialogTitle>添加终端备注</DialogTitle>
 				</DialogHeader>

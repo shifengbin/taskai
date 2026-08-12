@@ -302,6 +302,8 @@ describe('TerminalView', () => {
 
     expect(screen.getByRole('dialog')).toHaveTextContent('编译失败')
     const noteInput = screen.getByRole('textbox', {name: '备注内容'})
+    fireEvent.pointerDown(noteInput)
+    expect(screen.getByRole('dialog')).toHaveTextContent('编译失败')
     const save = screen.getByRole('button', {name: '保存备注'})
     expect(save).toBeDisabled()
     fireEvent.change(noteInput, {target: {value: '检查依赖版本'}})
