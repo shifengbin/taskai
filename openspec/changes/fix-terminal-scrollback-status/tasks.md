@@ -12,6 +12,6 @@
 ## 3. 验证
 
 - [x] 3.1 运行受影响的终端会话 Vitest 测试。
-- [ ] 3.2 运行 `cd frontend && npm test -- --run && npm run build`。
+- [x] 3.2 运行 `cd frontend && npm test -- --run && npm run build`。
 - [ ] 3.3 运行 `go test -race ./...`。
 - [ ] 3.4 运行 `./scripts/build-linux.sh`，使用 `wails dev` 手动验证向上滚动终端历史时的输出状态，并启动编译后的程序验证。
