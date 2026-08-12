@@ -8,6 +8,7 @@ interface TerminalNameProps {
   onAliasChange(alias: string | undefined): void
   className?: string
   testId?: string
+  detailsDisplay?: 'tooltip' | 'inline-session-details'
   tooltipPlacement?: {
     side: 'top' | 'right' | 'bottom' | 'left'
     align: 'start' | 'center' | 'end'
@@ -16,11 +17,12 @@ interface TerminalNameProps {
   }
 }
 
-export function TerminalName({terminal, onAliasChange, className, testId, tooltipPlacement}: TerminalNameProps) {
+export function TerminalName({terminal, onAliasChange, className, testId, detailsDisplay = 'tooltip', tooltipPlacement}: TerminalNameProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const hasAlias = Boolean(terminal.alias?.trim())
+  const details = terminalAliasDetails(terminal)
 
   useEffect(() => {
     if (editing) {
@@ -67,15 +69,16 @@ export function TerminalName({terminal, onAliasChange, className, testId, toolti
         setEditing(true)
       }}
     >
-      {terminalDisplayName(terminal)}
+      {detailsDisplay === 'inline-session-details' && hasAlias
+        ? `${terminalDisplayName(terminal)}(${details.actualName}:${details.command})`
+        : terminalDisplayName(terminal)}
     </span>
   )
 
-  if (!hasAlias) {
+  if (!hasAlias || detailsDisplay === 'inline-session-details') {
     return name
   }
 
-  const details = terminalAliasDetails(terminal)
   return (
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>{name}</TooltipTrigger>
