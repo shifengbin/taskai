@@ -16,6 +16,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"taskai/internal/appdata"
 	"taskai/internal/application"
 	"taskai/internal/backgroundprocess"
 	"taskai/internal/fonts"
@@ -112,11 +113,7 @@ func newApp(dataDirectory string) *App {
 }
 
 func defaultDataDirectory() string {
-	configurationDirectory, err := os.UserConfigDir()
-	if err == nil {
-		return filepath.Join(configurationDirectory, "taskai")
-	}
-	return filepath.Join(os.TempDir(), "taskai")
+	return appdata.DefaultDirectory()
 }
 
 func (app *App) startup(ctx context.Context) {
