@@ -1,6 +1,6 @@
 import {type Dispatch, type FormEvent, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState} from 'react'
 
-import {ArrowDown, ArrowUp, CheckCheck, CheckCircle2, FolderOpen, HelpCircle, Maximize, Minimize, Plus, RotateCcw, Settings as SettingsIcon, Trash2} from 'lucide-react'
+import {ArrowDown, ArrowUp, CheckCheck, CheckCircle2, FolderOpen, HelpCircle, Maximize, Minimize, Plus, RefreshCw, RotateCcw, Settings as SettingsIcon, Trash2} from 'lucide-react'
 
 import {api} from './api'
 import taskAiMark from './assets/task-ai-mark.svg'
@@ -92,6 +92,7 @@ import {
   type TaskScript,
   type SettingsRecord,
 	type TaskExtraInfo,
+	type TaskGitRepository,
 	type TaskRecord,
 	type TaskTemplate,
 	type TaskTemplateField,
@@ -1113,6 +1114,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
   const updateSettingsDraft = (update: Partial<SettingsRecord>) => {
     setSettingsDraft((current) => ({
       workspaceRoot: current?.workspaceRoot ?? settings?.workspaceRoot ?? '',
+      gitScanDepth: current?.gitScanDepth ?? settings?.gitScanDepth ?? 2,
       taskTreeWidth: current?.taskTreeWidth ?? treeWidth,
 		colorScheme: current?.colorScheme ?? colorScheme,
 		terminalFontFamily: current?.terminalFontFamily ?? settings?.terminalFontFamily ?? '',
@@ -1224,6 +1226,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                   const draftMenuItems = cloneTaskMenuItems(taskMenuItems)
 				  setSettingsDraft(settings ? {
 				    ...settings,
+                    gitScanDepth: settings.gitScanDepth ?? 2,
                     colorScheme,
 					terminalFontFamily: settings.terminalFontFamily ?? '',
 						terminalFontSize: normalizeTerminalFontSize(settings.terminalFontSize),
@@ -1738,6 +1741,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 
               {settingsTab === 'workspace' && <div className="grid gap-3">
                 <Field label="新任务工作区根目录" hint="仅影响之后开始执行的任务，已有任务保持各自目录快照。"><Input required value={settingsDraft?.workspaceRoot ?? ''} onChange={(event) => updateSettingsDraft({workspaceRoot: event.target.value})}/></Field>
+                <Field label="Git 最大扫描深度" hint="任务目录为第 1 层，默认扫描到第 2 层。较小的值可减少 Git 仓库扫描时间。"><Input required type="number" min={1} max={10} value={settingsDraft?.gitScanDepth ?? 2} onChange={(event) => updateSettingsDraft({gitScanDepth: Number(event.target.value)})}/></Field>
                 <Field label="颜色模式">
                   <select className={selectClass} value={settingsDraft?.colorScheme ?? colorScheme} onChange={(event) => updateSettingsDraft({colorScheme: event.target.value as ColorScheme})}>
                     <option value="light">亮色</option>
@@ -3023,6 +3027,29 @@ function TaskDetail({
 	template?: TaskTemplate
 	onCopyLifecycleCommandInput(taskID: string): void
 }) {
+	const [gitWorkspaceTaskID, setGitWorkspaceTaskID] = useState<string>()
+	const [detailTab, setDetailTab] = useState<'project' | 'git'>('project')
+	useEffect(() => {
+		let active = true
+		setDetailTab('project')
+		setGitWorkspaceTaskID(undefined)
+		if (!task?.workspacePath?.trim()) {
+			return () => { active = false }
+		}
+		void api.hasTaskGitWorkspace(task.id).then((exists) => {
+			if (active && exists) {
+				setGitWorkspaceTaskID(task.id)
+			}
+		}).catch(() => {
+			if (active) {
+				setGitWorkspaceTaskID(undefined)
+			}
+		})
+		return () => { active = false }
+	}, [task?.id, task?.workspacePath])
+	const hasGitWorkspace = task?.id === gitWorkspaceTaskID
+	const activeDetailTab = hasGitWorkspace && detailTab === 'git' ? 'git' : 'project'
+
   if (!task) {
     return (
       <div className="grid h-full place-items-center p-6 text-center text-snap-muted">
@@ -3032,7 +3059,7 @@ function TaskDetail({
         </div>
       </div>
     )
-  }
+	}
 	const templateValues = resolveTaskTemplateValues(template, task.templateFields)
   return (
     <div className="taskai-task-detail p-6 md:p-10" style={{height: '100%', width: '100%', maxWidth: 'none', overflow: 'auto'}}>
@@ -3040,9 +3067,15 @@ function TaskDetail({
         <h2 className="font-display text-2xl font-extrabold text-snap-ink">{task.title}</h2>
         <SnapChip>{taskStatusLabel[task.status]}</SnapChip>
       </div>
-      <p className={`mb-6 whitespace-pre-wrap ${task.description ? 'text-snap-ink' : 'text-snap-muted'}`}>
-        {task.description || '暂无任务描述'}
-      </p>
+		<SnapTabs value={activeDetailTab} onValueChange={(value) => setDetailTab(value === 'git' ? 'git' : 'project')}>
+			<SnapTabsList aria-label="任务详情标签">
+				<SnapTabsTrigger value="project">项目信息</SnapTabsTrigger>
+				{hasGitWorkspace && <SnapTabsTrigger value="git">Git</SnapTabsTrigger>}
+			</SnapTabsList>
+			<SnapTabsContent value="project" className="pt-5">
+				<p className={`mb-6 whitespace-pre-wrap ${task.description ? 'text-snap-ink' : 'text-snap-muted'}`}>
+					{task.description || '暂无任务描述'}
+				</p>
 		<section className="taskai-detail-section mb-5 grid gap-2">
 			<span className="taskai-detail-section__title font-display text-xs font-extrabold uppercase tracking-wide text-snap-muted">任务模板</span>
 			{template ? <div className="taskai-detail-card grid gap-2 rounded-snap border-2 border-snap-outline/25 p-3">
@@ -3095,8 +3128,114 @@ function TaskDetail({
           <span className="text-sm text-snap-ink" style={{fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere'}}>{task.workspacePath}</span>
         </div>
       )}
+			</SnapTabsContent>
+			{hasGitWorkspace && <SnapTabsContent value="git" className="pt-5">
+				<TaskGitRepositories taskID={task.id}/>
+			</SnapTabsContent>}
+		</SnapTabs>
     </div>
   )
+}
+
+type TaskGitRepositoryViewState = {
+	repository: TaskGitRepository
+	message: string
+	busy: boolean
+	error?: string
+}
+
+function TaskGitRepositories({taskID}: {taskID: string}) {
+	const [repositories, setRepositories] = useState<TaskGitRepositoryViewState[]>([])
+	const [loading, setLoading] = useState(true)
+	const [error, setError] = useState<string>()
+
+	const loadRepositories = () => {
+		let active = true
+		setLoading(true)
+		setError(undefined)
+		void api.listTaskGitRepositories(taskID).then((next) => {
+			if (!active) {
+				return
+			}
+			setRepositories(next.map((repository) => ({repository, message: '', busy: false})))
+		}).catch((loadError) => {
+			if (active) {
+				setError(loadError instanceof Error ? loadError.message : String(loadError))
+			}
+		}).finally(() => {
+			if (active) {
+				setLoading(false)
+			}
+		})
+		return () => { active = false }
+	}
+	useEffect(() => {
+		return loadRepositories()
+	}, [taskID])
+
+	const updateRepository = (path: string, update: (current: TaskGitRepositoryViewState) => TaskGitRepositoryViewState) => {
+		setRepositories((current) => current.map((item) => item.repository.path === path ? update(item) : item))
+	}
+	const runAction = async (path: string) => {
+		const current = repositories.find((item) => item.repository.path === path)
+		if (!current || current.busy) {
+			return
+		}
+		if (current.repository.action === 'commit' && !current.message.trim()) {
+			updateRepository(path, (item) => ({...item, error: '必须填写提交信息'}))
+			return
+		}
+		updateRepository(path, (item) => ({...item, busy: true, error: undefined}))
+		try {
+			const next = current.repository.action === 'commit'
+				? await api.commitTaskGitRepository(taskID, path, current.message)
+				: current.repository.action === 'publish'
+					? await api.publishTaskGitRepository(taskID, path)
+					: await api.syncTaskGitRepository(taskID, path)
+			updateRepository(path, (item) => ({...item, repository: next, message: next.action === 'commit' ? item.message : '', busy: false}))
+		} catch (actionError) {
+			try {
+				const refreshed = await api.listTaskGitRepositories(taskID)
+				const next = refreshed.find((repository) => repository.path === path)
+				updateRepository(path, (item) => ({...item, repository: next ?? item.repository, busy: false, error: actionError instanceof Error ? actionError.message : String(actionError)}))
+			} catch {
+				updateRepository(path, (item) => ({...item, busy: false, error: actionError instanceof Error ? actionError.message : String(actionError)}))
+			}
+		}
+	}
+
+	if (loading) {
+		return <SnapAlert severity="info">正在读取 Git 仓库…</SnapAlert>
+	}
+	if (error) {
+		return <SnapAlert severity="error">{error}</SnapAlert>
+	}
+	if (repositories.length === 0) {
+		return <SnapAlert severity="info">未发现 Git 仓库。</SnapAlert>
+	}
+	return <div className="grid gap-3">
+		<div className="flex justify-end">
+			<SnapIconButton title="刷新 Git 仓库" aria-label="刷新 Git 仓库" size="sm" disabled={loading} onClick={() => { loadRepositories() }}><RefreshCw className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
+		</div>
+		{repositories.map((item) => <TaskGitRepositoryCard key={item.repository.path} item={item} onMessageChange={(message) => updateRepository(item.repository.path, (current) => ({...current, message, error: undefined}))} onAction={() => void runAction(item.repository.path)}/>) }
+	</div>
+}
+
+function TaskGitRepositoryCard({item, onMessageChange, onAction}: {item: TaskGitRepositoryViewState, onMessageChange(message: string): void, onAction(): void}) {
+	const actionLabel: Record<TaskGitRepository['action'], string> = {none: '不可操作', commit: '提交', publish: '发布分支', sync: '同步远程'}
+	const {repository} = item
+	return <section data-testid={`task-git-repository-${repository.path.replaceAll('/', '-')}`} className="taskai-detail-card grid gap-3 rounded-snap border-2 border-snap-outline/25 p-4">
+		<div className="flex flex-wrap items-center gap-2">
+			<span className="font-display text-sm font-bold text-snap-ink break-all">{repository.path}</span>
+			{repository.branch && <SnapChip>{repository.branch}</SnapChip>}
+			{repository.remote && <SnapChip variant="info">{repository.remote}</SnapChip>}
+		</div>
+		<div className="text-xs text-snap-muted">{repository.dirty ? '存在未提交改动' : repository.branch ? repository.remoteBranchExists ? '远程已有当前分支' : '远程尚无当前分支' : '当前未处于本地分支'}</div>
+		{repository.notice && <SnapAlert severity="warning">{repository.notice}</SnapAlert>}
+		{repository.action === 'commit' && <div className="grid gap-1"><Field label="提交信息"><Input value={item.message} disabled={item.busy} onChange={(event) => onMessageChange(event.target.value)}/></Field><span className="text-xs text-snap-muted">将暂存并提交该仓库的全部改动。</span></div>}
+		{item.error && <SnapAlert severity="error">{item.error}</SnapAlert>}
+		{repository.action !== 'none' && <SnapButton variant="primary" size="sm" className="justify-self-start" disabled={item.busy || (repository.action === 'sync' && repository.synchronized)} onClick={onAction}>{item.busy ? '处理中…' : actionLabel[repository.action]}</SnapButton>}
+	</section>
 }
 
 function groupTaskExtraInfoByCatalogue(items: TaskExtraInfo[]): Record<string, TaskExtraInfo[]> {

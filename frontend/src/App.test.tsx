@@ -42,6 +42,11 @@ const bindings = vi.hoisted(() => ({
 	DeleteLifecyclePreset: vi.fn(),
 	ListLifecyclePresets: vi.fn(),
 	ListTerminalFonts: vi.fn(),
+	HasTaskGitWorkspace: vi.fn(),
+	ListTaskGitRepositories: vi.fn(),
+	CommitTaskGitRepository: vi.fn(),
+	PublishTaskGitRepository: vi.fn(),
+	SyncTaskGitRepository: vi.fn(),
 	SaveLifecyclePreset: vi.fn(),
 	SaveDefaultLifecyclePreset: vi.fn(),
 	ReorderTasks: vi.fn(),
@@ -144,7 +149,12 @@ describe('App confirmation flows', () => {
 		bindings.ListLifecycleCommands.mockResolvedValue([])
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
 		bindings.ListLifecyclePresets.mockResolvedValue([])
-		bindings.ListTerminalFonts.mockResolvedValue([{family: '', spacing: 'mono'}])
+	bindings.ListTerminalFonts.mockResolvedValue([{family: '', spacing: 'mono'}])
+		bindings.HasTaskGitWorkspace.mockResolvedValue(false)
+		bindings.ListTaskGitRepositories.mockResolvedValue([])
+		bindings.CommitTaskGitRepository.mockResolvedValue(undefined)
+		bindings.PublishTaskGitRepository.mockResolvedValue(undefined)
+		bindings.SyncTaskGitRepository.mockResolvedValue(undefined)
 		bindings.SaveLifecyclePreset.mockImplementation(async (preset) => preset)
 		bindings.CopyLifecyclePreset.mockResolvedValue(undefined)
 		bindings.DeleteLifecyclePreset.mockResolvedValue(undefined)
@@ -432,6 +442,76 @@ describe('App confirmation flows', () => {
     await user.click(within(successToast).getByRole('button', {name: '关闭'}))
     expect(screen.queryAllByRole('alert').some((alert) => alert.textContent?.trim() === '')).toBe(false)
   })
+
+	it('任务详情在 Git 标签中按仓库显示独立提交操作', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'task-git', title: '管理多个仓库', description: '', status: 'running', createdAt: '2026-08-12T00:00:00Z', workspacePath: '/tmp/workspaces/task-git',
+		}])
+		bindings.ListTaskGitRepositories.mockResolvedValue([
+			{path: 'api', branch: 'feature/api', remote: 'origin', dirty: true, action: 'commit'},
+			{path: 'web', branch: 'main', remote: 'origin', dirty: false, remoteBranchExists: false, action: 'publish'},
+			{path: 'operations', branch: 'main', remote: 'origin', dirty: false, remoteBranchExists: true, synchronized: true, action: 'sync'},
+		])
+		bindings.HasTaskGitWorkspace.mockResolvedValue(true)
+		bindings.CommitTaskGitRepository.mockResolvedValue({path: 'api', branch: 'feature/api', remote: 'origin', dirty: false, remoteBranchExists: true, action: 'sync'})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('tab', {name: /执行中/}))
+		await user.click(await screen.findByText('管理多个仓库'))
+		expect(screen.getByRole('tab', {name: '项目信息'})).toHaveAttribute('data-state', 'active')
+		await user.click(await screen.findByRole('tab', {name: 'Git'}))
+
+		const apiRepository = await screen.findByTestId('task-git-repository-api')
+		const webRepository = screen.getByTestId('task-git-repository-web')
+		const operationsRepository = screen.getByTestId('task-git-repository-operations')
+		expect(within(apiRepository).getByText('feature/api')).toBeInTheDocument()
+		expect(within(apiRepository).getByRole('button', {name: '提交'})).toBeInTheDocument()
+		expect(within(webRepository).getByRole('button', {name: '发布分支'})).toBeInTheDocument()
+		expect(within(operationsRepository).getByRole('button', {name: '同步远程'})).toBeDisabled()
+
+		await user.type(within(apiRepository).getByRole('textbox', {name: '提交信息'}), '保存 API 改动')
+		await user.click(within(apiRepository).getByRole('button', {name: '提交'}))
+		await waitFor(() => expect(bindings.CommitTaskGitRepository).toHaveBeenCalledWith('task-git', 'api', '保存 API 改动'))
+		await waitFor(() => expect(within(apiRepository).getByRole('button', {name: '同步远程'})).toBeInTheDocument())
+		expect(within(webRepository).getByRole('button', {name: '发布分支'})).toBeInTheDocument()
+	})
+
+	it('任务目录尚未创建时不显示 Git 标签', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'task-without-directory', title: '尚未创建目录', description: '', status: 'running', createdAt: '2026-08-12T00:00:00Z', workspacePath: '/tmp/workspaces/task-without-directory',
+		}])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('tab', {name: /执行中/}))
+		await user.click(screen.getByText('尚未创建目录'))
+
+		await waitFor(() => expect(bindings.HasTaskGitWorkspace).toHaveBeenCalledWith('task-without-directory'))
+		expect(screen.queryByRole('tab', {name: 'Git'})).not.toBeInTheDocument()
+		expect(bindings.ListTaskGitRepositories).not.toHaveBeenCalled()
+	})
+
+	it('从 Git 标签切换到未创建工作目录的任务时显示项目信息', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([
+			{id: 'task-git', title: '有 Git 的任务', description: 'Git 任务描述', status: 'running', createdAt: '2026-08-12T00:00:00Z', workspacePath: '/tmp/workspaces/task-git'},
+			{id: 'task-without-directory', title: '未创建目录的任务', description: '未创建目录任务描述', status: 'running', createdAt: '2026-08-12T00:00:00Z', workspacePath: '/tmp/workspaces/task-without-directory'},
+		])
+		bindings.HasTaskGitWorkspace.mockImplementation(async (taskID) => taskID === 'task-git')
+		render(<App/>)
+
+		await user.click(await screen.findByRole('tab', {name: /执行中/}))
+		await user.click(screen.getByText('有 Git 的任务'))
+		await user.click(await screen.findByRole('tab', {name: 'Git'}))
+		await user.click(screen.getByText('未创建目录的任务'))
+
+		await waitFor(() => expect(screen.getByRole('tab', {name: '项目信息'})).toHaveAttribute('data-state', 'active'))
+		const taskDetail = document.querySelector('.taskai-task-detail')
+		expect(taskDetail).not.toBeNull()
+		expect(within(taskDetail as HTMLElement).getByText('未创建目录任务描述')).toBeInTheDocument()
+		expect(screen.queryByRole('tab', {name: 'Git'})).not.toBeInTheDocument()
+	})
 
   it('复制当前命令链输入失败时不写入剪贴板', async () => {
     const user = userEvent.setup()
@@ -779,6 +859,7 @@ describe('App confirmation flows', () => {
 
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
+		gitScanDepth: 2,
       taskTreeWidth: 360,
 		colorScheme: 'dark',
 		terminalFontFamily: '',
@@ -797,6 +878,21 @@ describe('App confirmation flows', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
     await user.click(await screen.findByRole('button', {name: '设置'}))
     expect(screen.getByLabelText('颜色模式')).toHaveTextContent('暗色')
+  })
+
+  it('设置中默认并保存 Git 最大扫描深度', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    const depth = screen.getByRole('spinbutton', {name: 'Git 最大扫描深度'})
+    expect(depth).toHaveValue(2)
+    await user.clear(depth)
+    await user.type(depth, '3')
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({gitScanDepth: 3})))
   })
 
   it('打开设置时仅显示当前终端字体摘要', async () => {
@@ -982,6 +1078,7 @@ describe('App confirmation flows', () => {
 
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
+		gitScanDepth: 2,
       taskTreeWidth: 360,
 		colorScheme: 'light',
 		terminalFontFamily: '',
@@ -1013,6 +1110,7 @@ describe('App confirmation flows', () => {
 
     expect(bindings.SaveSettings).toHaveBeenCalledWith({
       workspaceRoot: '/tmp/workspaces',
+		gitScanDepth: 2,
       taskTreeWidth: 360,
 		colorScheme: 'light',
 		terminalFontFamily: '',

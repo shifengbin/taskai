@@ -31,6 +31,35 @@ func TestDefaultUsesApplicationDataWorkspaces(t *testing.T) {
 	if settings.HTTPServiceEnabled {
 		t.Error("Default() HTTPServiceEnabled = true，期望 false")
 	}
+	if settings.GitScanDepth != DefaultGitScanDepth {
+		t.Errorf("Default() GitScanDepth = %d，期望 %d", settings.GitScanDepth, DefaultGitScanDepth)
+	}
+}
+
+func TestValidateGitScanDepth(t *testing.T) {
+	t.Run("缺失值回退默认深度", func(t *testing.T) {
+		current := Default(t.TempDir())
+		current.GitScanDepth = 0
+
+		validated, err := Validate(current)
+		if err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if validated.GitScanDepth != DefaultGitScanDepth {
+			t.Fatalf("GitScanDepth = %d，期望 %d", validated.GitScanDepth, DefaultGitScanDepth)
+		}
+	})
+
+	for _, depth := range []int{-1, MaximumGitScanDepth + 1} {
+		t.Run("拒绝范围外深度", func(t *testing.T) {
+			current := Default(t.TempDir())
+			current.GitScanDepth = depth
+
+			if _, err := Validate(current); err == nil {
+				t.Fatalf("Validate() depth %d 未返回错误", depth)
+			}
+		})
+	}
 }
 
 func TestValidateNormalizesTerminalFontFamilyWithoutRequiringInstalledFont(t *testing.T) {
@@ -1090,8 +1119,8 @@ func TestValidateRequiresHTTPPortOnlyForHTTPStatusManagement(t *testing.T) {
 func TestValidateNormalizesFixedTaskMenuItemsAndKeepsOrder(t *testing.T) {
 	validated, err := Validate(Settings{
 		WorkspaceRoot: t.TempDir(),
-	TaskTreeWidth: DefaultTaskTreeWidth,
-	TaskMenuItems: []TaskMenuItem{
+		TaskTreeWidth: DefaultTaskTreeWidth,
+		TaskMenuItems: []TaskMenuItem{
 			{ID: "custom-codex", Kind: TaskMenuItemKindCommand, Name: "Codex", Command: "codex", Arguments: []string{"--full-auto"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: " prepare-codex ", Arguments: []string{" --task ", "", "  "}}},
 			{ID: TaskMenuItemOpenFolderID, Kind: TaskMenuItemKindCommand, Name: " 打开工作目录 ", Command: "rm", Arguments: []string{"-rf"}, ShowTerminal: true, BeforeScript: &TaskScript{Script: "不得保存"}},
 			{ID: TaskMenuItemEditTaskID, Kind: TaskMenuItemKindCommand, Name: " 修改任务 "},

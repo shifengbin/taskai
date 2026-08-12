@@ -21,6 +21,7 @@ import (
 	"taskai/internal/lifecycle"
 	"taskai/internal/quickinput"
 	"taskai/internal/realtime"
+	"taskai/internal/repositorygit"
 	"taskai/internal/settings"
 	"taskai/internal/storage"
 	"taskai/internal/task"
@@ -47,6 +48,7 @@ type App struct {
 	scriptStarter          func(string, string, string, []string, []byte, []string) (commandWaiter, error)
 	scriptErrorPublisher   func(string, string)
 	lifecycleCommandRunner *lifecycle.CommandChainRunner
+	repositoryGitService   *repositorygit.Service
 	windowMaximise         func(context.Context)
 	windowIsMaximised      func(context.Context) bool
 	endingTasks            map[string]bool
@@ -103,6 +105,7 @@ func newApp(dataDirectory string) *App {
 	app.terminals = terminal.NewManager(terminal.NewBackend(), app.publishTerminalEvent)
 	app.tasks = lifecycle.New(repository, app.terminals, time.Now)
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.NewShellCommandExecutor())
+	app.repositoryGitService = repositorygit.NewService()
 	app.scriptErrorPublisher = app.publishTaskScriptError
 	return app
 }
@@ -991,6 +994,47 @@ func (app *App) OpenTaskFolder(taskID string) error {
 	return app.directoryOpener(directory)
 }
 
+func (app *App) ListTaskGitRepositories(taskID string) ([]repositorygit.Repository, error) {
+	_, workspacePath, err := app.taskGitWorkspace(taskID)
+	if err != nil {
+		return nil, err
+	}
+	currentSettings, err := app.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	return app.repositoryGitService.List(workspacePath, currentSettings.GitScanDepth)
+}
+
+func (app *App) HasTaskGitWorkspace(taskID string) bool {
+	_, _, err := app.taskGitWorkspace(taskID)
+	return err == nil
+}
+
+func (app *App) CommitTaskGitRepository(taskID, repositoryPath, message string) (repositorygit.Repository, error) {
+	_, workspacePath, err := app.taskGitWorkspace(taskID)
+	if err != nil {
+		return repositorygit.Repository{}, err
+	}
+	return app.repositoryGitService.Commit(workspacePath, repositoryPath, message)
+}
+
+func (app *App) PublishTaskGitRepository(taskID, repositoryPath string) (repositorygit.Repository, error) {
+	_, workspacePath, err := app.taskGitWorkspace(taskID)
+	if err != nil {
+		return repositorygit.Repository{}, err
+	}
+	return app.repositoryGitService.Publish(workspacePath, repositoryPath)
+}
+
+func (app *App) SyncTaskGitRepository(taskID, repositoryPath string) (repositorygit.Repository, error) {
+	_, workspacePath, err := app.taskGitWorkspace(taskID)
+	if err != nil {
+		return repositorygit.Repository{}, err
+	}
+	return app.repositoryGitService.Sync(workspacePath, repositoryPath)
+}
+
 func (app *App) WriteTerminal(taskID, terminalID, data string) error {
 	return app.terminals.Write(taskID, terminalID, data)
 }
@@ -1106,6 +1150,51 @@ func (app *App) taskOperationContext(taskID string) (task.Task, string, string, 
 		return task.Task{}, "", "", err
 	}
 	return running, directory, shellPath, nil
+}
+
+func (app *App) taskGitWorkspace(taskID string) (task.Task, string, error) {
+	current, err := app.taskByID(taskID)
+	if err != nil {
+		return task.Task{}, "", err
+	}
+	workspacePath := strings.TrimSpace(current.WorkspacePath)
+	if workspacePath == "" {
+		return task.Task{}, "", fmt.Errorf("任务缺少工作目录")
+	}
+	workspaceRoot := strings.TrimSpace(current.WorkspaceRoot)
+	if workspaceRoot == "" {
+		return task.Task{}, "", fmt.Errorf("任务缺少工作目录根目录")
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(workspaceRoot)
+	if err != nil {
+		return task.Task{}, "", fmt.Errorf("解析任务工作目录根目录失败: %w", err)
+	}
+	canonicalWorkspace, err := filepath.EvalSymlinks(workspacePath)
+	if err != nil {
+		return task.Task{}, "", fmt.Errorf("任务工作目录不可用: %w", err)
+	}
+	relativePath, err := filepath.Rel(canonicalRoot, canonicalWorkspace)
+	if err != nil || relativePath != current.ID {
+		return task.Task{}, "", fmt.Errorf("任务工作目录不安全")
+	}
+	return current, canonicalWorkspace, nil
+}
+
+func (app *App) taskByID(taskID string) (task.Task, error) {
+	data, err := app.repository.Load()
+	if err != nil {
+		return task.Task{}, err
+	}
+	for _, current := range data.Tasks {
+		if current.ID != taskID {
+			continue
+		}
+		if current.IsLifecycleLocked() {
+			return task.Task{}, fmt.Errorf("任务正在执行命令链，暂不能执行此操作")
+		}
+		return current, nil
+	}
+	return task.Task{}, fmt.Errorf("任务不存在")
 }
 
 func (app *App) taskMenuCommand(taskID, itemID string) (taskCommandInvocation, settings.TaskMenuItem, error) {

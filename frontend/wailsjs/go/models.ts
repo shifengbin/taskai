@@ -73,6 +73,39 @@ export namespace quickinput {
 
 }
 
+export namespace repositorygit {
+
+	export class Repository {
+	    path: string;
+	    branch?: string;
+	    remote?: string;
+	    notice?: string;
+	    dirty: boolean;
+	    hasUpstream: boolean;
+	    remoteBranchExists: boolean;
+	    synchronized: boolean;
+	    action: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Repository(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.branch = source["branch"];
+	        this.remote = source["remote"];
+	        this.notice = source["notice"];
+	        this.dirty = source["dirty"];
+	        this.hasUpstream = source["hasUpstream"];
+	        this.remoteBranchExists = source["remoteBranchExists"];
+	        this.synchronized = source["synchronized"];
+	        this.action = source["action"];
+	    }
+	}
+
+}
+
 export namespace settings {
 	
 	export class LifecycleCommand {
@@ -342,6 +375,7 @@ export namespace settings {
 	}
 	export class Settings {
 	    workspaceRoot: string;
+	    gitScanDepth: number;
 	    taskTreeWidth: number;
 	    colorScheme: string;
 	    terminalFontFamily: string;
@@ -371,6 +405,7 @@ export namespace settings {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.workspaceRoot = source["workspaceRoot"];
+	        this.gitScanDepth = source["gitScanDepth"];
 	        this.taskTreeWidth = source["taskTreeWidth"];
 	        this.colorScheme = source["colorScheme"];
 	        this.terminalFontFamily = source["terminalFontFamily"];
@@ -785,4 +820,3 @@ export namespace terminal {
 	}
 
 }
-

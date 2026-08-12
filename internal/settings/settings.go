@@ -17,6 +17,12 @@ const DefaultTaskTreeWidth = 360
 const MinimumTaskTreeWidth = 280
 
 const (
+	DefaultGitScanDepth = 2
+	MinimumGitScanDepth = 1
+	MaximumGitScanDepth = 10
+)
+
+const (
 	DefaultTerminalFontSize = 13
 	MinimumTerminalFontSize = 10
 	MaximumTerminalFontSize = 24
@@ -212,6 +218,7 @@ type TerminalShortcut struct {
 
 type Settings struct {
 	WorkspaceRoot                string                   `json:"workspaceRoot"`
+	GitScanDepth                 int                      `json:"gitScanDepth"`
 	TaskTreeWidth                int                      `json:"taskTreeWidth"`
 	ColorScheme                  ColorScheme              `json:"colorScheme"`
 	TerminalFontFamily           string                   `json:"terminalFontFamily"`
@@ -238,6 +245,7 @@ type Settings struct {
 func Default(applicationDataDirectory string) Settings {
 	return Settings{
 		WorkspaceRoot:            filepath.Join(applicationDataDirectory, "workspaces"),
+		GitScanDepth:             DefaultGitScanDepth,
 		TaskTreeWidth:            DefaultTaskTreeWidth,
 		ColorScheme:              DefaultColorScheme,
 		TerminalFontSize:         DefaultTerminalFontSize,
@@ -802,6 +810,12 @@ func Validate(next Settings) (Settings, error) {
 	}
 	if next.ColorScheme == "" {
 		next.ColorScheme = DefaultColorScheme
+	}
+	if next.GitScanDepth == 0 {
+		next.GitScanDepth = DefaultGitScanDepth
+	}
+	if next.GitScanDepth < MinimumGitScanDepth || next.GitScanDepth > MaximumGitScanDepth {
+		return Settings{}, fmt.Errorf("Git 最大扫描深度必须在 %d 到 %d 之间", MinimumGitScanDepth, MaximumGitScanDepth)
 	}
 	if next.ColorScheme != ColorSchemeLight && next.ColorScheme != ColorSchemeDark {
 		return Settings{}, fmt.Errorf("不支持的颜色模式: %q", next.ColorScheme)

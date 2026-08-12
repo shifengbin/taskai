@@ -2,6 +2,7 @@ package application
 
 import (
 	"taskai/internal/quickinput"
+	"taskai/internal/repositorygit"
 	"taskai/internal/settings"
 	"taskai/internal/task"
 	"taskai/internal/terminal"
@@ -51,6 +52,14 @@ type TerminalBinding interface {
 	WriteTerminal(taskID, terminalID, data string) error
 	ResizeTerminal(taskID, terminalID string, columns, rows uint16) error
 	CloseTerminal(taskID, terminalID string) error
+}
+
+type TaskRepositoryGitBinding interface {
+	HasTaskGitWorkspace(taskID string) bool
+	ListTaskGitRepositories(taskID string) ([]repositorygit.Repository, error)
+	CommitTaskGitRepository(taskID, repositoryPath, message string) (repositorygit.Repository, error)
+	PublishTaskGitRepository(taskID, repositoryPath string) (repositorygit.Repository, error)
+	SyncTaskGitRepository(taskID, repositoryPath string) (repositorygit.Repository, error)
 }
 
 type TaskMenuCommandResult struct {
