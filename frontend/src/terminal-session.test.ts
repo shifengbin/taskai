@@ -23,6 +23,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
     active: {
       cursorX: number
       cursorY: number
+      baseY: number
       getLine: ReturnType<typeof vi.fn>
       type: 'normal' | 'alternate'
       viewportY: number
@@ -142,11 +143,12 @@ vi.mock('@xterm/xterm', () => ({
     options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
     refresh = vi.fn()
     write = vi.fn()
-    lines = Array.from({length: 30}, () => Array.from({length: 100}, () => terminalCell()))
+    lines = Array.from({length: 60}, () => Array.from({length: 100}, () => terminalCell()))
     buffer = {
       active: {
         cursorX: 0,
         cursorY: 0,
+        baseY: 0,
         getLine: vi.fn((row: number) => ({
           getCell: (column: number) => this.lines[row]?.[column],
         })),
@@ -349,17 +351,41 @@ describe('TerminalSessionRegistry', () => {
     expect(onVisualActivity).toHaveBeenCalledWith('task-1', 'terminal-1')
   })
 
-	it('用户滚动可见历史后重建基线，不把后续无画面变化的输出视为活动', () => {
-		const onVisualActivity = vi.fn()
-		const registry = new TerminalSessionRegistry(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+  it('用户查看历史时，活动终端页变化仍上报活动', () => {
+    const onVisualActivity = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn(), undefined, undefined, undefined, onVisualActivity)
 
-		registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'initial'})
-		terminalInstances[0].setCell(1, 0, {chars: '滚'})
-		terminalInstances[0].triggerScroll(1)
-		terminalInstances[0].triggerWriteParsed()
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'initial'})
+    const session = terminalInstances[0]
+    session.buffer.active.baseY = 30
+    session.buffer.active.viewportY = 30
+    session.triggerWriteParsed()
+    onVisualActivity.mockClear()
 
-		expect(onVisualActivity).not.toHaveBeenCalled()
-	})
+    session.triggerScroll(0)
+    session.setCell(30, 0, {chars: '新'})
+    session.triggerWriteParsed()
+
+    expect(onVisualActivity).toHaveBeenCalledWith('task-1', 'terminal-1')
+  })
+
+  it('用户滚动或历史内容变化不改变活动终端页的状态基线', () => {
+    const onVisualActivity = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'initial'})
+    const session = terminalInstances[0]
+    session.buffer.active.baseY = 30
+    session.buffer.active.viewportY = 30
+    session.triggerWriteParsed()
+    onVisualActivity.mockClear()
+
+    session.triggerScroll(0)
+    session.setCell(0, 0, {chars: '旧'})
+    session.triggerWriteParsed()
+
+    expect(onVisualActivity).not.toHaveBeenCalled()
+  })
 
   it('在重新适配或更新外观时重置画面基线并在释放时清理解析监听', () => {
     const onVisualActivity = vi.fn()

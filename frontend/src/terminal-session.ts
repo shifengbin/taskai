@@ -24,7 +24,6 @@ interface TerminalSession {
   selectionClipboard: {enabled: boolean}
   onData: {dispose(): void}
   onSelectionChange: {dispose(): void}
-	onScroll: {dispose(): void}
   onWriteParsed: {dispose(): void}
 }
 
@@ -33,7 +32,6 @@ interface TerminalDisplay {
   cells: string[]
   columns: number
   rows: number
-  viewportY: number
 }
 
 export class TerminalSessionRegistry {
@@ -173,7 +171,6 @@ export class TerminalSessionRegistry {
     this.sessions.delete(key)
     session.onData.dispose()
     session.onSelectionChange.dispose()
-		session.onScroll.dispose()
     session.onWriteParsed.dispose()
     session.terminal.dispose()
   }
@@ -227,9 +224,6 @@ export class TerminalSessionRegistry {
       }
     })
     let session: TerminalSession
-		const onScroll = terminal.onScroll(() => {
-			session.display = captureTerminalDisplay(terminal)
-		})
     const onWriteParsed = terminal.onWriteParsed?.(() => {
       const display = captureTerminalDisplay(terminal)
       const suppressVisualActivity = session.suppressVisualActivity
@@ -251,7 +245,6 @@ export class TerminalSessionRegistry {
       selectionClipboard,
       onData,
       onSelectionChange,
-		onScroll,
       onWriteParsed,
     }
     this.sessions.set(key, session)
@@ -287,7 +280,7 @@ function captureTerminalDisplay(terminal: Terminal): TerminalDisplay {
   const buffer = terminal.buffer.active
   const cells: string[] = []
   for (let row = 0; row < terminal.rows; row++) {
-    const line = buffer.getLine(buffer.viewportY + row)
+    const line = buffer.getLine(buffer.baseY + row)
     for (let column = 0; column < terminal.cols; column++) {
       const cell = line?.getCell(column)
       cells.push(cell ? terminalCellSignature(cell) : '')
@@ -298,7 +291,6 @@ function captureTerminalDisplay(terminal: Terminal): TerminalDisplay {
     cells,
     columns: terminal.cols,
     rows: terminal.rows,
-    viewportY: buffer.viewportY,
   }
 }
 
@@ -323,7 +315,7 @@ function terminalCellSignature(cell: IBufferCell): string {
 }
 
 function terminalDisplaysEqual(left: TerminalDisplay, right: TerminalDisplay): boolean {
-  if (left.bufferType !== right.bufferType || left.columns !== right.columns || left.rows !== right.rows || left.viewportY !== right.viewportY || left.cells.length !== right.cells.length) {
+  if (left.bufferType !== right.bufferType || left.columns !== right.columns || left.rows !== right.rows || left.cells.length !== right.cells.length) {
     return false
   }
   return left.cells.every((cell, index) => cell === right.cells[index])
