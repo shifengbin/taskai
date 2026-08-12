@@ -1,0 +1,110 @@
+name: build-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is-tag: ${{ steps.version.outputs.is-tag }}
+    steps:
+      - id: version
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "is-tag=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0+git.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "is-tag=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build-cmd: bash scripts/build-linux.sh amd64 --deb --version "$VERSION"
+            artifact-name: taskai-linux-deb
+            artifact-path: build/bin/*.deb
+          - os: windows-latest
+            build-cmd: pwsh scripts/build-windows.ps1 -NSIS -Version "$VERSION"
+            artifact-name: taskai-windows-exe
+            artifact-path: build/bin/*.exe
+          - os: macos-latest
+            build-cmd: bash scripts/build-macos.sh --dmg --version "$VERSION"
+            artifact-name: taskai-macos-dmg
+            artifact-path: build/bin/*.dmg
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        shell: bash
+        run: npm ci
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Install Wails CLI
+        shell: bash
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libglib2.0-dev pkg-config dpkg-dev
+
+      - name: Build
+        shell: bash
+        run: ${{ matrix.build-cmd }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-path }}
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.is-tag == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            artifacts/taskai-linux-deb/*.deb \
+            artifacts/taskai-windows-exe/*.exe \
+            artifacts/taskai-macos-dmg/*.dmg
