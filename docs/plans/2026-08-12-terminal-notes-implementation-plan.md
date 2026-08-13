@@ -1,5 +1,7 @@
 # 终端备注功能 Implementation Plan
 
+> 更新：原先基于 `disableTaskAIMouseClipboard` 禁用备注入口的分支已删除；所有活动终端的选择和备注行为见 `2026-08-13-unify-terminal-mouse-selection-implementation.md`。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 让用户为活动终端选区添加运行期备注，在标题栏汇总查看，并按可配置模板模拟粘贴回同一终端。
