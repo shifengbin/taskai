@@ -323,40 +323,6 @@ func TestManagerBuildsTerminalEnvironmentAfterAssigningID(t *testing.T) {
 	}
 }
 
-func TestManagerSnapshotsMouseClipboardPolicyForCommand(t *testing.T) {
-	backend := &fakeBackend{}
-	manager := NewManager(backend, func(Event) {})
-
-	created, err := manager.CreateCommandWithOptionsAndEnvironmentBuilder(
-		"task-a",
-		t.TempDir(),
-		"/bin/sh",
-		"claude",
-		nil,
-		CommandOptions{DisableTaskAIMouseClipboard: true},
-		nil,
-		80,
-		24,
-	)
-	if err != nil {
-		t.Fatalf("创建命令终端: %v", err)
-	}
-	if !created.DisableTaskAIMouseClipboard {
-		t.Fatal("终端信息未快照鼠标剪贴板策略")
-	}
-	if !backend.request(created.ID).DisableTaskAIMouseClipboard {
-		t.Fatal("启动请求未传递鼠标剪贴板策略")
-	}
-
-	defaultCreated, err := manager.CreateCommand("task-a", t.TempDir(), "/bin/sh", "codex", nil, 80, 24)
-	if err != nil {
-		t.Fatalf("创建默认命令终端: %v", err)
-	}
-	if defaultCreated.DisableTaskAIMouseClipboard {
-		t.Fatal("默认命令终端不应禁用 TaskAI 鼠标剪贴板")
-	}
-}
-
 func TestManagerSnapshotsLaunchCommandOnInfo(t *testing.T) {
 	backend := &fakeBackend{}
 	manager := NewManager(backend, func(Event) {})

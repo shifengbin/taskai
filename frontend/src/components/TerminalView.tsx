@@ -3,6 +3,7 @@ import {ClipboardCopy, ClipboardPaste, MessageSquarePlus, Send, Terminal as Term
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
+import {type TerminalSelectionPosition} from '../terminal-mouse-gesture'
 import {type QuickInput, type TerminalNoteTemplate, type TerminalRecord, type TerminalShortcut} from '../types'
 import {findTerminalShortcut, terminalShortcutApplies, terminalShortcutInput} from '../terminal-shortcuts'
 import {defaultTerminalNoteTemplate, formatTerminalNotes, type TerminalNote} from '../terminal-notes'
@@ -36,6 +37,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
   const containerRef = useRef<HTMLDivElement>(null)
   const quickInputSearchRef = useRef<HTMLInputElement>(null)
   const noteInputRef = useRef<HTMLTextAreaElement>(null)
+  const selectionFrameRef = useRef<number>()
   const onResizeRef = useRef(onResize)
   const onErrorRef = useRef(onError)
   const [quickInputSelectorOpen, setQuickInputSelectorOpen] = useState(false)
@@ -44,9 +46,8 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 	const [selectionNote, setSelectionNote] = useState<{original: string, left: number, top: number}>()
 	const [noteInputOpen, setNoteInputOpen] = useState(false)
 	const [noteText, setNoteText] = useState('')
-	const [notesPanelOpen, setNotesPanelOpen] = useState(false)
+  const [notesPanelOpen, setNotesPanelOpen] = useState(false)
   const resolvedTerminalTheme = useMemo(() => terminalVisualTheme(terminalTheme), [terminalTheme])
-  const taskAIMouseClipboardEnabled = terminal.disableTaskAIMouseClipboard !== true
   const quickInputHotkey = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC')
     ? 'Command+Shift+P'
     : 'Ctrl+Shift+P'
@@ -130,6 +131,33 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
     closeQuickInputSelector()
   }
 
+	const handleSelectionComplete = useCallback(({clientX, clientY, text}: TerminalSelectionPosition) => {
+		if (selectionFrameRef.current !== undefined) {
+			cancelAnimationFrame(selectionFrameRef.current)
+		}
+		selectionFrameRef.current = requestAnimationFrame(() => {
+			selectionFrameRef.current = undefined
+			const bounds = containerRef.current?.getBoundingClientRect()
+			if (!text || !bounds) {
+				setSelectionNote(undefined)
+				return
+			}
+			setSelectionNote({
+				original: text,
+				left: clampNoteButtonPosition(clientX - bounds.left + 8, bounds.width),
+				top: clampNoteButtonPosition(clientY - bounds.top + 8, bounds.height),
+			})
+		})
+	}, [])
+
+	const handleContextMenu = useCallback(() => {
+		void ClipboardGetText().then((clipboard) => {
+			if (clipboard) {
+				sessionRegistry.pasteInput(terminal.taskId, terminal.id, clipboard)
+			}
+		}).catch(() => {})
+	}, [sessionRegistry, terminal.id, terminal.taskId])
+
   useEffect(() => {
     let active = true
     const fitAndRefresh = () => {
@@ -138,7 +166,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
       }
     }
     if (containerRef.current) {
-      sessionRegistry.attach(terminal, containerRef.current, resolvedTerminalTheme, onResizeRef.current)
+      sessionRegistry.attach(terminal, containerRef.current, resolvedTerminalTheme, onResizeRef.current, handleSelectionComplete, handleContextMenu)
     }
     const observer = new ResizeObserver(fitAndRefresh)
     if (containerRef.current) {
@@ -154,9 +182,14 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
     return () => {
       active = false
       cancelAnimationFrame(animationFrame)
+		if (selectionFrameRef.current !== undefined) {
+			cancelAnimationFrame(selectionFrameRef.current)
+			selectionFrameRef.current = undefined
+		}
       observer.disconnect()
+      sessionRegistry.detach(terminal.taskId, terminal.id)
     }
-  }, [resolvedTerminalTheme, sessionRegistry, terminal.disableTaskAIMouseClipboard, terminal.id, terminal.state, terminal.taskId])
+  }, [handleContextMenu, handleSelectionComplete, resolvedTerminalTheme, sessionRegistry, terminal.id, terminal.state, terminal.taskId])
 
   useEffect(() => {
     onResizeRef.current = onResize
@@ -375,34 +408,6 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 		ref={containerRef}
         className="taskai-terminal__content relative min-h-0 overflow-hidden p-1"
         data-testid="terminal-content"
-		onContextMenu={terminal.state === 'active' && taskAIMouseClipboardEnabled ? (event) => {
-          event.preventDefault()
-          void ClipboardGetText().then((clipboard) => {
-            if (clipboard) {
-              sessionRegistry.pasteInput(terminal.taskId, terminal.id, clipboard)
-            }
-          }).catch(() => {})
-		} : undefined}
-		onPointerUp={(event) => {
-			if (terminal.state !== 'active' || !taskAIMouseClipboardEnabled) {
-				return
-			}
-			const clientX = Number.isFinite(event.clientX) ? event.clientX : 0
-			const clientY = Number.isFinite(event.clientY) ? event.clientY : 0
-			requestAnimationFrame(() => {
-				const original = sessionRegistry.selectionText(terminal.taskId, terminal.id)
-				const bounds = containerRef.current?.getBoundingClientRect()
-				if (!original || !bounds) {
-					setSelectionNote(undefined)
-					return
-				}
-				setSelectionNote({
-					original,
-					left: clampNoteButtonPosition(clientX - bounds.left + 8, bounds.width),
-					top: clampNoteButtonPosition(clientY - bounds.top + 8, bounds.height),
-				})
-			})
-		}}
         style={{backgroundColor: resolvedTerminalTheme.background, '--wails-drop-target': 'drop'} as CSSProperties}
       >
         <div
@@ -413,7 +418,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
             backgroundSize: '4px 4px',
           }}
         />
-			{selectionNote && terminal.state === 'active' && taskAIMouseClipboardEnabled && <IconButton
+			{selectionNote && terminal.state === 'active' && <IconButton
 				aria-label="添加备注"
 				title="添加备注"
 				className="absolute z-10 h-8 w-8 border-snap-cobalt bg-snap-overlay opacity-70 hover:opacity-100"

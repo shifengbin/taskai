@@ -3468,7 +3468,7 @@ describe('App confirmation flows', () => {
 	expect(await screen.findByText('执行后置脚本: 清理失败')).toBeInTheDocument()
   })
 
-  it('菜单终端命令允许用户禁用 TaskAI 鼠标剪贴板处理', async () => {
+  it('菜单终端命令不再显示或保存 TaskAI 鼠标剪贴板开关', async () => {
     const user = userEvent.setup()
     bindings.SaveSettings.mockImplementation(async (next) => next)
     render(<App/>)
@@ -3478,30 +3478,17 @@ describe('App confirmation flows', () => {
     await user.click(screen.getByRole('button', {name: '新增菜单项'}))
 
     const dialog = screen.getByRole('dialog', {name: '新增菜单项'})
-    const showTerminal = within(dialog).getByRole('switch', {name: '显示终端'})
-    const disableMouseClipboard = within(dialog).getByRole('switch', {name: '禁用 TaskAI 鼠标复制与右键粘贴'})
-    expect(disableMouseClipboard).not.toBeChecked()
-
-    await user.click(disableMouseClipboard)
-    await user.click(showTerminal)
     expect(within(dialog).queryByRole('switch', {name: '禁用 TaskAI 鼠标复制与右键粘贴'})).not.toBeInTheDocument()
-    await user.click(showTerminal)
-    expect(within(dialog).getByRole('switch', {name: '禁用 TaskAI 鼠标复制与右键粘贴'})).not.toBeChecked()
 
     await user.type(within(dialog).getByRole('textbox', {name: '启动命令'}), 'claude')
-    await user.click(within(dialog).getByRole('switch', {name: '禁用 TaskAI 鼠标复制与右键粘贴'}))
     await user.click(within(dialog).getByRole('button', {name: '添加菜单项'}))
     await user.click(screen.getByRole('button', {name: '保存'}))
 
-    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledWith(expect.objectContaining({
-      taskMenuItems: expect.arrayContaining([
-        expect.objectContaining({
-          command: 'claude',
-          showTerminal: true,
-          disableTaskAIMouseClipboard: true,
-        }),
-      ]),
-    })))
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalled())
+    const saved = bindings.SaveSettings.mock.calls.at(-1)?.[0]
+    const savedItem = saved?.taskMenuItems.find((item: {command?: string}) => item.command === 'claude')
+    expect(savedItem).toEqual(expect.objectContaining({command: 'claude', showTerminal: true}))
+    expect(savedItem).not.toHaveProperty('disableTaskAIMouseClipboard')
   })
 
   it('菜单管理允许编辑系统项名称并为搁置项提供两种名称', async () => {
