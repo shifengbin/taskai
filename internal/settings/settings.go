@@ -158,16 +158,15 @@ type LifecyclePreset struct {
 }
 
 type TaskMenuItem struct {
-	ID                          string           `json:"id"`
-	Kind                        TaskMenuItemKind `json:"kind"`
-	Name                        string           `json:"name"`
-	UnshelveName                *string          `json:"unshelveName,omitempty"`
-	Command                     string           `json:"command,omitempty"`
-	Arguments                   []string         `json:"arguments,omitempty"`
-	ShowTerminal                bool             `json:"showTerminal"`
-	DisableTaskAIMouseClipboard bool             `json:"disableTaskAIMouseClipboard"`
-	BeforeScript                *TaskScript      `json:"beforeScript,omitempty"`
-	AfterScript                 *TaskScript      `json:"afterScript,omitempty"`
+	ID           string           `json:"id"`
+	Kind         TaskMenuItemKind `json:"kind"`
+	Name         string           `json:"name"`
+	UnshelveName *string          `json:"unshelveName,omitempty"`
+	Command      string           `json:"command,omitempty"`
+	Arguments    []string         `json:"arguments,omitempty"`
+	ShowTerminal bool             `json:"showTerminal"`
+	BeforeScript *TaskScript      `json:"beforeScript,omitempty"`
+	AfterScript  *TaskScript      `json:"afterScript,omitempty"`
 }
 
 type TerminalTheme struct {
@@ -1118,9 +1117,6 @@ func normalizeTaskMenuItems(items []TaskMenuItem) ([]TaskMenuItem, error) {
 			return nil, fmt.Errorf("自定义任务菜单项启动命令不能为空")
 		}
 		item.Arguments = normalizeArguments(item.Arguments)
-		if !item.ShowTerminal {
-			item.DisableTaskAIMouseClipboard = false
-		}
 		item.BeforeScript = normalizeTaskScript(item.BeforeScript)
 		item.AfterScript = normalizeTaskScript(item.AfterScript)
 		normalized = append(normalized, item)

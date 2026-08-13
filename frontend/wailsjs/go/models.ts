@@ -225,7 +225,6 @@ export namespace settings {
 	    command?: string;
 	    arguments?: string[];
 	    showTerminal: boolean;
-	    disableTaskAIMouseClipboard: boolean;
 	    beforeScript?: TaskScript;
 	    afterScript?: TaskScript;
 	
@@ -242,7 +241,6 @@ export namespace settings {
 	        this.command = source["command"];
 	        this.arguments = source["arguments"];
 	        this.showTerminal = source["showTerminal"];
-	        this.disableTaskAIMouseClipboard = source["disableTaskAIMouseClipboard"];
 	        this.beforeScript = this.convertValues(source["beforeScript"], TaskScript);
 	        this.afterScript = this.convertValues(source["afterScript"], TaskScript);
 	    }
@@ -828,7 +826,6 @@ export namespace terminal {
 	    id: string;
 	    taskId: string;
 	    state: string;
-	    disableTaskAIMouseClipboard: boolean;
 	    command?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -840,7 +837,6 @@ export namespace terminal {
 	        this.id = source["id"];
 	        this.taskId = source["taskId"];
 	        this.state = source["state"];
-	        this.disableTaskAIMouseClipboard = source["disableTaskAIMouseClipboard"];
 	        this.command = source["command"];
 	    }
 	}

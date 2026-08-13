@@ -35,7 +35,14 @@ func (backend *windowsBackend) Start(request StartRequest) (Session, error) {
 	}
 
 	commandPath := request.Command
-	if commandPath == "" {
+	arguments := append([]string(nil), request.Arguments...)
+	environment := append([]string(nil), request.Environment...)
+	if commandPath != "" && request.ShellPath != "" {
+		invocation := CommandInvocationForPlatform("windows", request.ShellPath, commandPath, arguments)
+		commandPath = invocation.Command
+		arguments = invocation.Arguments
+		environment = append(environment, invocation.EnvironmentEntries()...)
+	} else if commandPath == "" {
 		commandPath = request.ShellPath
 	}
 	if commandPath == "" {
@@ -55,8 +62,8 @@ func (backend *windowsBackend) Start(request StartRequest) (Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("创建 Windows ConPTY 失败: %w", err)
 	}
-	arguments := append([]string{resolvedCommand}, request.Arguments...)
-	pid, processHandle, err := console.Spawn(resolvedCommand, arguments, &syscall.ProcAttr{Dir: request.Directory, Env: embeddedTerminalEnvironment(request.Environment)})
+	arguments = append([]string{resolvedCommand}, arguments...)
+	pid, processHandle, err := console.Spawn(resolvedCommand, arguments, &syscall.ProcAttr{Dir: request.Directory, Env: embeddedTerminalEnvironment(environment)})
 	if err != nil {
 		_ = console.Close()
 		return nil, fmt.Errorf("启动 Windows 终端失败: %w", err)

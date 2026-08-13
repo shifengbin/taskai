@@ -17,12 +17,13 @@ import (
 
 // Data is the complete persisted application state.
 type Data struct {
-	Tasks               []task.Task              `json:"tasks"`
-	ExtraInfoTemplates  []task.ExtraInfoTemplate `json:"extraInfoTemplates"`
-	ExtraInfos          []task.ExtraInfo         `json:"extraInfos"`
-	ExtraInfoCatalogues []string                 `json:"extraInfoCatalogues,omitempty"`
-	QuickInputs         []quickinput.QuickInput  `json:"quickInputs"`
-	Settings            settings.Settings        `json:"settings"`
+	Tasks                         []task.Task              `json:"tasks"`
+	ExtraInfoTemplates            []task.ExtraInfoTemplate `json:"extraInfoTemplates"`
+	ExtraInfos                    []task.ExtraInfo         `json:"extraInfos"`
+	ExtraInfoCatalogues           []string                 `json:"extraInfoCatalogues,omitempty"`
+	QuickInputs                   []quickinput.QuickInput  `json:"quickInputs"`
+	Settings                      settings.Settings        `json:"settings"`
+	DismissedAgentTaskMenuItemIDs []string                 `json:"dismissedAgentTaskMenuItemIds,omitempty"`
 }
 
 // Repository persists all application state in one JSON document.
@@ -118,6 +119,11 @@ func normalizeQuickInputs(inputs []quickinput.QuickInput) ([]quickinput.QuickInp
 
 func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, error) {
 	changed := false
+	dismissedAgentTaskMenuItemIDs := normalizeDismissedAgentTaskMenuItemIDs(data.DismissedAgentTaskMenuItemIDs)
+	if !sameJSON(data.DismissedAgentTaskMenuItemIDs, dismissedAgentTaskMenuItemIDs) {
+		data.DismissedAgentTaskMenuItemIDs = dismissedAgentTaskMenuItemIDs
+		changed = true
+	}
 	if data.Settings.GitScanDepth == 0 {
 		data.Settings.GitScanDepth = settings.DefaultGitScanDepth
 		changed = true
@@ -606,11 +612,78 @@ func (repository *Repository) SaveSettings(next settings.Settings) (settings.Set
 	if err != nil {
 		return settings.Settings{}, err
 	}
+	data.DismissedAgentTaskMenuItemIDs = recordDeletedAutomaticAgentMenuItems(
+		data.DismissedAgentTaskMenuItemIDs,
+		data.Settings.TaskMenuItems,
+		validated.TaskMenuItems,
+	)
 	data.Settings = validated
 	if err := repository.Save(data); err != nil {
 		return settings.Settings{}, err
 	}
 	return data.Settings, nil
+}
+
+func (repository *Repository) MergeDetectedAgentTaskMenuItems(detected settings.DetectedAgentCommands) (settings.Settings, bool, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
+	data, err := repository.Load()
+	if err != nil {
+		return settings.Settings{}, false, err
+	}
+	items, changed := settings.MergeDetectedAgentTaskMenuItems(
+		data.Settings.TaskMenuItems,
+		detected,
+		data.DismissedAgentTaskMenuItemIDs,
+	)
+	if !changed {
+		return data.Settings, false, nil
+	}
+	data.Settings.TaskMenuItems = items
+	if err := repository.Save(data); err != nil {
+		return data.Settings, false, err
+	}
+	return data.Settings, true, nil
+}
+
+func normalizeDismissedAgentTaskMenuItemIDs(ids []string) []string {
+	seen := make(map[string]bool, 2)
+	for _, id := range ids {
+		if id == settings.TaskMenuItemDetectedCodexID || id == settings.TaskMenuItemDetectedClaudeID {
+			seen[id] = true
+		}
+	}
+	normalized := make([]string, 0, len(seen))
+	for _, id := range []string{settings.TaskMenuItemDetectedCodexID, settings.TaskMenuItemDetectedClaudeID} {
+		if seen[id] {
+			normalized = append(normalized, id)
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func recordDeletedAutomaticAgentMenuItems(dismissed []string, previous, next []settings.TaskMenuItem) []string {
+	previousIDs := taskMenuItemIDs(previous)
+	nextIDs := taskMenuItemIDs(next)
+	updated := append([]string(nil), dismissed...)
+	for _, id := range []string{settings.TaskMenuItemDetectedCodexID, settings.TaskMenuItemDetectedClaudeID} {
+		if previousIDs[id] && !nextIDs[id] {
+			updated = append(updated, id)
+		}
+	}
+	return normalizeDismissedAgentTaskMenuItemIDs(updated)
+}
+
+func taskMenuItemIDs(items []settings.TaskMenuItem) map[string]bool {
+	ids := make(map[string]bool, len(items))
+	for _, item := range items {
+		ids[item.ID] = true
+	}
+	return ids
 }
 
 func (repository *Repository) SaveWindowMaximized(maximized bool) error {

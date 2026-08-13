@@ -3034,14 +3034,13 @@ func TestAppInjectsStatusAPIIntoEveryTerminalEntryWhenHTTPServiceIsListening(t *
 	}
 }
 
-func TestExecuteTaskMenuCommandSnapshotsMouseClipboardPolicy(t *testing.T) {
+func TestExecuteTaskMenuCommandCreatesTerminalWithoutMousePolicySnapshot(t *testing.T) {
 	item := settings.TaskMenuItem{
-		ID:                          "claude-terminal",
-		Kind:                        settings.TaskMenuItemKindCommand,
-		Name:                        "Claude",
-		Command:                     "claude",
-		ShowTerminal:                true,
-		DisableTaskAIMouseClipboard: true,
+		ID:           "claude-terminal",
+		Kind:         settings.TaskMenuItemKindCommand,
+		Name:         "Claude",
+		Command:      "claude",
+		ShowTerminal: true,
 	}
 	app, started := runningAppWithTaskMenuItem(t, item)
 	backend := &capturingTerminalBackend{}
@@ -3054,11 +3053,12 @@ func TestExecuteTaskMenuCommandSnapshotsMouseClipboardPolicy(t *testing.T) {
 	if result.Terminal == nil {
 		t.Fatal("显示终端的菜单命令未返回终端")
 	}
-	if !result.Terminal.DisableTaskAIMouseClipboard {
-		t.Fatal("菜单命令未将鼠标剪贴板策略快照到终端")
+	contents, err := json.Marshal(result.Terminal)
+	if err != nil {
+		t.Fatalf("序列化终端记录: %v", err)
 	}
-	if !backend.request(result.Terminal.ID).DisableTaskAIMouseClipboard {
-		t.Fatal("菜单命令启动请求未传递鼠标剪贴板策略")
+	if strings.Contains(string(contents), "disableTaskAIMouseClipboard") {
+		t.Fatalf("终端记录仍包含旧鼠标策略字段: %s", contents)
 	}
 }
 

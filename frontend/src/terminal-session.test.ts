@@ -1,4 +1,6 @@
-import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+
+type RecordedMouseEvent = Pick<MouseEvent, 'altKey' | 'button' | 'clientX' | 'clientY' | 'detail' | 'shiftKey' | 'type'>
 
 type TerminalCellOverrides = Partial<{
   chars: string
@@ -31,11 +33,14 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   }
   cols: number
   rows: number
+  modes: {mouseTrackingMode: 'none' | 'any'}
+  mouseEvents: RecordedMouseEvent[]
   attachCustomKeyEventHandler: ReturnType<typeof vi.fn>
   element?: HTMLElement
   dispose: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
   getSelection: ReturnType<typeof vi.fn>
+  getSelectionPosition: ReturnType<typeof vi.fn>
   loadAddon: ReturnType<typeof vi.fn>
   onData: ReturnType<typeof vi.fn>
   onDataDisposable: {dispose: ReturnType<typeof vi.fn>}
@@ -47,8 +52,9 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   onWriteParsedDisposable: {dispose: ReturnType<typeof vi.fn>}
   open: ReturnType<typeof vi.fn>
   paste: ReturnType<typeof vi.fn>
-  options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
+  options: {altClickMovesCursor?: boolean, fontFamily?: string, fontSize?: number, macOptionClickForcesSelection?: boolean, scrollback?: number, theme?: unknown}
   refresh: ReturnType<typeof vi.fn>
+  select: ReturnType<typeof vi.fn>
   triggerSelectionChange(): void
 	triggerData(data: string): void
 	triggerScroll(viewportY: number): void
@@ -101,11 +107,14 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 100
     rows = 30
+    modes = {mouseTrackingMode: 'none' as const}
+    mouseEvents: RecordedMouseEvent[] = []
     attachCustomKeyEventHandler = vi.fn()
     element: HTMLElement | undefined
     dispose = vi.fn()
     focus = vi.fn()
     getSelection = vi.fn(() => '')
+    getSelectionPosition = vi.fn(() => undefined as {start: {x: number, y: number}, end: {x: number, y: number}} | undefined)
     loadAddon = vi.fn()
     onDataDisposable = {dispose: vi.fn()}
     dataListener: ((data: string) => void) | undefined
@@ -137,11 +146,26 @@ vi.mock('@xterm/xterm', () => ({
     })
     open = vi.fn((container: HTMLElement) => {
       this.element = document.createElement('div')
+      for (const type of ['mousedown', 'mousemove', 'mouseup', 'wheel']) {
+        this.element.addEventListener(type, (event) => {
+          const mouseEvent = event as MouseEvent
+          this.mouseEvents.push({
+            altKey: mouseEvent.altKey,
+            button: mouseEvent.button,
+            clientX: mouseEvent.clientX,
+            clientY: mouseEvent.clientY,
+            detail: mouseEvent.detail,
+            shiftKey: mouseEvent.shiftKey,
+            type: mouseEvent.type,
+          })
+        })
+      }
       container.append(this.element)
     })
     paste = vi.fn()
-    options: {fontFamily?: string, fontSize?: number, scrollback?: number, theme?: unknown}
+    options: {altClickMovesCursor?: boolean, fontFamily?: string, fontSize?: number, macOptionClickForcesSelection?: boolean, scrollback?: number, theme?: unknown}
     refresh = vi.fn()
+    select = vi.fn()
     write = vi.fn()
     lines = Array.from({length: 60}, () => Array.from({length: 100}, () => terminalCell()))
     buffer = {
@@ -222,6 +246,11 @@ describe('TerminalSessionRegistry', () => {
     runtime.ClipboardSetText.mockResolvedValue(true)
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+    document.body.replaceChildren()
+  })
+
   it('在创建会话时使用当前已保存的字体，并保持已有会话字体不变', () => {
     let savedFontFamily = 'Fira Code'
     const registry = new TerminalSessionRegistry(vi.fn(), () => savedFontFamily)
@@ -273,6 +302,7 @@ describe('TerminalSessionRegistry', () => {
   it('保存后将主题、字体和字号更新到已有会话', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
     const container = document.createElement('div')
+    document.body.append(container)
     const updatedTheme = {...terminalVisualTheme(), background: '#102030', foreground: '#E0F0FF'}
 
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'ready'})
@@ -293,6 +323,7 @@ describe('TerminalSessionRegistry', () => {
 
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].options.scrollback).toBe(1000)
+    expect(terminalInstances[0].options).toMatchObject({altClickMovesCursor: false, macOptionClickForcesSelection: true})
     expect(terminalInstances[0].write).toHaveBeenCalledWith('first output chunk')
   })
 
@@ -484,15 +515,190 @@ describe('TerminalSessionRegistry', () => {
     expect(onResize).toHaveBeenCalledWith(100, 30)
   })
 
-  it('挂载禁用策略的终端时不自动复制选区', () => {
+  it('旧策略字段不再阻止自动复制选区', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
     const container = document.createElement('div')
+    document.body.append(container)
 
-    registry.attach({...terminal, disableTaskAIMouseClipboard: true}, container, terminalVisualTheme(), vi.fn())
+    registry.attach({...terminal, disableTaskAIMouseClipboard: true} as never, container, terminalVisualTheme(), vi.fn())
     terminalInstances[0].getSelection.mockReturnValue('selected terminal output')
     terminalInstances[0].triggerSelectionChange()
 
-    expect(runtime.ClipboardSetText).not.toHaveBeenCalled()
+    expect(runtime.ClipboardSetText).toHaveBeenCalledWith('selected terminal output')
+  })
+
+  it.each(['none', 'any'] as const)('鼠标追踪模式 %s 中延迟重放单击并容忍阈值内抖动', (mouseTrackingMode) => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), vi.fn())
+    terminalInstances[0].modes.mouseTrackingMode = mouseTrackingMode
+    const element = terminalInstances[0].element!
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 12, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, button: 0, buttons: 1, clientX: 12, clientY: 14, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 12, clientY: 14, detail: 1}))
+
+    expect(terminalInstances[0].mouseEvents).toEqual([])
+    vi.runAllTimers()
+    expect(terminalInstances[0].mouseEvents).toEqual([
+      expect.objectContaining({type: 'mousedown', button: 0, clientX: 10, clientY: 12, detail: 1, shiftKey: false, altKey: false}),
+      expect.objectContaining({type: 'mouseup', button: 0, clientX: 12, clientY: 14, detail: 1, shiftKey: false, altKey: false}),
+    ])
+  })
+
+  it.each([
+    {clicks: 2, forceSelection: false, label: '普通模式双击单词', mouseTrackingMode: 'none' as const},
+    {clicks: 3, forceSelection: false, label: '普通模式三击整行', mouseTrackingMode: 'none' as const},
+    {clicks: 2, forceSelection: true, label: '鼠标追踪期间双击单词', mouseTrackingMode: 'any' as const},
+    {clicks: 3, forceSelection: true, label: '鼠标追踪期间三击整行', mouseTrackingMode: 'any' as const},
+  ])('$label仅重放一次本地选择', ({clicks, forceSelection, mouseTrackingMode}) => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    document.body.append(container)
+    const onSelectionComplete = vi.fn()
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), onSelectionComplete)
+    terminalInstances[0].modes.mouseTrackingMode = mouseTrackingMode
+    terminalInstances[0].getSelection.mockReturnValue('选择原文')
+    const element = terminalInstances[0].element!
+    for (let detail = 1; detail <= clicks; detail++) {
+      element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 30, clientY: 40, detail}))
+      element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 30, clientY: 40, detail}))
+    }
+
+    vi.runAllTimers()
+    expect(terminalInstances[0].mouseEvents).toEqual([
+      expect.objectContaining({type: 'mousedown', detail: clicks, shiftKey: forceSelection}),
+      expect.objectContaining({type: 'mouseup', detail: clicks, shiftKey: forceSelection}),
+    ])
+    expect(onSelectionComplete).toHaveBeenCalledOnce()
+    expect(onSelectionComplete).toHaveBeenCalledWith({clientX: 30, clientY: 40, text: '选择原文'})
+  })
+
+  it('超过阈值的拖拽强制本地选择，同时透传滚轮和中键', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    document.body.append(container)
+    const onSelectionComplete = vi.fn()
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), onSelectionComplete)
+    terminalInstances[0].modes.mouseTrackingMode = 'any'
+    terminalInstances[0].getSelection.mockReturnValue('拖拽原文')
+    const element = terminalInstances[0].element!
+    element.dispatchEvent(new WheelEvent('wheel', {bubbles: true, deltaY: 40}))
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 1, buttons: 4}))
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 1}))
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 10, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, button: 0, buttons: 1, clientX: 30, clientY: 35, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 30, clientY: 35, detail: 1}))
+    vi.runAllTimers()
+
+    expect(terminalInstances[0].mouseEvents).toEqual([
+      expect.objectContaining({type: 'wheel'}),
+      expect.objectContaining({type: 'mousedown', button: 1}),
+      expect.objectContaining({type: 'mouseup', button: 1}),
+      expect.objectContaining({type: 'mousedown', button: 0, clientX: 10, clientY: 10, shiftKey: true}),
+      expect.objectContaining({type: 'mousemove', button: 0, clientX: 30, clientY: 35, shiftKey: true}),
+      expect.objectContaining({type: 'mouseup', button: 0, clientX: 30, clientY: 35, shiftKey: true}),
+    ])
+    expect(onSelectionComplete).toHaveBeenCalledWith({clientX: 30, clientY: 35, text: '拖拽原文'})
+  })
+
+  it('鼠标追踪期间选择后移动鼠标仍发送事件并重复恢复同一本地选区', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), vi.fn())
+    const instance = terminalInstances[0]
+    instance.modes.mouseTrackingMode = 'any'
+    const selection = 'Claude 选区'
+    const selectionPosition = {start: {x: 2, y: 4}, end: {x: 8, y: 5}}
+    instance.getSelection.mockReturnValue(selection)
+    instance.getSelectionPosition.mockReturnValue(selectionPosition)
+    instance.select.mockImplementation(() => {
+      instance.getSelection.mockReturnValue(selection)
+      instance.getSelectionPosition.mockReturnValue(selectionPosition)
+      instance.triggerSelectionChange()
+    })
+    const element = instance.element!
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 10, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, button: 0, buttons: 1, clientX: 30, clientY: 35, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 30, clientY: 35, detail: 1}))
+    vi.runAllTimers()
+    instance.mouseEvents.length = 0
+    const clearSelection = () => {
+      instance.getSelection.mockReturnValue('')
+      instance.getSelectionPosition.mockReturnValue(undefined)
+      instance.triggerSelectionChange()
+    }
+    element.addEventListener('mousemove', (event) => {
+      if (!(event as MouseEvent).buttons) {
+        clearSelection()
+      }
+    })
+
+    element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, clientX: 42, clientY: 50}))
+    window.setTimeout(clearSelection, 20)
+    vi.advanceTimersByTime(20)
+
+    expect(instance.mouseEvents).toEqual([
+      expect.objectContaining({type: 'mousemove', clientX: 42, clientY: 50}),
+    ])
+    expect(instance.select).toHaveBeenCalledTimes(2)
+    expect(instance.select).toHaveBeenNthCalledWith(1, 2, 4, 106)
+    expect(instance.select).toHaveBeenNthCalledWith(2, 2, 4, 106)
+    expect(instance.getSelection()).toBe(selection)
+
+    element.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true, key: 'a'}))
+    clearSelection()
+    expect(instance.select).toHaveBeenCalledTimes(2)
+  })
+
+  it('右键按下和松开不进入 xterm，仍保留 contextmenu 给视图粘贴', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    const onContextMenu = vi.fn()
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), vi.fn(), onContextMenu)
+    terminalInstances[0].modes.mouseTrackingMode = 'any'
+    const element = terminalInstances[0].element!
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 2, buttons: 2}))
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 2}))
+    element.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, button: 2}))
+
+    expect(terminalInstances[0].mouseEvents).toEqual([])
+    expect(onContextMenu).toHaveBeenCalledOnce()
+  })
+
+  it.each(['detach', 'switch', 'inactive', 'dispose'] as const)('%s 时取消尚未重放的左键单击', (action) => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), vi.fn())
+    const firstElement = terminalInstances[0].element!
+    firstElement.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, detail: 1}))
+    firstElement.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, detail: 1}))
+    if (action === 'detach') {
+      registry.detach(terminal.taskId, terminal.id)
+    } else if (action === 'switch') {
+      registry.attach({id: 'terminal-2', taskId: terminal.taskId, state: 'active'}, document.createElement('div'), terminalVisualTheme(), vi.fn(), vi.fn())
+    } else if (action === 'inactive') {
+      registry.attach({...terminal, state: 'exited'}, container, terminalVisualTheme(), vi.fn(), vi.fn())
+    } else {
+      registry.dispose(terminal.taskId, terminal.id)
+    }
+
+    vi.runAllTimers()
+    expect(terminalInstances[0].mouseEvents).toEqual([])
   })
 
   it('按 A、B、A 顺序切换时复用两个已有终端根节点', () => {
@@ -538,6 +744,22 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].write).toHaveBeenCalledWith('diagnostic output')
     expect(terminalInstances[0].dispose).not.toHaveBeenCalled()
     expect(onResize).not.toHaveBeenCalled()
+  })
+
+  it('异常退出时取消尚未重放的单击', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    document.body.append(container)
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), vi.fn())
+    const element = terminalInstances[0].element!
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, detail: 1}))
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited', exitReason: 'unexpected', exitCode: 1})
+
+    vi.runAllTimers()
+    expect(terminalInstances[0].mouseEvents).toEqual([])
   })
 
   it('异常退出冻结输出快照并拒绝后续终端交互', () => {

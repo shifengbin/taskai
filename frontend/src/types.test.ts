@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 
-import {settings as wailsSettings, task as wailsTask} from '../wailsjs/go/models'
+import {settings as wailsSettings, task as wailsTask, terminal as wailsTerminal} from '../wailsjs/go/models'
 import {clampTaskTreeWidth, defaultTaskMenuItems, terminalActualName, terminalAliasDetails, terminalDisplayName} from './types'
 
 describe('clampTaskTreeWidth', () => {
@@ -88,6 +88,18 @@ describe('clampTaskTreeWidth', () => {
 		})
 
 		expect(settings.terminalNoteTemplate).toEqual({originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'})
+	})
+
+	it('Wails 菜单和终端模型忽略已删除的鼠标策略字段', () => {
+		const menuItem = wailsSettings.TaskMenuItem.createFrom({
+			id: 'legacy', kind: 'command', name: 'Legacy', command: 'legacy', showTerminal: true, disableTaskAIMouseClipboard: true,
+		} as never)
+		const terminal = wailsTerminal.Info.createFrom({
+			id: 'terminal-1', taskId: 'task-1', state: 'active', disableTaskAIMouseClipboard: true,
+		} as never)
+
+		expect(menuItem).not.toHaveProperty('disableTaskAIMouseClipboard')
+		expect(terminal).not.toHaveProperty('disableTaskAIMouseClipboard')
 	})
 
 	it('别名优先显示，空白别名恢复实际终端名称', () => {

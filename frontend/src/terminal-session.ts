@@ -6,6 +6,7 @@ import {type TerminalEvent, type TerminalRecord} from './types'
 import {resolveTerminalFontFamily} from './terminal-font'
 import {defaultTerminalFontSize, normalizeTerminalFontSize} from './terminal-font-size'
 import {normalizeTerminalTheme, type TerminalTheme} from './terminal-theme'
+import {TerminalMouseGesture, type TerminalContextMenuHandler, type TerminalSelectionCompleteHandler} from './terminal-mouse-gesture'
 
 export const terminalScrollback = 1000
 const terminalExitSnapshotNotice = '\r\n终端已退出\x1b[?25l'
@@ -21,7 +22,7 @@ interface TerminalSession {
   fitAddon: FitAddon
   display: TerminalDisplay
   suppressVisualActivity: boolean
-  selectionClipboard: {enabled: boolean}
+  mouseGesture?: TerminalMouseGesture
   onData: {dispose(): void}
   onSelectionChange: {dispose(): void}
   onWriteParsed: {dispose(): void}
@@ -37,6 +38,7 @@ interface TerminalDisplay {
 export class TerminalSessionRegistry {
   private readonly sessions = new Map<string, TerminalSession>()
   private readonly closedTerminalKeys = new Set<string>()
+  private attachedSessionKey?: string
 
   constructor(
     private readonly onWrite: (taskID: string, terminalID: string, data: string) => void,
@@ -79,6 +81,7 @@ export class TerminalSessionRegistry {
     }
     if (event.type === 'exited') {
       const key = terminalSessionKey(event.taskId, event.terminalId)
+      this.detachByKey(key)
       if (!terminalExitDisposesSession(event.exitReason)) {
         if (this.closedTerminalKeys.has(key)) {
           return
@@ -101,19 +104,54 @@ export class TerminalSessionRegistry {
     container: HTMLElement,
     theme: TerminalVisualTheme,
     onResize: (columns: number, rows: number) => void,
+    onSelectionComplete?: TerminalSelectionCompleteHandler,
+    onContextMenu?: TerminalContextMenuHandler,
   ): boolean {
+    const key = terminalSessionKey(terminal.taskId, terminal.id)
+    if (this.attachedSessionKey && this.attachedSessionKey !== key) {
+      this.detachByKey(this.attachedSessionKey)
+    }
     const session = this.getOrCreate(terminal.taskId, terminal.id)
     if (!session) {
       return false
     }
-    session.selectionClipboard.enabled = terminal.disableTaskAIMouseClipboard !== true
     session.terminal.options.theme = theme
     if (session.terminal.element) {
       container.append(session.terminal.element)
     } else {
       session.terminal.open(container)
     }
+		if (terminal.state === 'active' && !this.closedTerminalKeys.has(key) && session.terminal.element) {
+			if (!session.mouseGesture) {
+				session.mouseGesture = new TerminalMouseGesture(
+					session.terminal.element,
+					() => session.terminal.modes.mouseTrackingMode !== 'none',
+					() => session.terminal.getSelection(),
+					onSelectionComplete,
+					onContextMenu,
+					() => session.terminal.getSelectionPosition(),
+					(selection) => {
+						session.terminal.select(
+							selection.start.x,
+							selection.start.y,
+							(selection.end.y - selection.start.y) * session.terminal.cols - selection.start.x + selection.end.x,
+						)
+						return session.terminal.getSelection() === selection.text
+					},
+				)
+			} else {
+				session.mouseGesture.setSelectionCompleteHandler(onSelectionComplete)
+				session.mouseGesture.setContextMenuHandler(onContextMenu)
+			}
+			this.attachedSessionKey = key
+		} else {
+			this.detachByKey(key)
+		}
 		return this.fit(session, this.closedTerminalKeys.has(terminalSessionKey(terminal.taskId, terminal.id)) ? undefined : onResize)
+  }
+
+  detach(taskID: string, terminalID: string): void {
+    this.detachByKey(terminalSessionKey(taskID, terminalID))
   }
 
   fitAndRefresh(taskID: string, terminalID: string, onResize?: (columns: number, rows: number) => void): boolean {
@@ -177,6 +215,7 @@ export class TerminalSessionRegistry {
     if (!session) {
       return
     }
+    this.detachByKey(key)
     this.sessions.delete(key)
     session.onData.dispose()
     session.onSelectionChange.dispose()
@@ -208,10 +247,12 @@ export class TerminalSessionRegistry {
 			return undefined
 		}
     const terminal = new Terminal({
+      altClickMovesCursor: false,
       cursorBlink: true,
       fontFamily: resolveTerminalFontFamily(this.terminalFontFamily()),
       fontSize: normalizeTerminalFontSize(this.terminalFontSize()),
       lineHeight: 1.35,
+      macOptionClickForcesSelection: true,
       scrollback: terminalScrollback,
       theme: terminalVisualTheme(this.terminalTheme()),
     })
@@ -222,17 +263,15 @@ export class TerminalSessionRegistry {
 				this.onWrite(taskID, terminalID, data)
 			}
 		})
-    const selectionClipboard = {enabled: true}
+    let session: TerminalSession
     const onSelectionChange = terminal.onSelectionChange(() => {
-      if (!selectionClipboard.enabled) {
-        return
-      }
       const selection = terminal.getSelection()
       if (selection) {
         void ClipboardSetText(selection).catch(() => {})
+      } else {
+        session?.mouseGesture?.restorePreservedSelection()
       }
     })
-    let session: TerminalSession
     const onWriteParsed = terminal.onWriteParsed?.(() => {
       const display = captureTerminalDisplay(terminal)
       const suppressVisualActivity = session.suppressVisualActivity
@@ -251,7 +290,6 @@ export class TerminalSessionRegistry {
       fitAddon,
       display: captureTerminalDisplay(terminal),
       suppressVisualActivity: false,
-      selectionClipboard,
       onData,
       onSelectionChange,
       onWriteParsed,
@@ -281,6 +319,17 @@ export class TerminalSessionRegistry {
 
   private resetDisplay(session: TerminalSession): void {
     session.display = captureTerminalDisplay(session.terminal)
+  }
+
+  private detachByKey(key: string): void {
+    const session = this.sessions.get(key)
+    session?.mouseGesture?.dispose()
+    if (session) {
+      session.mouseGesture = undefined
+    }
+    if (this.attachedSessionKey === key) {
+      this.attachedSessionKey = undefined
+    }
   }
 
 }

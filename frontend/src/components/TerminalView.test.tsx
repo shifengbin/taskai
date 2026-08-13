@@ -11,9 +11,11 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   }
   cols: number
   rows: number
+  modes: {mouseTrackingMode: 'none' | 'any'}
   attachCustomKeyEventHandler: ReturnType<typeof vi.fn>
   element?: HTMLElement
   getSelection: ReturnType<typeof vi.fn>
+  getSelectionPosition: ReturnType<typeof vi.fn>
   focus: ReturnType<typeof vi.fn>
   loadAddon: ReturnType<typeof vi.fn>
   onData: ReturnType<typeof vi.fn>
@@ -25,6 +27,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}
   dispose: ReturnType<typeof vi.fn>
   refresh: ReturnType<typeof vi.fn>
+  select: ReturnType<typeof vi.fn>
 	write: ReturnType<typeof vi.fn>
   triggerCustomKeyEvent(event: KeyboardEvent): boolean | undefined
   triggerSelectionChange(): void
@@ -56,11 +59,13 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 100
     rows = 30
+    modes = {mouseTrackingMode: 'none' as const}
     attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
       this.customKeyEventHandler = handler
     })
     element: HTMLElement | undefined
     getSelection = vi.fn(() => '')
+    getSelectionPosition = vi.fn(() => undefined as {start: {x: number, y: number}, end: {x: number, y: number}} | undefined)
     focus = vi.fn()
     loadAddon = vi.fn()
     onData = vi.fn(() => ({dispose: vi.fn()}))
@@ -72,12 +77,23 @@ vi.mock('@xterm/xterm', () => ({
     onWriteParsed = vi.fn(() => ({dispose: vi.fn()}))
     open = vi.fn((container: HTMLElement) => {
       this.element = document.createElement('div')
+      this.element.addEventListener('mousedown', (event) => {
+        if (event.button === 0 && (event.detail > 1 || event.shiftKey || event.altKey)) {
+          this.selectionChangeListener?.()
+        }
+      })
+      this.element.addEventListener('mouseup', (event) => {
+        if (event.button === 0 && event.detail === 1) {
+          this.selectionChangeListener?.()
+        }
+      })
       container.append(this.element)
     })
     paste = vi.fn()
     options: {fontSize?: number, scrollback?: number, theme?: {background?: string}}
     dispose = vi.fn()
     refresh = vi.fn()
+    select = vi.fn()
 		write = vi.fn()
     buffer = {
       active: {
@@ -161,6 +177,7 @@ describe('TerminalView', () => {
 
   afterEach(() => {
     cleanup()
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -279,6 +296,7 @@ describe('TerminalView', () => {
   })
 
   it('鼠标选中非空文本后打开备注输入并保存到当前终端', () => {
+    vi.useFakeTimers()
     const onAddNote = vi.fn()
     const registry = new TerminalSessionRegistry(vi.fn())
     render(
@@ -293,8 +311,14 @@ describe('TerminalView', () => {
     )
     terminalInstances[0].getSelection.mockReturnValue('编译失败')
 
-    fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 32, clientY: 40})
-    act(() => runAnimationFrame())
+    const element = terminalInstances[0].element!
+    element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 12, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, button: 0, buttons: 1, clientX: 32, clientY: 40, detail: 1}))
+    element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 32, clientY: 40, detail: 1}))
+    act(() => {
+      vi.runAllTimers()
+      runAnimationFrame()
+    })
 
     const addNote = screen.getByRole('button', {name: '添加备注'})
     expect(addNote).toHaveClass('opacity-70')
@@ -315,32 +339,110 @@ describe('TerminalView', () => {
     expect(terminalInstances[0].focus).toHaveBeenCalled()
   })
 
+  it.each([
+    {gesture: '拖拽', selected: '范围原文', dispatch(element: HTMLElement) {
+      element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 12, detail: 1}))
+      element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, button: 0, buttons: 1, clientX: 32, clientY: 40, detail: 1}))
+      element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 32, clientY: 40, detail: 1}))
+    }},
+    {gesture: '双击', selected: '完整单词', dispatch(element: HTMLElement) {
+      for (let detail = 1; detail <= 2; detail++) {
+        element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 32, clientY: 40, detail}))
+        element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 32, clientY: 40, detail}))
+      }
+    }},
+    {gesture: '三击', selected: '完整终端行', dispatch(element: HTMLElement) {
+      for (let detail = 1; detail <= 3; detail++) {
+        element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 32, clientY: 40, detail}))
+        element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 32, clientY: 40, detail}))
+      }
+    }},
+  ])('$gesture选择完成后自动复制并显示同一原文的备注入口', ({selected, dispatch}) => {
+    vi.useFakeTimers()
+    render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={vi.fn()} onClose={vi.fn()}/>)
+    terminalInstances[0].getSelection.mockReturnValue(selected)
+
+    dispatch(terminalInstances[0].element!)
+    act(() => {
+      vi.runAllTimers()
+      runAnimationFrame()
+    })
+
+    expect(runtime.ClipboardSetText).toHaveBeenCalledWith(selected)
+    fireEvent.click(screen.getByRole('button', {name: '添加备注'}))
+    expect(screen.getByRole('dialog')).toHaveTextContent(selected)
+  })
+
 	it('点击终端其他区域时收起选区备注入口', () => {
+		vi.useFakeTimers()
 		const registry = new TerminalSessionRegistry(vi.fn())
 		render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()}/>)
 		terminalInstances[0].getSelection.mockReturnValue('编译失败')
 
-		fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 32, clientY: 40})
-		act(() => runAnimationFrame())
+		const element = terminalInstances[0].element!
+		element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 12, detail: 1}))
+		element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, button: 0, buttons: 1, clientX: 32, clientY: 40, detail: 1}))
+		element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 32, clientY: 40, detail: 1}))
+		act(() => {
+			vi.runAllTimers()
+			runAnimationFrame()
+		})
 		expect(screen.getByRole('button', {name: '添加备注'})).toBeInTheDocument()
 
 		fireEvent.pointerDown(screen.getByTestId('terminal-view-header'))
 		expect(screen.queryByRole('button', {name: '添加备注'})).not.toBeInTheDocument()
 	})
 
-  it('空选区或禁用鼠标剪贴板的终端不显示备注入口', () => {
+		it('鼠标追踪期间选择后仅移动鼠标仍重复恢复选区并保留备注入口原文', () => {
+		vi.useFakeTimers()
+		render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={vi.fn()} onClose={vi.fn()}/>)
+		const instance = terminalInstances[0]
+		instance.modes.mouseTrackingMode = 'any'
+			const selection = 'Claude 选区'
+			const selectionPosition = {start: {x: 2, y: 4}, end: {x: 8, y: 5}}
+			instance.getSelection.mockReturnValue(selection)
+			instance.getSelectionPosition.mockReturnValue(selectionPosition)
+			instance.select.mockImplementation(() => {
+				instance.getSelection.mockReturnValue(selection)
+				instance.getSelectionPosition.mockReturnValue(selectionPosition)
+				instance.triggerSelectionChange()
+			})
+		const element = instance.element!
+		element.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 12, detail: 1}))
+		element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, button: 0, buttons: 1, clientX: 32, clientY: 40, detail: 1}))
+		element.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, button: 0, clientX: 32, clientY: 40, detail: 1}))
+			act(() => {
+				vi.runAllTimers()
+				runAnimationFrame()
+			})
+			const clearSelection = () => {
+				instance.getSelection.mockReturnValue('')
+				instance.getSelectionPosition.mockReturnValue(undefined)
+				instance.triggerSelectionChange()
+			}
+			element.addEventListener('mousemove', (event) => {
+				if (!(event as MouseEvent).buttons) {
+					clearSelection()
+				}
+			})
+
+			element.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, clientX: 48, clientY: 52}))
+			window.setTimeout(clearSelection, 20)
+			act(() => vi.advanceTimersByTime(20))
+
+			expect(instance.select).toHaveBeenCalledTimes(2)
+			expect(instance.select).toHaveBeenCalledWith(2, 4, 106)
+			expect(instance.getSelection()).toBe(selection)
+			fireEvent.click(screen.getByRole('button', {name: '添加备注'}))
+		expect(screen.getByRole('dialog')).toHaveTextContent(selection)
+	})
+
+  it('单击产生空选区时不显示备注入口', () => {
     const registry = new TerminalSessionRegistry(vi.fn())
-    const {rerender} = render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()}/>)
+    render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()}/>)
 
     fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 20, clientY: 20})
     runAnimationFrame()
-    expect(screen.queryByRole('button', {name: '添加备注'})).not.toBeInTheDocument()
-
-    terminalInstances[0].getSelection.mockReturnValue('不应读取')
-    rerender(<TerminalView terminal={{...terminal, disableTaskAIMouseClipboard: true}} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()}/>)
-    fireEvent.pointerUp(screen.getByTestId('terminal-content'), {clientX: 20, clientY: 20})
-    runAnimationFrame()
-
     expect(screen.queryByRole('button', {name: '添加备注'})).not.toBeInTheDocument()
   })
 
@@ -607,7 +709,7 @@ describe('TerminalView', () => {
     expect(onResize).not.toHaveBeenCalled()
     expect(runtime.OnFileDrop).not.toHaveBeenCalled()
     const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
-    fireEvent(screen.getByTestId('terminal-content'), event)
+    fireEvent(terminalInstances[0].element!, event)
     expect(event.defaultPrevented).toBe(false)
     expect(runtime.ClipboardGetText).not.toHaveBeenCalled()
   })
@@ -663,7 +765,7 @@ describe('TerminalView', () => {
     runtime.ClipboardGetText.mockResolvedValue('git status\ngit push')
     render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(onWrite)} onResize={vi.fn()} onClose={vi.fn()} />)
     const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
-    fireEvent(screen.getByTestId('terminal-content'), event)
+    fireEvent(terminalInstances[0].element!, event)
 
     expect(event.defaultPrevented).toBe(true)
     await waitFor(() => expect(terminalInstances[0].paste).toHaveBeenCalledWith('git status\ngit push'))
@@ -680,7 +782,7 @@ describe('TerminalView', () => {
     render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()} />)
 
     const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
-    fireEvent(screen.getByTestId('terminal-content'), event)
+    fireEvent(terminalInstances[0].element!, event)
     registry.dispose('task-1', 'terminal-1')
 
     await act(async () => {
@@ -692,12 +794,12 @@ describe('TerminalView', () => {
     expect(onWrite).not.toHaveBeenCalled()
   })
 
-  it('禁用 TaskAI 鼠标剪贴板后不接管选区或右键', () => {
+  it('旧鼠标策略字段不再阻止自动复制或右键粘贴', async () => {
     const onWrite = vi.fn()
     runtime.ClipboardGetText.mockResolvedValue('stale system clipboard')
     render(
       <TerminalView
-        terminal={{...terminal, disableTaskAIMouseClipboard: true}}
+        terminal={{...terminal, disableTaskAIMouseClipboard: true} as never}
         sessionRegistry={new TerminalSessionRegistry(onWrite)}
         onResize={vi.fn()}
         onClose={vi.fn()}
@@ -706,13 +808,14 @@ describe('TerminalView', () => {
     terminalInstances[0].getSelection.mockReturnValue('selected terminal output')
     terminalInstances[0].triggerSelectionChange()
 
-    expect(runtime.ClipboardSetText).not.toHaveBeenCalled()
+    expect(runtime.ClipboardSetText).toHaveBeenCalledWith('selected terminal output')
 
     const event = new MouseEvent('contextmenu', {bubbles: true, cancelable: true})
-    fireEvent(screen.getByTestId('terminal-content'), event)
+    fireEvent(terminalInstances[0].element!, event)
 
-    expect(event.defaultPrevented).toBe(false)
-    expect(runtime.ClipboardGetText).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(true)
+    expect(runtime.ClipboardGetText).toHaveBeenCalledOnce()
+    await waitFor(() => expect(terminalInstances[0].paste).toHaveBeenCalledWith('stale system clipboard'))
     expect(onWrite).not.toHaveBeenCalled()
   })
 

@@ -1,5 +1,7 @@
 # Menu Command Terminal Mouse Clipboard Implementation Plan
 
+> 状态：已由 `2026-08-13-unify-terminal-mouse-selection-implementation.md` 的统一终端鼠标策略取代，旧字段仅作为历史实现记录保留。
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Allow users to disable TaskAI's automatic selection copy and right-click clipboard paste for individual display-terminal menu commands, returning mouse handling to the terminal program while preserving existing behavior everywhere else.

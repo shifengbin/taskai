@@ -91,19 +91,14 @@ func (manager *Manager) CreateCommandWithEnvironment(taskID, directory, shellPat
 }
 
 func (manager *Manager) CreateCommandWithEnvironmentBuilder(taskID, directory, shellPath, command string, arguments []string, environment TerminalEnvironmentBuilder, columns, rows uint16) (Info, error) {
-	return manager.CreateCommandWithOptionsAndEnvironmentBuilder(taskID, directory, shellPath, command, arguments, CommandOptions{}, environment, columns, rows)
-}
-
-func (manager *Manager) CreateCommandWithOptionsAndEnvironmentBuilder(taskID, directory, shellPath, command string, arguments []string, options CommandOptions, environment TerminalEnvironmentBuilder, columns, rows uint16) (Info, error) {
 	return manager.createWithEnvironmentBuilder(StartRequest{
-		TaskID:                      taskID,
-		Directory:                   directory,
-		ShellPath:                   shellPath,
-		Command:                     command,
-		Arguments:                   append([]string(nil), arguments...),
-		DisableTaskAIMouseClipboard: options.DisableTaskAIMouseClipboard,
-		Columns:                     columns,
-		Rows:                        rows,
+		TaskID:    taskID,
+		Directory: directory,
+		ShellPath: shellPath,
+		Command:   command,
+		Arguments: append([]string(nil), arguments...),
+		Columns:   columns,
+		Rows:      rows,
 	}, environment)
 }
 
@@ -141,11 +136,10 @@ func (manager *Manager) createWithEnvironmentBuilder(request StartRequest, envir
 		command = request.ShellPath
 	}
 	info := Info{
-		ID:                          request.ID,
-		TaskID:                      request.TaskID,
-		State:                       StateActive,
-		DisableTaskAIMouseClipboard: request.DisableTaskAIMouseClipboard,
-		Command:                     command,
+		ID:      request.ID,
+		TaskID:  request.TaskID,
+		State:   StateActive,
+		Command: command,
 	}
 	managed := &managedSession{info: info, command: command, shellPath: request.ShellPath, session: session, done: make(chan struct{})}
 	if manager.sessions[request.TaskID] == nil {

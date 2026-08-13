@@ -189,6 +189,45 @@ func TestUnixBackendStartsConfiguredCommandWithArguments(t *testing.T) {
 	}
 }
 
+func TestUnixBackendStartsDetectedAgentCommandsWithExactArgumentsAndDirectory(t *testing.T) {
+	for _, current := range []struct {
+		name     string
+		argument string
+	}{
+		{name: "codex", argument: "--yolo"},
+		{name: "claude", argument: "--dangerously-skip-permissions"},
+	} {
+		t.Run(current.name, func(t *testing.T) {
+			directory := t.TempDir()
+			commandPath := filepath.Join(directory, current.name)
+			if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nprintf '__AGENT__%s__ARG__%s__PWD__%s__\\n' \"$0\" \"$1\" \"$PWD\"\n"), 0o700); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			session, err := (&unixBackend{}).Start(StartRequest{
+				TaskID: "task-a", Directory: directory, ShellPath: "/bin/sh", Command: commandPath,
+				Arguments: []string{current.argument}, Columns: 80, Rows: 24,
+			})
+			if err != nil {
+				t.Fatalf("启动 %s: %v", current.name, err)
+			}
+			defer session.Close()
+
+			output, readErr := io.ReadAll(session)
+			if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
+				t.Fatalf("读取 %s 输出: %v", current.name, readErr)
+			}
+			if _, err := session.Wait(); err != nil {
+				t.Fatalf("等待 %s: %v", current.name, err)
+			}
+			want := "__AGENT__" + commandPath + "__ARG__" + current.argument + "__PWD__" + directory + "__"
+			if !strings.Contains(string(output), want) {
+				t.Fatalf("%s 输出 = %q，期望包含 %q", current.name, output, want)
+			}
+		})
+	}
+}
+
 func TestUnixBackendStartsConfiguredCommandThroughRequestedShell(t *testing.T) {
 	directory := t.TempDir()
 	shellPath := filepath.Join(directory, "configured-shell")
@@ -217,5 +256,33 @@ func TestUnixBackendStartsConfiguredCommandThroughRequestedShell(t *testing.T) {
 	}
 	if !strings.Contains(string(output), "__SHELL_PATH__1__") {
 		t.Fatalf("配置命令未通过请求指定的 Shell 启动，输出: %q", output)
+	}
+}
+
+func TestUnixBackendUsesFishInvocationForConfiguredCommand(t *testing.T) {
+	directory := t.TempDir()
+	shellPath := filepath.Join(directory, "fish")
+	if err := os.WriteFile(shellPath, []byte("#!/bin/sh\nprintf '__FISH_ARGS__%s__%s__%s__%s__%s__\\n' \"$1\" \"$2\" \"$3\" \"$4\" \"$5\"\n"), 0o700); err != nil {
+		t.Fatalf("WriteFile(fish) error = %v", err)
+	}
+
+	session, err := (&unixBackend{}).Start(StartRequest{
+		TaskID: "task-a", Directory: directory, ShellPath: shellPath, Command: "codex", Arguments: []string{"--yolo"}, Columns: 80, Rows: 24,
+	})
+	if err != nil {
+		t.Fatalf("启动 fish 配置命令: %v", err)
+	}
+	defer session.Close()
+
+	output, readErr := io.ReadAll(session)
+	if readErr != nil && !strings.Contains(readErr.Error(), "input/output error") {
+		t.Fatalf("读取 fish 配置命令输出: %v", readErr)
+	}
+	if _, err := session.Wait(); err != nil {
+		t.Fatalf("等待 fish 配置命令: %v", err)
+	}
+	want := "__FISH_ARGS__-ic__exec $argv[2..-1]__" + shellPath + "__codex__--yolo__"
+	if !strings.Contains(string(output), want) {
+		t.Fatalf("fish 启动参数 = %q，期望包含 %q", output, want)
 	}
 }
