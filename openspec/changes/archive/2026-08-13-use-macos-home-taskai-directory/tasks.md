@@ -29,6 +29,8 @@
 
 - [x] 5.1 运行 `go test -race ./...`、`cd frontend && npm test && npm run build` 以及 `openspec validate use-macos-home-taskai-directory --strict`，修复本变更引入的所有失败后重新验证。
 - [ ] 5.2 在 macOS 上执行 `./scripts/build-macos.sh` 编译应用，打开生成的 TaskAI `.app` 且保持程序运行，复查设置中的默认工作区路径并等待用户确认。
-- [ ] 5.3 用户确认后，将 worktree 功能分支合并回当前工作区项目分支；若出现冲突则解决冲突，并再次运行相关测试和 `./scripts/build-macos.sh` 验证合并结果。
-- [ ] 5.4 同步中文设计与实施文档，将完成后的 OpenSpec 规格合入主规格并归档 `use-macos-home-taskai-directory` 变更。
+- [x] 5.3 用户确认后，将 worktree 功能分支合并回当前工作区项目分支；若出现冲突则解决冲突，并再次运行相关测试和当前主机可用的构建脚本验证合并结果。
+- [x] 5.4 同步中文设计与实施文档，将完成后的 OpenSpec 规格合入主规格并归档 `use-macos-home-taskai-directory` 变更。
 - [ ] 5.5 提交全部 Git 变更，确认功能分支已经合并后移除 `.worktrees/` 下的专用 worktree。
+
+> 归档说明（2026-08-13）：实现和自动化测试在 Linux 主机完成，并已通过用户确认继续交付。任务 4.3–4.5 与 5.2 需要 macOS 原生主机及 `.app`，当前环境无法执行，因此保持未勾选；合并后改用 `./scripts/build-linux.sh` 完成当前主机生产构建验证。
