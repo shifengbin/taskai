@@ -3381,6 +3381,74 @@ describe('App confirmation flows', () => {
     expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledWith('task-1', 'custom-vscode', 100, 32)
   })
 
+  it('检测到的代理菜单按保存顺序显示在设置、任务操作和右键菜单', async () => {
+    const user = userEvent.setup()
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
+      taskMenuItems: [
+        ...fixedTaskMenuItems,
+        {id: 'auto.agent.codex', kind: 'command', name: 'codex', command: 'codex', arguments: ['--yolo'], showTerminal: true},
+        {id: 'auto.agent.claude', kind: 'command', name: 'claude', command: 'claude', arguments: ['--dangerously-skip-permissions'], showTerminal: true},
+      ],
+    })
+    bindings.ExecuteTaskMenuCommand.mockResolvedValue({})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '菜单管理'}))
+    const settingsDialog = screen.getByRole('dialog', {name: '设置'})
+    const editButtons = within(settingsDialog).getAllByRole('button', {name: /编辑菜单项/})
+    expect(editButtons.slice(-2).map((button) => button.getAttribute('aria-label'))).toEqual([
+      '编辑菜单项 codex',
+      '编辑菜单项 claude',
+    ])
+    expect(within(settingsDialog).getAllByText('显示终端')).toHaveLength(2)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
+
+    await user.click(await screen.findByRole('tab', {name: /执行中/}))
+    await user.click(screen.getByRole('button', {name: '任务操作'}))
+    const operationItems = screen.getAllByRole('menuitem').map((item) => item.textContent)
+    expect(operationItems.slice(-2)).toEqual(['codex', 'claude'])
+    await user.click(screen.getByRole('menuitem', {name: 'codex'}))
+    expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledWith('task-1', 'auto.agent.codex', 100, 32)
+
+    fireEvent.contextMenu(screen.getByText('清理临时文件'))
+    const contextItems = screen.getAllByRole('menuitem').map((item) => item.textContent)
+    expect(contextItems.slice(-2)).toEqual(['codex', 'claude'])
+    await user.click(screen.getByRole('menuitem', {name: 'claude'}))
+    expect(bindings.ExecuteTaskMenuCommand).toHaveBeenCalledWith('task-1', 'auto.agent.claude', 100, 32)
+  })
+
+  it('删除自动 Codex 菜单后保存时保留 Claude 和用户菜单', async () => {
+    const user = userEvent.setup()
+    bindings.SaveSettings.mockImplementation(async (next) => next)
+    bindings.GetSettings.mockResolvedValue({
+      workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh',
+      taskMenuItems: [
+        ...fixedTaskMenuItems,
+        {id: 'auto.agent.codex', kind: 'command', name: 'codex', command: 'codex', arguments: ['--yolo'], showTerminal: true},
+        {id: 'auto.agent.claude', kind: 'command', name: 'claude', command: 'claude', arguments: ['--dangerously-skip-permissions'], showTerminal: true},
+        {id: 'custom.keep', kind: 'command', name: '保留用户菜单', command: 'printf', showTerminal: true},
+      ],
+    })
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button', {name: '设置'}))
+    await user.click(screen.getByRole('tab', {name: '菜单管理'}))
+    await user.click(screen.getByRole('button', {name: '编辑菜单项 codex'}))
+    await user.click(within(screen.getByRole('dialog', {name: '编辑菜单项'})).getByRole('button', {name: '删除菜单项'}))
+    await user.click(screen.getByRole('button', {name: '保存'}))
+
+    await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalled())
+    const saved = bindings.SaveSettings.mock.calls.at(-1)?.[0]
+    expect(saved.taskMenuItems.map((item: {id: string}) => item.id)).not.toContain('auto.agent.codex')
+    expect(saved.taskMenuItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({id: 'auto.agent.claude', command: 'claude'}),
+      expect.objectContaining({id: 'custom.keep', command: 'printf'}),
+    ]))
+  })
+
   it('收到后置脚本错误事件时显示错误提示', async () => {
 	const user = userEvent.setup()
 	let scriptErrorListener: ((message: string) => void) | undefined

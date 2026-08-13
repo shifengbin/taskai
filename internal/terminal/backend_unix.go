@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 
 	"github.com/creack/pty"
@@ -34,10 +35,11 @@ func (backend *unixBackend) Start(request StartRequest) (Session, error) {
 
 	commandPath := request.Command
 	if commandPath != "" && request.ShellPath != "" {
-		arguments := append([]string{"-ic", `exec "$@"`, request.ShellPath, commandPath}, request.Arguments...)
-		command := exec.Command(request.ShellPath, arguments...)
+		invocation := CommandInvocationForPlatform(runtime.GOOS, request.ShellPath, commandPath, request.Arguments)
+		command := exec.Command(invocation.Command, invocation.Arguments...)
 		command.Dir = request.Directory
-		command.Env = embeddedTerminalEnvironment(request.Environment)
+		environment := append(append([]string(nil), request.Environment...), invocation.EnvironmentEntries()...)
+		command.Env = embeddedTerminalEnvironment(environment)
 		return startUnixCommand(command, request)
 	}
 	if commandPath == "" {

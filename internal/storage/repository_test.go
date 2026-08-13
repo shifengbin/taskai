@@ -123,6 +123,166 @@ func TestRepositoryLoadsPersistedColorScheme(t *testing.T) {
 	}
 }
 
+func TestRepositoryMergeDetectedAgentTaskMenusUsesLatestSettingsAtomically(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	current, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	current.Settings.ColorScheme = "dark"
+	current.Settings.TaskMenuItems = append(current.Settings.TaskMenuItems, settings.TaskMenuItem{
+		ID: "custom.keep", Kind: settings.TaskMenuItemKindCommand, Name: "保留用户菜单", Command: "printf",
+	})
+	if _, err := repository.SaveSettings(current.Settings); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	merged, changed, err := repository.MergeDetectedAgentTaskMenuItems(settings.DetectedAgentCommands{Codex: true, Claude: true})
+	if err != nil {
+		t.Fatalf("MergeDetectedAgentTaskMenuItems() error = %v", err)
+	}
+	if !changed {
+		t.Fatal("MergeDetectedAgentTaskMenuItems() changed = false，期望 true")
+	}
+	if merged.ColorScheme != "dark" {
+		t.Fatalf("原子合并覆盖了最新颜色设置 = %q", merged.ColorScheme)
+	}
+	if got := merged.TaskMenuItems[len(merged.TaskMenuItems)-3].ID; got != "custom.keep" {
+		t.Fatalf("原子合并覆盖了用户菜单项，倒数第三项 ID = %q", got)
+	}
+
+	second, changed, err := repository.MergeDetectedAgentTaskMenuItems(settings.DetectedAgentCommands{Codex: true, Claude: true})
+	if err != nil {
+		t.Fatalf("第二次 MergeDetectedAgentTaskMenuItems() error = %v", err)
+	}
+	if changed || !reflect.DeepEqual(second, merged) {
+		t.Fatalf("第二次原子合并 = (%#v, %t)，期望幂等", second, changed)
+	}
+}
+
+func TestRepositoryRemembersDeletedAutomaticAgentMenuAcrossReload(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	merged, changed, err := repository.MergeDetectedAgentTaskMenuItems(settings.DetectedAgentCommands{Codex: true, Claude: true})
+	if err != nil || !changed {
+		t.Fatalf("首次 MergeDetectedAgentTaskMenuItems() = (%#v, %t, %v)", merged, changed, err)
+	}
+	merged.TaskMenuItems = removeTaskMenuItemByID(merged.TaskMenuItems, settings.TaskMenuItemDetectedCodexID)
+	if _, err := repository.SaveSettings(merged); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+
+	reloaded := New(dataPath, settings.Default(t.TempDir()))
+	afterRestart, changed, err := reloaded.MergeDetectedAgentTaskMenuItems(settings.DetectedAgentCommands{Codex: true, Claude: true})
+	if err != nil {
+		t.Fatalf("重载 MergeDetectedAgentTaskMenuItems() error = %v", err)
+	}
+	if changed {
+		t.Fatal("删除 Codex 自动项后重载 changed = true，期望不恢复")
+	}
+	if containsTaskMenuItemID(afterRestart.TaskMenuItems, settings.TaskMenuItemDetectedCodexID) {
+		t.Fatalf("删除后的 Codex 自动项被恢复 = %#v", afterRestart.TaskMenuItems)
+	}
+	if !containsTaskMenuItemID(afterRestart.TaskMenuItems, settings.TaskMenuItemDetectedClaudeID) {
+		t.Fatalf("Claude 自动项未保留 = %#v", afterRestart.TaskMenuItems)
+	}
+	data, err := reloaded.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(data.DismissedAgentTaskMenuItemIDs, []string{settings.TaskMenuItemDetectedCodexID}) {
+		t.Fatalf("删除记录 = %#v", data.DismissedAgentTaskMenuItemIDs)
+	}
+}
+
+func TestRepositoryDoesNotRecordDeletedCustomAgentMenu(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskMenuItems = append(data.Settings.TaskMenuItems, settings.TaskMenuItem{
+		ID: "custom.codex", Kind: settings.TaskMenuItemKindCommand, Name: "我的 Codex", Command: "codex",
+	})
+	saved, err := repository.SaveSettings(data.Settings)
+	if err != nil {
+		t.Fatalf("保存自定义菜单: %v", err)
+	}
+	saved.TaskMenuItems = removeTaskMenuItemByID(saved.TaskMenuItems, "custom.codex")
+	if _, err := repository.SaveSettings(saved); err != nil {
+		t.Fatalf("删除自定义菜单: %v", err)
+	}
+
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(persisted.DismissedAgentTaskMenuItemIDs) != 0 {
+		t.Fatalf("删除自定义菜单产生了自动项删除记录 = %#v", persisted.DismissedAgentTaskMenuItemIDs)
+	}
+}
+
+func TestRepositoryFailedSettingsSaveDoesNotRecordAutomaticAgentDeletion(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	merged, _, err := repository.MergeDetectedAgentTaskMenuItems(settings.DetectedAgentCommands{Codex: true})
+	if err != nil {
+		t.Fatalf("MergeDetectedAgentTaskMenuItems() error = %v", err)
+	}
+	merged.TaskMenuItems = append(
+		removeTaskMenuItemByID(merged.TaskMenuItems, settings.TaskMenuItemDetectedCodexID),
+		settings.TaskMenuItem{ID: "invalid", Kind: settings.TaskMenuItemKindCommand, Name: ""},
+	)
+	if _, err := repository.SaveSettings(merged); err == nil {
+		t.Fatal("SaveSettings() error = nil，期望无效菜单导致保存失败")
+	}
+
+	reloaded := New(dataPath, settings.Default(t.TempDir()))
+	persisted, err := reloaded.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !containsTaskMenuItemID(persisted.Settings.TaskMenuItems, settings.TaskMenuItemDetectedCodexID) {
+		t.Fatalf("失败保存改变了自动菜单 = %#v", persisted.Settings.TaskMenuItems)
+	}
+	if len(persisted.DismissedAgentTaskMenuItemIDs) != 0 {
+		t.Fatalf("失败保存留下删除记录 = %#v", persisted.DismissedAgentTaskMenuItemIDs)
+	}
+}
+
+func TestNormalizeDismissedAgentTaskMenuItemIDsKeepsKnownUniqueOrder(t *testing.T) {
+	if got := normalizeDismissedAgentTaskMenuItemIDs(nil); got != nil {
+		t.Fatalf("空删除记录 = %#v，期望 nil", got)
+	}
+	want := []string{settings.TaskMenuItemDetectedCodexID, settings.TaskMenuItemDetectedClaudeID}
+	got := normalizeDismissedAgentTaskMenuItemIDs([]string{
+		"unknown", settings.TaskMenuItemDetectedClaudeID, settings.TaskMenuItemDetectedCodexID, settings.TaskMenuItemDetectedClaudeID,
+	})
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("规范化删除记录 = %#v，期望 %#v", got, want)
+	}
+}
+
+func removeTaskMenuItemByID(items []settings.TaskMenuItem, id string) []settings.TaskMenuItem {
+	filtered := make([]settings.TaskMenuItem, 0, len(items))
+	for _, item := range items {
+		if item.ID != id {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func containsTaskMenuItemID(items []settings.TaskMenuItem, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRepositoryAddsMissingShelvingMenuItemToPersistedSettings(t *testing.T) {
 	dataPath := filepath.Join(t.TempDir(), "state.json")
 	contents := []byte(`{

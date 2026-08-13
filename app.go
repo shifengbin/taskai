@@ -34,8 +34,11 @@ type App struct {
 	mu               sync.RWMutex
 	ctx              context.Context
 	allowClose       bool
+	agentMenuSyncMu  sync.RWMutex
 	lifecycleLockMu  sync.Mutex
 	lifecycleTaskMux map[string]*sync.Mutex
+	startupReady     chan struct{}
+	startupReadyOnce sync.Once
 
 	repository             *storage.Repository
 	tasks                  *lifecycle.Service
@@ -53,6 +56,9 @@ type App struct {
 	repositoryGitService   *repositorygit.Service
 	windowMaximise         func(context.Context)
 	windowIsMaximised      func(context.Context) bool
+	agentCommandDetector   func() settings.DetectedAgentCommands
+	agentMenuSynchronizer  func(settings.DetectedAgentCommands) (settings.Settings, bool, error)
+	startupErrorPublisher  func(string)
 	endingTasks            map[string]bool
 }
 
@@ -76,7 +82,9 @@ type taskCommandScriptPayload struct {
 }
 
 func NewApp() *App {
-	return newApp(defaultDataDirectory())
+	app := newApp(defaultDataDirectory())
+	app.startupReady = make(chan struct{})
+	return app
 }
 
 func newApp(dataDirectory string) *App {
@@ -109,6 +117,9 @@ func newApp(dataDirectory string) *App {
 	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.NewShellCommandExecutor())
 	app.repositoryGitService = repositorygit.NewService()
 	app.scriptErrorPublisher = app.publishTaskScriptError
+	app.agentCommandDetector = settings.DetectInstalledAgentCommands
+	app.agentMenuSynchronizer = repository.MergeDetectedAgentTaskMenuItems
+	app.startupErrorPublisher = app.publishRealtimeStatusError
 	return app
 }
 
@@ -117,10 +128,18 @@ func defaultDataDirectory() string {
 }
 
 func (app *App) startup(ctx context.Context) {
+	defer app.signalStartupReady()
 	app.mu.Lock()
 	app.ctx = ctx
 	app.mu.Unlock()
-	if current, err := app.GetSettings(); err == nil {
+	app.agentMenuSyncMu.Lock()
+	current, _, settingsError := app.agentMenuSynchronizer(app.agentCommandDetector())
+	if settingsError != nil {
+		app.startupErrorPublisher(fmt.Sprintf("同步代理任务菜单: %v", settingsError))
+		current, settingsError = app.loadSettings()
+	}
+	app.agentMenuSyncMu.Unlock()
+	if settingsError == nil {
 		if current.WindowMaximized {
 			app.restoreWindowMaximized(ctx)
 		}
@@ -129,6 +148,18 @@ func (app *App) startup(ctx context.Context) {
 		}
 	}
 	app.registerRunningRealtimeTasks()
+}
+
+func (app *App) signalStartupReady() {
+	if app.startupReady != nil {
+		app.startupReadyOnce.Do(func() { close(app.startupReady) })
+	}
+}
+
+func (app *App) waitForStartupSynchronization() {
+	if app.startupReady != nil {
+		<-app.startupReady
+	}
 }
 
 func (app *App) shutdown(context.Context) {
@@ -850,6 +881,13 @@ func (app *App) publishLifecycleTask(current task.Task) {
 }
 
 func (app *App) GetSettings() (settings.Settings, error) {
+	app.waitForStartupSynchronization()
+	app.agentMenuSyncMu.RLock()
+	defer app.agentMenuSyncMu.RUnlock()
+	return app.loadSettings()
+}
+
+func (app *App) loadSettings() (settings.Settings, error) {
 	data, err := app.repository.Load()
 	if err != nil {
 		return settings.Settings{}, err
@@ -858,7 +896,10 @@ func (app *App) GetSettings() (settings.Settings, error) {
 }
 
 func (app *App) SaveSettings(next settings.Settings) (settings.Settings, error) {
-	previous, err := app.GetSettings()
+	app.waitForStartupSynchronization()
+	app.agentMenuSyncMu.RLock()
+	defer app.agentMenuSyncMu.RUnlock()
+	previous, err := app.loadSettings()
 	if err != nil {
 		return settings.Settings{}, err
 	}
@@ -1596,26 +1637,12 @@ func commandProcess(shellPath, command string, arguments []string) *exec.Cmd {
 }
 
 func commandProcessForPlatform(platform, shellPath, command string, arguments []string) *exec.Cmd {
-	if shellPath == "" {
-		return exec.Command(command, arguments...)
+	invocation := terminal.CommandInvocationForPlatform(platform, shellPath, command, arguments)
+	process := exec.Command(invocation.Command, invocation.Arguments...)
+	if environment := invocation.EnvironmentEntries(); len(environment) > 0 {
+		process.Env = append(os.Environ(), environment...)
 	}
-
-	switch {
-	case platform == "windows" && isPowerShell(shellPath):
-		encodedArguments, _ := json.Marshal(append([]string{}, arguments...))
-		process := exec.Command(shellPath, "-NoLogo", "-Command", `$taskaiArguments = ConvertFrom-Json -InputObject $env:TASKAI_EXEC_ARGUMENTS; & $env:TASKAI_EXEC_COMMAND @($taskaiArguments)`)
-		process.Env = append(os.Environ(), "TASKAI_EXEC_COMMAND="+command, "TASKAI_EXEC_ARGUMENTS="+string(encodedArguments))
-		return process
-	case platform == "windows" && shellName(shellPath) == "cmd":
-		shellArguments := append([]string{"/C", command}, arguments...)
-		return exec.Command(shellPath, shellArguments...)
-	case platform != "windows" && shellName(shellPath) == "fish":
-		shellArguments := append([]string{"-ic", "exec $argv[2..-1]", shellPath, command}, arguments...)
-		return exec.Command(shellPath, shellArguments...)
-	default:
-		shellArguments := append([]string{"-ic", `exec "$@"`, shellPath, command}, arguments...)
-		return exec.Command(shellPath, shellArguments...)
-	}
+	return process
 }
 
 func configureCommandProcess(process *exec.Cmd, directory string, environment []string) {
@@ -1625,16 +1652,4 @@ func configureCommandProcess(process *exec.Cmd, directory string, environment []
 		process.Env = os.Environ()
 	}
 	process.Env = append(process.Env, environment...)
-}
-
-func isPowerShell(shellPath string) bool {
-	name := shellName(shellPath)
-	return name == "powershell" || name == "pwsh"
-}
-
-func shellName(shellPath string) string {
-	if index := strings.LastIndexAny(shellPath, `/\\`); index >= 0 {
-		shellPath = shellPath[index+1:]
-	}
-	return strings.TrimSuffix(strings.ToLower(shellPath), ".exe")
 }
