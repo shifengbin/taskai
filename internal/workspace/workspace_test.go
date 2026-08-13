@@ -560,6 +560,94 @@ func TestRemoveRefusesFallbackWhenOwnershipClaimIsCorrupted(t *testing.T) {
 	}
 }
 
+func TestRemoveOwnedRecoversAfterQuarantineWasRemovedBeforeClaimCleanup(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspaces")
+	token, err := NewOwnershipToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipToken() error = %v", err)
+	}
+	created, err := CreateOwned(root, "task-1", token)
+	if err != nil {
+		t.Fatalf("CreateOwned() error = %v", err)
+	}
+	metadataPath := filepath.Join(root, ownershipMetadataDirectory)
+	claimPath, _, quarantinePath, err := ownershipArtifactPaths(metadataPath, token)
+	if err != nil {
+		t.Fatalf("ownershipArtifactPaths() error = %v", err)
+	}
+	cleanupClaimPath := claimPath + ".cleanup"
+	if err := renameNoReplace(created.Path, quarantinePath); err != nil {
+		t.Fatalf("rename workspace to quarantine error = %v", err)
+	}
+	if err := renameNoReplace(claimPath, cleanupClaimPath); err != nil {
+		t.Fatalf("rename claim to cleanup marker error = %v", err)
+	}
+	if err := os.RemoveAll(quarantinePath); err != nil {
+		t.Fatalf("RemoveAll() quarantine error = %v", err)
+	}
+	if err := os.Mkdir(created.Path, 0o700); err != nil {
+		t.Fatalf("Mkdir() replacement error = %v", err)
+	}
+	replacementMarker := filepath.Join(created.Path, "preserved.txt")
+	if err := os.WriteFile(replacementMarker, []byte("preserved"), 0o600); err != nil {
+		t.Fatalf("WriteFile() replacement marker error = %v", err)
+	}
+
+	removed, err := RemoveOwned(root, created.Path, "task-1", token)
+	if err != nil {
+		t.Fatalf("RemoveOwned() error = %v", err)
+	}
+	if !removed {
+		t.Fatal("RemoveOwned() removed = false")
+	}
+	if contents, err := os.ReadFile(replacementMarker); err != nil || string(contents) != "preserved" {
+		t.Fatalf("后来占位目录被修改: contents=%q err=%v", contents, err)
+	}
+	assertPathMissing(t, cleanupClaimPath)
+}
+
+func TestCreateOwnedRecoversCleanupMarkerBeforeReusingOccupiedTarget(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspaces")
+	token, err := NewOwnershipToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipToken() error = %v", err)
+	}
+	workspacePath, stagingPath, claimPath := stageOwnedWorkspaceForTest(t, root, "task-1", token)
+	_, _, quarantinePath, err := ownershipArtifactPaths(filepath.Dir(claimPath), token)
+	if err != nil {
+		t.Fatalf("ownershipArtifactPaths() error = %v", err)
+	}
+	cleanupClaimPath := claimPath + ".cleanup"
+	if err := renameNoReplace(stagingPath, quarantinePath); err != nil {
+		t.Fatalf("rename staging to quarantine error = %v", err)
+	}
+	if err := renameNoReplace(claimPath, cleanupClaimPath); err != nil {
+		t.Fatalf("rename claim to cleanup marker error = %v", err)
+	}
+	if err := os.RemoveAll(quarantinePath); err != nil {
+		t.Fatalf("RemoveAll() quarantine error = %v", err)
+	}
+	if err := os.Mkdir(workspacePath, 0o700); err != nil {
+		t.Fatalf("Mkdir() occupied target error = %v", err)
+	}
+	markerPath := filepath.Join(workspacePath, "preserved.txt")
+	if err := os.WriteFile(markerPath, []byte("preserved"), 0o600); err != nil {
+		t.Fatalf("WriteFile() marker error = %v", err)
+	}
+
+	result, err := CreateOwned(root, "task-1", token)
+	if err != nil {
+		t.Fatalf("CreateOwned() error = %v", err)
+	}
+	if result.Created {
+		t.Fatal("CreateOwned() Created = true")
+	}
+	if contents, err := os.ReadFile(markerPath); err != nil || string(contents) != "preserved" {
+		t.Fatalf("复用目录被修改: contents=%q err=%v", contents, err)
+	}
+	assertPathMissing(t, cleanupClaimPath)
+}
+
 func TestPathExistsCheckedDoesNotTreatFilesystemErrorsAsMissing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "parent", "task-1")
 	if err := os.MkdirAll(path, 0o700); err != nil {

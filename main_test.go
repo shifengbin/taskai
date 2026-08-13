@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func TestApplicationOptionsIsolateDifferentDataDirectories(t *testing.T) {
 	}
 }
 
-func TestApplicationInstanceLockRejectsSecondProcessBeforeRepositoryStartup(t *testing.T) {
+func TestApplicationInstanceLockRejectsSecondAcquisitionBeforeRepositoryStartup(t *testing.T) {
 	dataDirectory := filepath.Join(t.TempDir(), "taskai")
 	first, err := acquireApplicationInstanceLock(dataDirectory)
 	if err != nil {
@@ -59,5 +60,44 @@ func TestApplicationInstanceLockRejectsSecondProcessBeforeRepositoryStartup(t *t
 	}
 	if err := third.Close(); err != nil {
 		t.Fatalf("third Close() error = %v", err)
+	}
+}
+
+func TestResolveApplicationDataDirectoryHoldsCoordinationLockBeforeResolverRuns(t *testing.T) {
+	lockDirectory := filepath.Join(t.TempDir(), "coordination")
+	resolverEntered := make(chan struct{})
+	releaseResolver := make(chan struct{})
+	firstResult := make(chan error, 1)
+	go func() {
+		_, lock, err := resolveApplicationDataDirectory(lockDirectory, func() string {
+			close(resolverEntered)
+			<-releaseResolver
+			return "/tmp/taskai-first"
+		})
+		if lock != nil {
+			_ = lock.Close()
+		}
+		firstResult <- err
+	}()
+	<-resolverEntered
+
+	var secondResolverCalls atomic.Int32
+	_, secondLock, err := resolveApplicationDataDirectory(lockDirectory, func() string {
+		secondResolverCalls.Add(1)
+		return "/tmp/taskai-second"
+	})
+	if secondLock != nil {
+		_ = secondLock.Close()
+	}
+	if err == nil {
+		t.Fatal("第二次启动在数据目录解析期间取得了协调锁")
+	}
+	if secondResolverCalls.Load() != 0 {
+		t.Fatal("未取得协调锁的启动仍执行了数据目录解析")
+	}
+
+	close(releaseResolver)
+	if err := <-firstResult; err != nil {
+		t.Fatalf("第一次启动解析失败: %v", err)
 	}
 }

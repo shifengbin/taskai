@@ -81,6 +81,10 @@ func CreateOwned(root, taskID, token string) (CreateResult, error) {
 	if err != nil {
 		return CreateResult{}, err
 	}
+	_, err = recoverCommittedOwnershipCleanup(claimPath, workspacePath, stagingPath, quarantinePath, taskID, token)
+	if err != nil {
+		return CreateResult{}, err
+	}
 
 	claim, found, err := readOwnershipClaim(claimPath, taskID, token)
 	if err != nil {
@@ -154,7 +158,7 @@ func CreateOwned(root, taskID, token string) (CreateResult, error) {
 			return CreateResult{}, fmt.Errorf("检查任务工作目录失败: %w", checkErr)
 		}
 		if workspaceExists {
-			if cleanupErr := cleanupOwnershipArtifacts(claimPath, stagingPath); cleanupErr != nil {
+			if cleanupErr := cleanupClaimedStaging(claimPath, stagingPath, quarantinePath, claim); cleanupErr != nil {
 				return CreateResult{}, fmt.Errorf("任务工作目录已被占用，清理创建凭据失败: %w", cleanupErr)
 			}
 			info, statErr := os.Lstat(workspacePath)
@@ -274,6 +278,13 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	cleanupRecovered, err := recoverCommittedOwnershipCleanup(claimPath, expectedWorkspacePath, stagingPath, quarantinePath, taskID, token)
+	if err != nil {
+		return false, err
+	}
+	if cleanupRecovered {
+		return true, nil
+	}
 	claim, found, err := readOwnershipClaim(claimPath, taskID, token)
 	if err != nil {
 		return false, err
@@ -298,11 +309,8 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 		return false, fmt.Errorf("验证隔离工作目录所有权失败: %w", err)
 	}
 	if quarantineMatches {
-		if err := os.RemoveAll(quarantinePath); err != nil {
-			return false, fmt.Errorf("删除隔离工作目录失败: %w", err)
-		}
-		if err := os.Remove(claimPath); err != nil && !os.IsNotExist(err) {
-			return false, fmt.Errorf("删除工作目录所有权凭据失败: %w", err)
+		if err := removeClaimedQuarantine(claimPath, quarantinePath, ""); err != nil {
+			return false, err
 		}
 		return true, nil
 	}
@@ -362,14 +370,8 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 		}
 		return false, fmt.Errorf("任务工作目录在删除时被替换，拒绝删除")
 	}
-	if err := os.RemoveAll(quarantinePath); err != nil {
-		if restoreErr := renameNoReplace(quarantinePath, absWorkspacePath); restoreErr != nil {
-			return false, fmt.Errorf("删除任务工作目录失败: %v；恢复目录失败: %v", err, restoreErr)
-		}
-		return false, fmt.Errorf("删除任务工作目录失败: %w", err)
-	}
-	if err := os.Remove(claimPath); err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("删除工作目录所有权凭据失败: %w", err)
+	if err := removeClaimedQuarantine(claimPath, quarantinePath, absWorkspacePath); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -389,16 +391,75 @@ func cleanupClaimedStaging(claimPath, stagingPath, quarantinePath string, claim 
 		}
 		return fmt.Errorf("待创建工作目录在清理时被替换")
 	}
-	if err := os.RemoveAll(quarantinePath); err != nil {
-		if restoreErr := renameNoReplace(quarantinePath, stagingPath); restoreErr != nil {
-			return fmt.Errorf("清理待创建工作目录失败: %v；恢复失败: %v", err, restoreErr)
-		}
-		return fmt.Errorf("清理待创建工作目录失败: %w", err)
+	return removeClaimedQuarantine(claimPath, quarantinePath, stagingPath)
+}
+
+func removeClaimedQuarantine(claimPath, quarantinePath, restorePath string) error {
+	cleanupClaimPath := claimPath + ".cleanup"
+	if err := renameNoReplace(claimPath, cleanupClaimPath); err != nil {
+		return fmt.Errorf("提交工作目录清理失败: %w", err)
 	}
-	if err := os.Remove(claimPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除工作目录所有权凭据失败: %w", err)
+	if err := os.RemoveAll(quarantinePath); err != nil {
+		claimRestoreErr := renameNoReplace(cleanupClaimPath, claimPath)
+		var directoryRestoreErr error
+		if restorePath != "" {
+			directoryRestoreErr = renameNoReplace(quarantinePath, restorePath)
+		}
+		if claimRestoreErr != nil || directoryRestoreErr != nil {
+			return fmt.Errorf("删除隔离工作目录失败: %v；恢复凭据失败: %v；恢复目录失败: %v", err, claimRestoreErr, directoryRestoreErr)
+		}
+		return fmt.Errorf("删除隔离工作目录失败: %w", err)
+	}
+	if err := os.Remove(cleanupClaimPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("删除工作目录清理凭据失败: %w", err)
 	}
 	return nil
+}
+
+func recoverCommittedOwnershipCleanup(claimPath, workspacePath, stagingPath, quarantinePath, taskID, token string) (bool, error) {
+	cleanupClaimPath := claimPath + ".cleanup"
+	claim, found, err := readOwnershipClaim(cleanupClaimPath, taskID, token)
+	if err != nil || !found {
+		return found, err
+	}
+
+	for _, candidate := range []struct {
+		path       string
+		quarantine bool
+	}{
+		{path: quarantinePath, quarantine: true},
+		{path: stagingPath},
+		{path: workspacePath},
+	} {
+		matches, matchErr := directoryMatchesClaim(candidate.path, claim)
+		if matchErr != nil {
+			return false, fmt.Errorf("恢复工作目录清理时验证所有权失败: %w", matchErr)
+		}
+		if matches {
+			if !candidate.quarantine {
+				if err := renameNoReplace(candidate.path, quarantinePath); err != nil {
+					return false, fmt.Errorf("恢复工作目录清理时隔离目录失败: %w", err)
+				}
+			}
+			if err := os.RemoveAll(quarantinePath); err != nil {
+				return false, fmt.Errorf("恢复工作目录清理失败: %w", err)
+			}
+			break
+		}
+		if candidate.quarantine || candidate.path == stagingPath {
+			exists, existsErr := pathExistsChecked(candidate.path)
+			if existsErr != nil {
+				return false, fmt.Errorf("恢复工作目录清理时检查隔离路径失败: %w", existsErr)
+			}
+			if exists {
+				return false, fmt.Errorf("恢复工作目录清理时隔离路径已被替换")
+			}
+		}
+	}
+	if err := os.Remove(cleanupClaimPath); err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("完成工作目录清理凭据回收失败: %w", err)
+	}
+	return true, nil
 }
 
 func ensureOwnershipMetadataDirectory(root string) (string, error) {
@@ -657,16 +718,6 @@ func removeUnclaimedStaging(path string) error {
 	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("清理残留待创建工作目录失败: %w", err)
-	}
-	return nil
-}
-
-func cleanupOwnershipArtifacts(claimPath, stagingPath string) error {
-	if err := os.RemoveAll(stagingPath); err != nil {
-		return err
-	}
-	if err := os.Remove(claimPath); err != nil && !os.IsNotExist(err) {
-		return err
 	}
 	return nil
 }

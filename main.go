@@ -8,6 +8,8 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+
+	"taskai/internal/appdata"
 )
 
 //go:embed all:frontend/dist
@@ -16,8 +18,7 @@ var assets embed.FS
 const taskAISingleInstanceID = "com.taskai.desktop"
 
 func main() {
-	dataDirectory := defaultDataDirectory()
-	instanceLock, err := acquireApplicationInstanceLock(dataDirectory)
+	dataDirectory, instanceLock, err := resolveApplicationDataDirectory(appdata.CoordinationDirectory(), defaultDataDirectory)
 	if err != nil {
 		println("Error:", err.Error())
 		return
@@ -31,6 +32,14 @@ func main() {
 	if err != nil {
 		println("Error:", err.Error())
 	}
+}
+
+func resolveApplicationDataDirectory(coordinationDirectory string, resolve func() string) (string, *applicationInstanceLock, error) {
+	instanceLock, err := acquireApplicationInstanceLock(coordinationDirectory)
+	if err != nil {
+		return "", nil, err
+	}
+	return resolve(), instanceLock, nil
 }
 
 func applicationOptions(app *App, dataDirectory string) *options.App {

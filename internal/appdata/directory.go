@@ -38,6 +38,16 @@ func DefaultDirectory() string {
 	})
 }
 
+// CoordinationDirectory is stable across the macOS data-directory migration.
+// Holding its instance lock serializes migration before the final directory is chosen.
+func CoordinationDirectory() string {
+	configurationDirectory, err := os.UserConfigDir()
+	if err == nil && configurationDirectory != "" {
+		return filepath.Join(configurationDirectory, "taskai")
+	}
+	return filepath.Join(os.TempDir(), "taskai")
+}
+
 func resolveDefaultDirectory(operatingSystem string, dependencies directoryDependencies) string {
 	if dependencies.userConfigDir == nil {
 		dependencies.userConfigDir = os.UserConfigDir
