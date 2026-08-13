@@ -196,7 +196,6 @@ export interface TerminalRecord {
   id: string
   taskId: string
   state: TerminalState
-  disableTaskAIMouseClipboard?: boolean
   title?: string
   alias?: string
   command?: string
@@ -274,7 +273,6 @@ export interface TaskMenuItem {
   command?: string
   arguments?: string[]
   showTerminal: boolean
-  disableTaskAIMouseClipboard?: boolean
   beforeScript?: TaskScript
   afterScript?: TaskScript
 }
