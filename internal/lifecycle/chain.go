@@ -36,31 +36,38 @@ func (function CommandExecutorFunc) Run(invocation CommandInvocation) (CommandRe
 }
 
 type CommandChainRequest struct {
-	Task           task.Task
-	TemplateFields map[string]any
-	Directory      string
-	WorkspaceRoot  string
-	WorkspacePath  string
-	ShellPath      string
-	Environment    []string
-	Input          []byte
-	Commands       []settings.LifecycleCommand
-	DefaultBranch  string
-	OnProgress     func(index, count int, command settings.LifecycleCommand)
+	Task               task.Task
+	TemplateFields     map[string]any
+	Directory          string
+	WorkspaceRoot      string
+	WorkspacePath      string
+	WorkspaceToken     string
+	ShellPath          string
+	Environment        []string
+	Input              []byte
+	Commands           []settings.LifecycleCommand
+	DefaultBranch      string
+	OnProgress         func(index, count int, command settings.LifecycleCommand)
+	OnWorkspaceCreated func() error
 }
 
 type CommandChainRunner struct {
 	executor        CommandExecutor
 	gitExecutor     GitExecutor
-	createWorkspace func(root, taskID string) (string, error)
+	createWorkspace func(root, taskID, token string) (workspace.CreateResult, error)
 	removeWorkspace func(root, path, taskID string) error
 }
 
 func NewCommandChainRunner(executor CommandExecutor) *CommandChainRunner {
 	return &CommandChainRunner{
-		executor:        executor,
-		gitExecutor:     NewDirectGitExecutor(),
-		createWorkspace: workspace.Create,
+		executor:    executor,
+		gitExecutor: NewDirectGitExecutor(),
+		createWorkspace: func(root, taskID, token string) (workspace.CreateResult, error) {
+			if token == "" {
+				return workspace.Create(root, taskID)
+			}
+			return workspace.CreateOwned(root, taskID, token)
+		},
 		removeWorkspace: workspace.Remove,
 	}
 }
@@ -90,8 +97,17 @@ func (runner *CommandChainRunner) Run(request CommandChainRequest) ([]byte, erro
 			}
 			output = result.Output
 		case settings.LifecycleCommandKindCreateWorkspace:
-			if _, err := runner.createWorkspace(request.WorkspaceRoot, request.Task.ID); err != nil {
+			result, err := runner.createWorkspace(request.WorkspaceRoot, request.Task.ID, request.WorkspaceToken)
+			if err != nil {
 				return nil, commandError(command.Name, nil, err)
+			}
+			if result.Created && request.OnWorkspaceCreated != nil {
+				if err := request.OnWorkspaceCreated(); err != nil {
+					if removeErr := removeCreatedWorkspace(request.WorkspaceRoot, request.WorkspacePath, request.Task.ID, request.WorkspaceToken); removeErr != nil {
+						return nil, commandError(command.Name, nil, fmt.Errorf("%w；补偿删除工作目录失败: %v", err, removeErr))
+					}
+					return nil, commandError(command.Name, nil, err)
+				}
 			}
 		case settings.LifecycleCommandKindDeleteWorkspace:
 			if err := runner.removeWorkspace(request.WorkspaceRoot, request.WorkspacePath, request.Task.ID); err != nil {
@@ -118,6 +134,20 @@ func (runner *CommandChainRunner) Run(request CommandChainRequest) ([]byte, erro
 		}
 	}
 	return output, nil
+}
+
+func removeCreatedWorkspace(root, path, taskID, token string) error {
+	if token == "" {
+		return workspace.Remove(root, path, taskID)
+	}
+	removed, err := workspace.RemoveOwned(root, path, taskID, token)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return fmt.Errorf("找不到 TaskAI 创建的工作目录所有权凭据")
+	}
+	return nil
 }
 
 func (runner *CommandChainRunner) cloneGitRepositoryToTarget(request CommandChainRequest, arguments []string) error {

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 
 import {defaultTaskColor, defaultTaskMenuItems, terminalRealtimeStatus, type TaskMenuItem, type TaskRecord, type TaskStatus, type TerminalRecord} from '../types'
+import {canDeleteTaskRecord} from '../state'
 import {TerminalName} from './TerminalName'
 import {TerminalStatusDot} from './TerminalStatusDot'
 import {Checkbox, IconButton, Tabs, TabsList, TabsTrigger, cn} from './ui'
@@ -418,7 +419,7 @@ export function TaskTree({
           const dropPosition = dropTarget?.taskID === task.id ? dropTarget.position : undefined
 				const execution = task.lifecycleExecution
 					const locked = Boolean(execution)
-					const canSelectTaskForDeletion = selectingTasksForDeletion && !locked && Boolean(onToggleTaskDeletion)
+					const canSelectTaskForDeletion = selectingTasksForDeletion && canDeleteTaskRecord(task) && Boolean(onToggleTaskDeletion)
 					const isTaskSelectedForDeletion = canSelectTaskForDeletion && selectedTaskIDs.includes(task.id)
 					const isTaskRowSelected = selectingTasksForDeletion ? isTaskSelectedForDeletion : isSelectedTask
 				const executionLabel = execution ? `${lifecycleHookLabel(execution.hook)} · ${execution.currentCommandName || '命令'} ${execution.currentIndex}/${execution.commandCount}` : ''

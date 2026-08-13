@@ -115,6 +115,102 @@ func TestCommandChainRunnerRunsDirectoryCommandsAndPreservesInput(t *testing.T) 
 	}
 }
 
+func TestCommandChainRunnerPersistsCreatedWorkspaceBeforeContinuing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspaces")
+	path := filepath.Join(root, "task-1")
+	workspaceRecorded := false
+	customRan := false
+	runner := NewCommandChainRunner(CommandExecutorFunc(func(CommandInvocation) (CommandResult, error) {
+		customRan = true
+		if !workspaceRecorded {
+			t.Fatal("自定义命令在工作目录归属持久化前执行")
+		}
+		return CommandResult{}, nil
+	}))
+
+	_, err := runner.Run(CommandChainRequest{
+		Task:          task.Task{ID: "task-1"},
+		Directory:     path,
+		WorkspaceRoot: root,
+		WorkspacePath: path,
+		OnWorkspaceCreated: func() error {
+			workspaceRecorded = true
+			return nil
+		},
+		Commands: []settings.LifecycleCommand{
+			{ID: settings.LifecycleCommandCreateWorkspaceID, Kind: settings.LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录"},
+			{ID: "custom", Kind: settings.LifecycleCommandKindCustom, Name: "自定义", Command: "custom"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !workspaceRecorded || !customRan {
+		t.Fatalf("workspaceRecorded=%t customRan=%t", workspaceRecorded, customRan)
+	}
+}
+
+func TestCommandChainRunnerDoesNotClaimReusedWorkspace(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspaces")
+	path := filepath.Join(root, "task-1")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	callbackCalled := false
+	runner := NewCommandChainRunner(nil)
+
+	_, err := runner.Run(CommandChainRequest{
+		Task:          task.Task{ID: "task-1"},
+		Directory:     path,
+		WorkspaceRoot: root,
+		WorkspacePath: path,
+		OnWorkspaceCreated: func() error {
+			callbackCalled = true
+			return nil
+		},
+		Commands: []settings.LifecycleCommand{{ID: settings.LifecycleCommandCreateWorkspaceID, Kind: settings.LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录"}},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if callbackCalled {
+		t.Fatal("复用已有目录时调用了新建归属回调")
+	}
+}
+
+func TestCommandChainRunnerRemovesNewWorkspaceWhenOwnershipPersistenceFails(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspaces")
+	path := filepath.Join(root, "task-1")
+	customRan := false
+	runner := NewCommandChainRunner(CommandExecutorFunc(func(CommandInvocation) (CommandResult, error) {
+		customRan = true
+		return CommandResult{}, nil
+	}))
+
+	_, err := runner.Run(CommandChainRequest{
+		Task:          task.Task{ID: "task-1"},
+		Directory:     path,
+		WorkspaceRoot: root,
+		WorkspacePath: path,
+		OnWorkspaceCreated: func() error {
+			return errors.New("保存目录归属失败")
+		},
+		Commands: []settings.LifecycleCommand{
+			{ID: settings.LifecycleCommandCreateWorkspaceID, Kind: settings.LifecycleCommandKindCreateWorkspace, Name: "创建任务工作目录"},
+			{ID: "custom", Kind: settings.LifecycleCommandKindCustom, Name: "自定义", Command: "custom"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "保存目录归属失败") {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if customRan {
+		t.Fatal("目录归属持久化失败后仍执行后续命令")
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("归属持久化失败后目录仍存在: %v", statErr)
+	}
+}
+
 func TestCommandChainRunnerClonesSpecifiedRepositoryDirectlyToTarget(t *testing.T) {
 	workspacePath := filepath.Join(t.TempDir(), "task-1")
 	if err := os.MkdirAll(workspacePath, 0o700); err != nil {

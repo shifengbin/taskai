@@ -69,6 +69,19 @@ describe('clampTaskTreeWidth', () => {
 		expect(settings.defaultLifecyclePresetId).toBe('deploy')
 	})
 
+	it('Wails 模型保留开始前任务目录归属快照', () => {
+		const execution = wailsTask.LifecycleExecution.createFrom({
+			hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 2, state: 'failed',
+			workspaceRoot: '/tmp/workspaces', workspacePath: '/tmp/workspaces/task-1', workspaceOwnership: 'created',
+			workspaceToken: 'ownership-token',
+		})
+
+		expect(execution.workspaceRoot).toBe('/tmp/workspaces')
+		expect(execution.workspacePath).toBe('/tmp/workspaces/task-1')
+		expect(execution.workspaceOwnership).toBe('created')
+		expect(execution.workspaceToken).toBe('ownership-token')
+	})
+
 	it('Wails 模型转换终端备注模板', () => {
 		const settings = wailsSettings.Settings.createFrom({
 			terminalNoteTemplate: {originalPrefix: '原文：', notePrefix: '备注：', listSuffix: '请处理'},

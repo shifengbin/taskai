@@ -1374,7 +1374,7 @@ func TestRepositoryMarksInterruptedLifecycleExecutionAsFailed(t *testing.T) {
   "tasks": [{
     "id":"running","title":"执行中","color":"#4f46e5","status":"running","extraInfo":[],
     "lifecycleChains":{"postStart":"chain"},
-    "lifecycleExecution":{"runId":"restart-run","revision":4,"hook":"postStart","chainId":"chain","currentCommandId":"command","currentCommandName":"初始化工作区","currentIndex":1,"commandCount":1,"state":"running"}
+    "lifecycleExecution":{"runId":"restart-run","revision":4,"hook":"beforeStart","chainId":"chain","currentCommandId":"command","currentCommandName":"初始化工作区","currentIndex":1,"commandCount":1,"state":"running","workspaceRoot":"/tmp/taskai-workspaces","workspacePath":"/tmp/taskai-workspaces/running","workspaceOwnership":"created","workspaceToken":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
   }],
   "settings": {"workspaceRoot":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `","taskTreeWidth":360,
     "lifecycleCommands":[{"id":"command","kind":"custom","name":"命令","command":"echo","arguments":[]}],
@@ -1390,8 +1390,42 @@ func TestRepositoryMarksInterruptedLifecycleExecutionAsFailed(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	execution := data.Tasks[0].LifecycleExecution
-	if execution == nil || execution.State != task.LifecycleExecutionFailed || execution.Error == "" || execution.RunID != "restart-run" || execution.Revision != 4 || execution.CurrentCommandName != "初始化工作区" {
+	if execution == nil || execution.State != task.LifecycleExecutionFailed || execution.Error == "" || execution.RunID != "restart-run" || execution.Revision != 4 || execution.CurrentCommandName != "初始化工作区" || execution.WorkspaceRoot != "/tmp/taskai-workspaces" || execution.WorkspacePath != "/tmp/taskai-workspaces/running" || execution.WorkspaceOwnership != task.LifecycleWorkspaceCreated {
 		t.Fatalf("中断执行记录 = %#v", execution)
+	}
+}
+
+func TestRepositoryMigratesLegacyLifecycleWorkspaceOwnershipToUnknown(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [{
+    "id":"pending","title":"未执行","color":"#4f46e5","status":"pending","extraInfo":[],
+    "lifecycleChains":{"beforeStart":"chain"},
+    "lifecycleExecution":{"hook":"beforeStart","chainId":"chain","currentCommandId":"command","currentCommandName":"初始化工作区","currentIndex":1,"commandCount":1,"state":"failed"}
+  }],
+  "settings": {"workspaceRoot":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `","taskTreeWidth":360,
+    "lifecycleCommands":[{"id":"command","kind":"custom","name":"命令","command":"echo","arguments":[]}],
+    "lifecycleChains":[{"id":"chain","name":"链","commandIds":["command"]}],
+    "lifecycleDefaultChains":{}}
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	execution := data.Tasks[0].LifecycleExecution
+	if execution == nil || execution.WorkspaceOwnership != task.LifecycleWorkspaceUnknown {
+		t.Fatalf("旧执行记录目录归属 = %#v，期望 unknown", execution)
+	}
+	persisted, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(persisted), `"workspaceOwnership": "unknown"`) {
+		t.Fatalf("旧执行记录目录归属未回写: %s", persisted)
 	}
 }
 

@@ -627,6 +627,10 @@ export namespace task {
 	    commandCount: number;
 	    state: string;
 	    error?: string;
+	    workspaceRoot?: string;
+	    workspacePath?: string;
+	    workspaceOwnership?: string;
+	    workspaceToken?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new LifecycleExecution(source);
@@ -644,6 +648,10 @@ export namespace task {
 	        this.commandCount = source["commandCount"];
 	        this.state = source["state"];
 	        this.error = source["error"];
+	        this.workspaceRoot = source["workspaceRoot"];
+	        this.workspacePath = source["workspacePath"];
+	        this.workspaceOwnership = source["workspaceOwnership"];
+	        this.workspaceToken = source["workspaceToken"];
 	    }
 	}
 	export class TaskExtraInfo {

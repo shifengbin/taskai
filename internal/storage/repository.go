@@ -523,6 +523,44 @@ func (repository *Repository) SaveTaskSnapshot(tasks []task.Task) error {
 	return repository.Save(data)
 }
 
+func (repository *Repository) DeleteTasksIfUnchanged(expected map[string]task.Task) ([]task.Task, error) {
+	repository.mutationMu.Lock()
+	defer repository.mutationMu.Unlock()
+
+	data, err := repository.Load()
+	if err != nil {
+		return nil, err
+	}
+	for taskID, expectedTask := range expected {
+		found := false
+		for _, current := range data.Tasks {
+			if current.ID != taskID {
+				continue
+			}
+			found = true
+			if !sameJSON(current, expectedTask) {
+				return nil, fmt.Errorf("任务 %q 在删除过程中已发生变化", taskID)
+			}
+			break
+		}
+		if !found {
+			return nil, fmt.Errorf("task %q not found", taskID)
+		}
+	}
+
+	remaining := make([]task.Task, 0, len(data.Tasks)-len(expected))
+	for _, current := range data.Tasks {
+		if _, selected := expected[current.ID]; !selected {
+			remaining = append(remaining, current)
+		}
+	}
+	data.Tasks = remaining
+	if err := repository.Save(data); err != nil {
+		return nil, err
+	}
+	return remaining, nil
+}
+
 func normalizeDataForSave(data Data) (Data, bool, error) {
 	if data.ExtraInfos == nil {
 		data.ExtraInfos = []task.ExtraInfo{}

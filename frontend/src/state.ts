@@ -17,6 +17,22 @@ export interface RealtimeStatusUpdate {
   terminals: TerminalRecord[]
 }
 
+export function canDeleteTaskRecord(task: TaskRecord): boolean {
+	if (task.status !== 'pending' && task.status !== 'completed') {
+		return false
+	}
+	const execution = task.lifecycleExecution
+	if (!execution) {
+		return true
+	}
+	return task.status === 'pending'
+		&& execution.hook === 'beforeStart'
+		&& execution.state === 'failed'
+		&& (execution.workspaceOwnership === 'created' || execution.workspaceOwnership === 'not-created')
+		&& Boolean(execution.workspaceRoot?.trim())
+		&& Boolean(execution.workspacePath?.trim())
+}
+
 export function mergeLifecycleTask(tasks: TaskRecord[], incoming: TaskRecord): TaskRecord[] {
   return tasks.map((current) => current.id === incoming.id ? mergeLifecycleTaskRecord(current, incoming) : current)
 }

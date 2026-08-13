@@ -74,6 +74,7 @@ import {
   applyTerminalEvent,
 	bufferPendingRealtimeStatusEvent,
   bufferPendingTerminalEvent,
+	canDeleteTaskRecord,
   clearTaskTerminalTracking,
 	mergeLifecycleTask,
   mergePendingTerminalEvents,
@@ -442,7 +443,7 @@ export default function App() {
 	const canSelectTasksForDeletion = activeTaskStatus === 'pending' || activeTaskStatus === 'completed'
 	const deletionStatusLabel = activeTaskStatus === 'pending' ? '未执行' : '已完成'
 	const deletableTaskIDs = useMemo(() => tasks
-		.filter((task) => canSelectTasksForDeletion && task.status === activeTaskStatus && !task.lifecycleExecution)
+		.filter((task) => canSelectTasksForDeletion && task.status === activeTaskStatus && canDeleteTaskRecord(task))
 		.map((task) => task.id), [activeTaskStatus, canSelectTasksForDeletion, tasks])
 	const deletableTaskIDSet = useMemo(() => new Set(deletableTaskIDs), [deletableTaskIDs])
 	const selectedDeletableTaskIDs = useMemo(() => selectedTaskIDs
@@ -2210,7 +2211,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				<SnapDialogContent className="max-w-sm" showClose={false}>
 					<SnapDialogHeader><SnapDialogTitle>删除 {selectedDeletableTaskIDs.length} 个任务记录？</SnapDialogTitle></SnapDialogHeader>
 					<SnapDialogDescription>
-						此操作只会移除任务记录，不会删除工作目录或运行生命周期命令。此操作无法撤销。
+						普通任务只会移除任务记录。启动失败任务仅会清理由 TaskAI 实际新建的工作目录；未创建或复用的目录不会处理。不会运行生命周期命令。此操作无法撤销。
 					</SnapDialogDescription>
 					<SnapDialogFooter>
 						<SnapButton variant="ghost" onClick={() => setTaskDeletionOpen(false)}>取消</SnapButton>

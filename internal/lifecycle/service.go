@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,11 +21,12 @@ type Service struct {
 	repository           *storage.Repository
 	closer               TerminalCloser
 	now                  func() time.Time
-	lifecycleExecutionMu sync.Mutex
+	removeOwnedWorkspace func(root, path, taskID, token string) (bool, error)
+	taskMutationMu       sync.Mutex
 }
 
 func New(repository *storage.Repository, closer TerminalCloser, now func() time.Time) *Service {
-	return &Service{repository: repository, closer: closer, now: now}
+	return &Service{repository: repository, closer: closer, now: now, removeOwnedWorkspace: workspace.RemoveOwned}
 }
 
 func (service *Service) CreateTask(title, description, color string) (task.Task, error) {
@@ -52,6 +54,9 @@ func (service *Service) CreateTaskWithTemplateFields(title, description, color s
 }
 
 func (service *Service) createTask(title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string, useDefaults, includeTemplateFields bool) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -120,17 +125,18 @@ func (service *Service) DeleteTasks(taskIDs []string) ([]task.Task, error) {
 		return nil, fmt.Errorf("至少选择一个可删除任务")
 	}
 
-	service.lifecycleExecutionMu.Lock()
-	defer service.lifecycleExecutionMu.Unlock()
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
 
 	data, err := service.repository.Load()
 	if err != nil {
 		return nil, err
 	}
 
-	selected := make(map[string]bool, len(taskIDs))
+	selected := make(map[string]task.Task, len(taskIDs))
+	workspacesToCheck := make([]task.Task, 0)
 	for _, taskID := range taskIDs {
-		if selected[taskID] {
+		if _, duplicate := selected[taskID]; duplicate {
 			return nil, fmt.Errorf("删除任务包含重复任务: %q", taskID)
 		}
 		index, err := taskIndex(data.Tasks, taskID)
@@ -142,26 +148,43 @@ func (service *Service) DeleteTasks(taskIDs []string) ([]task.Task, error) {
 			return nil, fmt.Errorf("仅未执行或已完成任务可以删除")
 		}
 		if current.LifecycleExecution != nil {
-			return nil, fmt.Errorf("任务正在执行或等待重试命令链，暂不能删除")
+			execution := current.LifecycleExecution
+			if current.Status != task.StatusPending || execution.Hook != task.LifecycleHookBeforeStart || execution.State != task.LifecycleExecutionFailed {
+				return nil, fmt.Errorf("任务正在执行或等待重试命令链，暂不能删除")
+			}
+			switch execution.WorkspaceOwnership {
+			case task.LifecycleWorkspaceCreated:
+				workspacesToCheck = append(workspacesToCheck, current)
+			case task.LifecycleWorkspaceNotCreated:
+				workspacesToCheck = append(workspacesToCheck, current)
+			case task.LifecycleWorkspaceUnknown:
+				return nil, fmt.Errorf("任务工作目录归属未知，暂不能删除")
+			default:
+				return nil, fmt.Errorf("任务工作目录归属无效，暂不能删除")
+			}
 		}
-		selected[taskID] = true
+		selected[taskID] = current
+	}
+	for _, current := range workspacesToCheck {
+		execution := current.LifecycleExecution
+		removed, err := service.removeOwnedWorkspace(execution.WorkspaceRoot, execution.WorkspacePath, current.ID, execution.WorkspaceToken)
+		if err != nil {
+			return nil, fmt.Errorf("清理启动失败任务工作目录失败: %w", err)
+		}
+		if !removed && execution.WorkspaceOwnership == task.LifecycleWorkspaceCreated {
+			if _, statErr := os.Lstat(execution.WorkspacePath); statErr == nil || !os.IsNotExist(statErr) {
+				return nil, fmt.Errorf("清理启动失败任务工作目录失败: 找不到匹配的 TaskAI 所有权凭据")
+			}
+		}
 	}
 
-	remaining := make([]task.Task, 0, len(data.Tasks)-len(selected))
-	for _, current := range data.Tasks {
-		if !selected[current.ID] {
-			remaining = append(remaining, current)
-		}
-	}
-	data.Tasks = remaining
-	if err := service.repository.SaveTaskSnapshot(data.Tasks); err != nil {
-		return nil, err
-	}
-
-	return data.Tasks, nil
+	return service.repository.DeleteTasksIfUnchanged(selected)
 }
 
 func (service *Service) ReorderTasks(status task.Status, taskIDs []string) ([]task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	if !isTaskStatus(status) {
 		return nil, fmt.Errorf("不支持的任务状态: %q", status)
 	}
@@ -204,6 +227,9 @@ func (service *Service) ReorderTasks(status task.Status, taskIDs []string) ([]ta
 }
 
 func (service *Service) SetTaskShelved(taskID string, shelved bool) ([]task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return nil, err
@@ -257,6 +283,9 @@ func (service *Service) SetTaskShelved(taskID string, shelved bool) ([]task.Task
 }
 
 func (service *Service) UpdateTask(taskID, title, description, color string) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -277,6 +306,9 @@ func (service *Service) UpdateTask(taskID, title, description, color string) (ta
 }
 
 func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, color string, extraInfo []task.TaskExtraInfo) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -305,6 +337,9 @@ func (service *Service) UpdateTaskWithExtraInfo(taskID, title, description, colo
 }
 
 func (service *Service) UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -337,6 +372,9 @@ func (service *Service) UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, 
 }
 
 func (service *Service) UpdateTaskWithTemplateFields(taskID, title, description, color string, templateFields map[string]any) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -361,6 +399,9 @@ func (service *Service) UpdateTaskWithTemplateFields(taskID, title, description,
 }
 
 func (service *Service) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, chains map[task.LifecycleHook]string) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -401,6 +442,9 @@ func (service *Service) UpdateTaskWithExtraInfoAndLifecycleChains(taskID, title,
 }
 
 func (service *Service) UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(taskID, title, description, color string, extraInfo []task.TaskExtraInfo, templateFields map[string]any, chains map[task.LifecycleHook]string) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -445,8 +489,8 @@ func (service *Service) UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
 }
 
 func (service *Service) UpdateLifecycleExecution(taskID string, execution *task.LifecycleExecution) (task.Task, error) {
-	service.lifecycleExecutionMu.Lock()
-	defer service.lifecycleExecutionMu.Unlock()
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
 
 	return service.updateLifecycleExecution(taskID, execution)
 }
@@ -460,8 +504,8 @@ func (service *Service) UpdateLifecycleExecutionIfNewer(taskID string, execution
 		return task.Task{}, false, fmt.Errorf("条件更新生命周期执行记录需要运行标识和版本")
 	}
 
-	service.lifecycleExecutionMu.Lock()
-	defer service.lifecycleExecutionMu.Unlock()
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
 
 	data, err := service.repository.Load()
 	if err != nil {
@@ -488,8 +532,8 @@ func (service *Service) ClearLifecycleExecutionIfCurrent(taskID, runID string, r
 		return task.Task{}, false, fmt.Errorf("条件清除生命周期执行记录需要运行标识和版本")
 	}
 
-	service.lifecycleExecutionMu.Lock()
-	defer service.lifecycleExecutionMu.Unlock()
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
 
 	data, err := service.repository.Load()
 	if err != nil {
@@ -769,6 +813,9 @@ func (service *Service) PrepareStartTask(taskID string) (task.Task, error) {
 }
 
 func (service *Service) CommitStartTask(prepared task.Task) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err
@@ -795,6 +842,9 @@ func (service *Service) CommitStartTask(prepared task.Task) (task.Task, error) {
 }
 
 func (service *Service) FinishTask(taskID string) (task.Task, error) {
+	service.taskMutationMu.Lock()
+	defer service.taskMutationMu.Unlock()
+
 	data, err := service.repository.Load()
 	if err != nil {
 		return task.Task{}, err

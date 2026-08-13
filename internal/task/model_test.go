@@ -153,6 +153,115 @@ func TestTaskLifecycleChainsAndExecutionNormalizeForPersistence(t *testing.T) {
 	}
 }
 
+func TestLifecycleExecutionNormalizesWorkspaceOwnershipAndSnapshots(t *testing.T) {
+	execution, err := NormalizeLifecycleExecution(&LifecycleExecution{
+		Hook:               LifecycleHookBeforeStart,
+		ChainID:            "prepare",
+		RunID:              "run-1",
+		Revision:           2,
+		CurrentCommandID:   "create-workspace",
+		CurrentCommandName: "创建任务工作目录",
+		CurrentIndex:       1,
+		CommandCount:       2,
+		State:              LifecycleExecutionFailed,
+		WorkspaceRoot:      " /tmp/taskai-workspaces ",
+		WorkspacePath:      " /tmp/taskai-workspaces/task-1 ",
+		WorkspaceOwnership: LifecycleWorkspaceCreated,
+		WorkspaceToken:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	})
+	if err != nil {
+		t.Fatalf("NormalizeLifecycleExecution() error = %v", err)
+	}
+	if execution.WorkspaceRoot != "/tmp/taskai-workspaces" || execution.WorkspacePath != "/tmp/taskai-workspaces/task-1" || execution.WorkspaceOwnership != LifecycleWorkspaceCreated || execution.WorkspaceToken == "" {
+		t.Fatalf("工作目录归属未规范化: %#v", execution)
+	}
+
+	encoded, err := json.Marshal(execution)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded LifecycleExecution
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if decoded.WorkspaceRoot != execution.WorkspaceRoot || decoded.WorkspacePath != execution.WorkspacePath || decoded.WorkspaceOwnership != LifecycleWorkspaceCreated || decoded.WorkspaceToken != execution.WorkspaceToken {
+		t.Fatalf("工作目录归属未持久化: %#v", decoded)
+	}
+}
+
+func TestLegacyLifecycleExecutionDefaultsWorkspaceOwnershipToUnknown(t *testing.T) {
+	var legacy LifecycleExecution
+	if err := json.Unmarshal([]byte(`{"hook":"beforeStart","chainId":"prepare","currentIndex":1,"commandCount":1,"state":"failed"}`), &legacy); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	normalized, err := NormalizeLifecycleExecution(&legacy)
+	if err != nil {
+		t.Fatalf("NormalizeLifecycleExecution() error = %v", err)
+	}
+	if normalized.WorkspaceOwnership != LifecycleWorkspaceUnknown {
+		t.Fatalf("旧执行记录目录归属 = %q，期望 %q", normalized.WorkspaceOwnership, LifecycleWorkspaceUnknown)
+	}
+}
+
+func TestLegacyExplicitWorkspaceOwnershipWithoutTokenDowngradesToUnknown(t *testing.T) {
+	normalized, err := NormalizeLifecycleExecution(&LifecycleExecution{
+		Hook:               LifecycleHookBeforeStart,
+		ChainID:            "prepare",
+		CurrentIndex:       1,
+		CommandCount:       1,
+		State:              LifecycleExecutionFailed,
+		WorkspaceRoot:      "/tmp/workspaces",
+		WorkspacePath:      "/tmp/workspaces/task-1",
+		WorkspaceOwnership: LifecycleWorkspaceCreated,
+	})
+	if err != nil {
+		t.Fatalf("NormalizeLifecycleExecution() error = %v", err)
+	}
+	if normalized.WorkspaceOwnership != LifecycleWorkspaceUnknown {
+		t.Fatalf("缺少令牌的旧归属 = %q，期望 unknown", normalized.WorkspaceOwnership)
+	}
+}
+
+func TestNewLifecycleWorkspaceTokenCreatesValidRandomToken(t *testing.T) {
+	first, err := NewLifecycleWorkspaceToken()
+	if err != nil {
+		t.Fatalf("NewLifecycleWorkspaceToken() error = %v", err)
+	}
+	second, err := NewLifecycleWorkspaceToken()
+	if err != nil {
+		t.Fatalf("NewLifecycleWorkspaceToken() error = %v", err)
+	}
+	if len(first) != 64 || len(second) != 64 || first == second {
+		t.Fatalf("工作目录令牌无效: first=%q second=%q", first, second)
+	}
+}
+
+func TestLifecycleExecutionRejectsInvalidWorkspaceOwnership(t *testing.T) {
+	_, err := NormalizeLifecycleExecution(&LifecycleExecution{
+		Hook:               LifecycleHookBeforeStart,
+		ChainID:            "prepare",
+		CurrentIndex:       1,
+		CommandCount:       1,
+		State:              LifecycleExecutionFailed,
+		WorkspaceOwnership: "external",
+	})
+	if err == nil {
+		t.Fatal("NormalizeLifecycleExecution() error = nil，期望拒绝未知目录归属")
+	}
+
+	_, err = NormalizeLifecycleExecution(&LifecycleExecution{
+		Hook:               LifecycleHookBeforeStart,
+		ChainID:            "prepare",
+		CurrentIndex:       1,
+		CommandCount:       1,
+		State:              LifecycleExecutionFailed,
+		WorkspaceOwnership: LifecycleWorkspaceCreated,
+	})
+	if err == nil {
+		t.Fatal("NormalizeLifecycleExecution() error = nil，期望拒绝缺少路径快照的明确目录归属")
+	}
+}
+
 func TestTaskLifecycleValidationRejectsUnknownHookAndInvalidProgress(t *testing.T) {
 	if _, err := NormalizeLifecycleChains(map[LifecycleHook]string{"unknown": "chain-1"}); err == nil {
 		t.Fatal("NormalizeLifecycleChains() error = nil，期望拒绝未知钩子")
