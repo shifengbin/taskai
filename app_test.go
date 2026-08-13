@@ -365,6 +365,71 @@ func TestAppDeletesPendingTasksAndClearsRealtimeStatus(t *testing.T) {
 	}
 }
 
+func TestAppDeletesFailedBeforeStartTaskAndClearsRealtimeStatus(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	configureLifecycleFailure(t, app, task.LifecycleHookBeforeStart)
+	created, err := app.CreateTask("启动失败待删除", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	app.realtime.RegisterTask(created.ID)
+	if _, err := app.StartTask(created.ID); err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.LifecycleExecution != nil && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
+
+	remaining, err := app.DeleteTasks([]string{created.ID})
+	if err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("DeleteTasks() tasks = %#v，期望为空", remaining)
+	}
+	if got := app.realtime.Snapshot(); len(got.Tasks) != 0 {
+		t.Fatalf("DeleteTasks() realtime status = %#v", got)
+	}
+}
+
+func TestAppKeepsFailedBeforeStartTaskAndRealtimeStatusWhenWorkspaceCleanupFails(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	created, err := app.CreateTask("危险目录待删除", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	root := t.TempDir()
+	unsafePath := filepath.Join(t.TempDir(), created.ID)
+	if err := os.MkdirAll(unsafePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	data, err := app.repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Tasks[0].LifecycleExecution = &task.LifecycleExecution{
+		RunID: "failed-before-start", Revision: 2, Hook: task.LifecycleHookBeforeStart, ChainID: "prepare",
+		CurrentIndex: 1, CommandCount: 1, State: task.LifecycleExecutionFailed,
+		WorkspaceRoot: root, WorkspacePath: unsafePath, WorkspaceOwnership: task.LifecycleWorkspaceCreated,
+		WorkspaceToken: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	}
+	if err := app.repository.SaveTaskSnapshot(data.Tasks); err != nil {
+		t.Fatalf("SaveTaskSnapshot() error = %v", err)
+	}
+	app.realtime.RegisterTask(created.ID)
+
+	if _, err := app.DeleteTasks([]string{created.ID}); err == nil {
+		t.Fatal("DeleteTasks() error = nil")
+	}
+	persisted, err := app.tasks.GetTask(created.ID)
+	if err != nil || persisted.LifecycleExecution == nil {
+		t.Fatalf("清理失败后任务未保留: task=%#v err=%v", persisted, err)
+	}
+	if got := app.realtime.Snapshot(); len(got.Tasks) != 1 || got.Tasks[0].TaskID != created.ID {
+		t.Fatalf("清理失败后实时状态 = %#v", got)
+	}
+}
+
 func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	current, err := app.GetSettings()
@@ -395,6 +460,72 @@ func TestAppKeepsPendingTaskWhenBeforeStartChainFails(t *testing.T) {
 	})
 	if updated.Status != task.StatusPending || updated.LifecycleExecution == nil || updated.LifecycleExecution.Hook != task.LifecycleHookBeforeStart || updated.LifecycleExecution.State != task.LifecycleExecutionFailed {
 		t.Fatalf("beforeStart 失败后的任务 = %#v", updated)
+	}
+	if updated.LifecycleExecution.WorkspaceRoot == "" || updated.LifecycleExecution.WorkspacePath == "" || updated.LifecycleExecution.WorkspaceOwnership != task.LifecycleWorkspaceNotCreated {
+		t.Fatalf("beforeStart 失败后的目录快照 = %#v", updated.LifecycleExecution)
+	}
+}
+
+func TestAppTracksCreatedWorkspaceAcrossBeforeStartFailureAndRetry(t *testing.T) {
+	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	current, err := app.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings() error = %v", err)
+	}
+	current.LifecycleCommands = append(current.LifecycleCommands, settings.LifecycleCommand{
+		ID: "fail-after-create", Kind: settings.LifecycleCommandKindCustom, Name: "创建后失败", Command: "fail",
+		ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+	})
+	current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+		ID: "create-then-fail", Name: "创建后失败链", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+		Commands: []settings.LifecycleCommandReference{
+			{CommandID: settings.LifecycleCommandCreateWorkspaceID},
+			{CommandID: "fail-after-create"},
+		},
+	})
+	current.LifecyclePresets[0].Chains[task.LifecycleHookBeforeStart] = "create-then-fail"
+	saved := saveSettingsWithLifecycleConfiguration(t, app, current)
+
+	var directories []string
+	app.lifecycleCommandRunner = lifecycle.NewCommandChainRunner(lifecycle.CommandExecutorFunc(func(invocation lifecycle.CommandInvocation) (lifecycle.CommandResult, error) {
+		directories = append(directories, invocation.Directory)
+		return lifecycle.CommandResult{StandardError: []byte("拒绝开始")}, errors.New("exit status 1")
+	}))
+	created, err := app.CreateTask("任务", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if _, err := app.StartTask(created.ID); err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	failed := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.LifecycleExecution != nil && current.LifecycleExecution.State == task.LifecycleExecutionFailed
+	})
+	execution := failed.LifecycleExecution
+	wantPath := filepath.Join(saved.WorkspaceRoot, created.ID)
+	if execution == nil || execution.WorkspaceRoot != saved.WorkspaceRoot || execution.WorkspacePath != wantPath || execution.WorkspaceOwnership != task.LifecycleWorkspaceCreated {
+		t.Fatalf("首次失败执行记录 = %#v", execution)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("TaskAI 新建目录不存在: %v", err)
+	}
+
+	next := saved
+	next.WorkspaceRoot = filepath.Join(t.TempDir(), "other-workspaces")
+	if _, err := app.SaveSettings(next); err != nil {
+		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	if _, err := app.RetryTaskLifecycleCommandChain(created.ID); err != nil {
+		t.Fatalf("RetryTaskLifecycleCommandChain() error = %v", err)
+	}
+	retried := waitForTask(t, app, created.ID, func(current task.Task) bool {
+		return current.LifecycleExecution != nil && current.LifecycleExecution.State == task.LifecycleExecutionFailed && current.LifecycleExecution.RunID != execution.RunID
+	})
+	if retried.LifecycleExecution.WorkspacePath != wantPath || retried.LifecycleExecution.WorkspaceOwnership != task.LifecycleWorkspaceCreated {
+		t.Fatalf("重试执行记录未继承目录归属: %#v", retried.LifecycleExecution)
+	}
+	if len(directories) != 2 || directories[0] != wantPath || directories[1] != wantPath {
+		t.Fatalf("自定义命令目录 = %#v，期望两次均为 %q", directories, wantPath)
 	}
 }
 
@@ -1235,7 +1366,7 @@ func TestAppSchedulesLifecycleCommandChainsInBackground(t *testing.T) {
 		returned := invokeWhileLifecycleCommandBlocks(t, func() (task.Task, error) {
 			return app.StartTask(created.ID)
 		}, entered, release)
-		if returned.Status != task.StatusPending || returned.LifecycleExecution == nil || returned.LifecycleExecution.State != task.LifecycleExecutionRunning || returned.LifecycleExecution.RunID == "" || returned.LifecycleExecution.Revision < 1 {
+		if returned.Status != task.StatusPending || returned.LifecycleExecution == nil || returned.LifecycleExecution.State != task.LifecycleExecutionRunning || returned.LifecycleExecution.RunID == "" || returned.LifecycleExecution.Revision < 1 || returned.LifecycleExecution.WorkspaceRoot == "" || returned.LifecycleExecution.WorkspacePath == "" || returned.LifecycleExecution.WorkspaceOwnership != task.LifecycleWorkspaceNotCreated {
 			t.Fatalf("开始任务应立即返回运行记录: %#v", returned)
 		}
 		waitForTask(t, app, created.ID, func(current task.Task) bool {

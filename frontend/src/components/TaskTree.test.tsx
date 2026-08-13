@@ -1591,20 +1591,29 @@ describe('TaskTree', () => {
     }
   })
 
-  it('在未执行选择模式中仅允许勾选无生命周期执行记录的任务', async () => {
+  it('在未执行选择模式中允许勾选明确归属的开始前失败任务', async () => {
     const user = userEvent.setup()
     const selectableTask: TaskRecord = {...runningTask, id: 'pending-1', title: '可删除任务', status: 'pending'}
-    const lockedTask: TaskRecord = {
+    const failedTask: TaskRecord = {
       ...runningTask,
       id: 'pending-2',
       title: '待重试开始任务',
       status: 'pending',
-      lifecycleExecution: {hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed'},
+      lifecycleExecution: {
+			hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed',
+			workspaceRoot: '/tmp/workspaces', workspacePath: '/tmp/workspaces/pending-2', workspaceOwnership: 'not-created',
+		},
     }
+		const unknownTask: TaskRecord = {
+			...failedTask,
+			id: 'pending-3',
+			title: '归属未知任务',
+			lifecycleExecution: {...failedTask.lifecycleExecution!, workspaceOwnership: 'unknown'},
+		}
     const onToggleTaskDeletion = vi.fn()
     render(
       <TaskTree
-        tasks={[selectableTask, lockedTask]}
+        tasks={[selectableTask, failedTask, unknownTask]}
         terminals={[]}
         selectedTerminalId={undefined}
         onSelectTask={vi.fn()}
@@ -1627,9 +1636,11 @@ describe('TaskTree', () => {
     await user.click(selectableCheckbox)
     expect(onToggleTaskDeletion).toHaveBeenCalledWith('pending-1')
 
-    const lockedCheckbox = screen.getByRole('checkbox', {name: '选择任务 待重试开始任务'})
-    expect(lockedCheckbox).toBeDisabled()
-    expect(onToggleTaskDeletion).toHaveBeenCalledTimes(1)
+    const failedCheckbox = screen.getByRole('checkbox', {name: '选择任务 待重试开始任务'})
+    expect(failedCheckbox).not.toBeDisabled()
+		await user.click(failedCheckbox)
+		expect(onToggleTaskDeletion).toHaveBeenCalledWith('pending-2')
+		expect(screen.getByRole('checkbox', {name: '选择任务 归属未知任务'})).toBeDisabled()
     expect(screen.queryByRole('button', {name: '执行'})).not.toBeInTheDocument()
     expect(screen.queryByRole('button', {name: '重试命令链'})).not.toBeInTheDocument()
   })

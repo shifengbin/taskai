@@ -48,17 +48,29 @@ const (
 	LifecycleExecutionFailed  LifecycleExecutionState = "failed"
 )
 
+type LifecycleWorkspaceOwnership string
+
+const (
+	LifecycleWorkspaceUnknown    LifecycleWorkspaceOwnership = "unknown"
+	LifecycleWorkspaceNotCreated LifecycleWorkspaceOwnership = "not-created"
+	LifecycleWorkspaceCreated    LifecycleWorkspaceOwnership = "created"
+)
+
 type LifecycleExecution struct {
-	RunID              string                  `json:"runId,omitempty"`
-	Revision           int                     `json:"revision,omitempty"`
-	Hook               LifecycleHook           `json:"hook"`
-	ChainID            string                  `json:"chainId"`
-	CurrentCommandID   string                  `json:"currentCommandId,omitempty"`
-	CurrentCommandName string                  `json:"currentCommandName,omitempty"`
-	CurrentIndex       int                     `json:"currentIndex"`
-	CommandCount       int                     `json:"commandCount"`
-	State              LifecycleExecutionState `json:"state"`
-	Error              string                  `json:"error,omitempty"`
+	RunID              string                      `json:"runId,omitempty"`
+	Revision           int                         `json:"revision,omitempty"`
+	Hook               LifecycleHook               `json:"hook"`
+	ChainID            string                      `json:"chainId"`
+	CurrentCommandID   string                      `json:"currentCommandId,omitempty"`
+	CurrentCommandName string                      `json:"currentCommandName,omitempty"`
+	CurrentIndex       int                         `json:"currentIndex"`
+	CommandCount       int                         `json:"commandCount"`
+	State              LifecycleExecutionState     `json:"state"`
+	Error              string                      `json:"error,omitempty"`
+	WorkspaceRoot      string                      `json:"workspaceRoot,omitempty"`
+	WorkspacePath      string                      `json:"workspacePath,omitempty"`
+	WorkspaceOwnership LifecycleWorkspaceOwnership `json:"workspaceOwnership,omitempty"`
+	WorkspaceToken     string                      `json:"workspaceToken,omitempty"`
 }
 
 type ExtraInfoParameterInputType string
@@ -209,11 +221,37 @@ func NormalizeLifecycleExecution(execution *LifecycleExecution) (*LifecycleExecu
 	normalized.CurrentCommandID = strings.TrimSpace(normalized.CurrentCommandID)
 	normalized.CurrentCommandName = strings.TrimSpace(normalized.CurrentCommandName)
 	normalized.Error = strings.TrimSpace(normalized.Error)
+	normalized.WorkspaceRoot = strings.TrimSpace(normalized.WorkspaceRoot)
+	normalized.WorkspacePath = strings.TrimSpace(normalized.WorkspacePath)
+	normalized.WorkspaceToken = strings.TrimSpace(normalized.WorkspaceToken)
+	if normalized.WorkspaceOwnership == "" {
+		normalized.WorkspaceOwnership = LifecycleWorkspaceUnknown
+	}
 	if normalized.ChainID == "" {
 		return nil, fmt.Errorf("生命周期执行记录缺少命令链")
 	}
 	if normalized.State != LifecycleExecutionRunning && normalized.State != LifecycleExecutionFailed {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidLifecycleState, normalized.State)
+	}
+	if normalized.WorkspaceOwnership != LifecycleWorkspaceUnknown && normalized.WorkspaceOwnership != LifecycleWorkspaceNotCreated && normalized.WorkspaceOwnership != LifecycleWorkspaceCreated {
+		return nil, fmt.Errorf("不支持的工作目录归属: %q", normalized.WorkspaceOwnership)
+	}
+	if normalized.WorkspaceOwnership != LifecycleWorkspaceUnknown {
+		if normalized.Hook != LifecycleHookBeforeStart {
+			return nil, fmt.Errorf("仅开始前命令链可以保存工作目录归属")
+		}
+		if normalized.WorkspaceRoot == "" || normalized.WorkspacePath == "" {
+			return nil, fmt.Errorf("明确的工作目录归属缺少路径快照")
+		}
+		if normalized.WorkspaceToken == "" {
+			normalized.WorkspaceOwnership = LifecycleWorkspaceUnknown
+		} else if len(normalized.WorkspaceToken) != 64 {
+			return nil, fmt.Errorf("明确的工作目录归属缺少有效所有权令牌")
+		} else if _, err := hex.DecodeString(normalized.WorkspaceToken); err != nil {
+			return nil, fmt.Errorf("明确的工作目录归属缺少有效所有权令牌")
+		}
+	} else if normalized.WorkspaceToken != "" {
+		return nil, fmt.Errorf("未知工作目录归属不能保存所有权令牌")
 	}
 	if normalized.CommandCount <= 0 || normalized.CurrentIndex <= 0 || normalized.CurrentIndex > normalized.CommandCount {
 		return nil, fmt.Errorf("生命周期执行进度无效")
@@ -226,6 +264,14 @@ func NormalizeLifecycleExecution(execution *LifecycleExecution) (*LifecycleExecu
 
 func NewLifecycleExecutionRunID() string {
 	return newID()
+}
+
+func NewLifecycleWorkspaceToken() (string, error) {
+	contents := make([]byte, 32)
+	if _, err := rand.Read(contents); err != nil {
+		return "", fmt.Errorf("生成工作目录所有权令牌失败: %w", err)
+	}
+	return hex.EncodeToString(contents), nil
 }
 
 func (current Task) IsLifecycleLocked() bool {

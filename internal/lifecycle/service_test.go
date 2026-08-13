@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"taskai/internal/settings"
 	"taskai/internal/storage"
 	"taskai/internal/task"
+	"taskai/internal/workspace"
 )
 
 type closerStub struct {
@@ -883,6 +885,362 @@ func TestServiceRejectsInvalidTaskDeletionAtomically(t *testing.T) {
 				t.Fatalf("DeleteTasks() changed tasks after invalid request: %#v", after.Tasks)
 			}
 		})
+	}
+}
+
+func TestServiceDeletesFailedBeforeStartTaskWithOwnedWorkspace(t *testing.T) {
+	service, repository, root := newService(t)
+	created, err := service.CreateTask("启动失败任务", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	workspacePath := filepath.Join(root, created.ID)
+	setFailedBeforeStartExecution(t, repository, created.ID, root, workspacePath, task.LifecycleWorkspaceCreated)
+	if err := os.WriteFile(filepath.Join(workspacePath, "generated.txt"), []byte("generated"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	remaining, err := service.DeleteTasks([]string{created.ID})
+	if err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("DeleteTasks() tasks = %#v，期望为空", remaining)
+	}
+	if _, err := os.Stat(workspacePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("TaskAI 创建的目录仍存在: %v", err)
+	}
+}
+
+func TestServiceDeletesFailedBeforeStartTaskWithoutTouchingUnownedWorkspace(t *testing.T) {
+	service, repository, root := newService(t)
+	created, err := service.CreateTask("复用目录后失败", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	workspacePath := filepath.Join(root, created.ID)
+	if err := os.MkdirAll(workspacePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	markerPath := filepath.Join(workspacePath, "preexisting.txt")
+	if err := os.WriteFile(markerPath, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	setFailedBeforeStartExecution(t, repository, created.ID, root, workspacePath, task.LifecycleWorkspaceNotCreated)
+
+	if _, err := service.DeleteTasks([]string{created.ID}); err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	contents, err := os.ReadFile(markerPath)
+	if err != nil || string(contents) != "keep" {
+		t.Fatalf("未归属目录被修改: contents=%q err=%v", contents, err)
+	}
+}
+
+func TestServiceDeletesWorkspaceCreatedBeforeOwnershipStateUpdate(t *testing.T) {
+	service, repository, root := newService(t)
+	created, err := service.CreateTask("创建后崩溃", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	token, err := workspace.NewOwnershipToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipToken() error = %v", err)
+	}
+	workspacePath := filepath.Join(root, created.ID)
+	if _, err := workspace.CreateOwned(root, created.ID, token); err != nil {
+		t.Fatalf("CreateOwned() error = %v", err)
+	}
+	setFailedBeforeStartExecutionWithToken(t, repository, created.ID, root, workspacePath, task.LifecycleWorkspaceNotCreated, token)
+
+	remaining, err := service.DeleteTasks([]string{created.ID})
+	if err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("DeleteTasks() tasks = %#v，期望为空", remaining)
+	}
+	if _, err := os.Stat(workspacePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("创建后崩溃留下的目录仍存在: %v", err)
+	}
+}
+
+func TestServiceRejectsDeletionAfterOwnedWorkspaceIsReplaced(t *testing.T) {
+	service, repository, root := newService(t)
+	created, err := service.CreateTask("目录被替换", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	workspacePath := filepath.Join(root, created.ID)
+	setFailedBeforeStartExecution(t, repository, created.ID, root, workspacePath, task.LifecycleWorkspaceCreated)
+	if err := os.Rename(workspacePath, filepath.Join(t.TempDir(), "original")); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+	if err := os.Mkdir(workspacePath, 0o700); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	markerPath := filepath.Join(workspacePath, "keep.txt")
+	if err := os.WriteFile(markerPath, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if _, err := service.DeleteTasks([]string{created.ID}); err == nil {
+		t.Fatal("DeleteTasks() error = nil")
+	}
+	if contents, err := os.ReadFile(markerPath); err != nil || string(contents) != "keep" {
+		t.Fatalf("替换目录被修改: contents=%q err=%v", contents, err)
+	}
+	if _, err := service.GetTask(created.ID); err != nil {
+		t.Fatalf("清理拒绝后任务未保留: %v", err)
+	}
+}
+
+func TestServicePreservesConcurrentTaskCreatedDuringWorkspaceCleanup(t *testing.T) {
+	service, repository, root := newService(t)
+	created, err := service.CreateTask("清理较慢", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	workspacePath := filepath.Join(root, created.ID)
+	setFailedBeforeStartExecution(t, repository, created.ID, root, workspacePath, task.LifecycleWorkspaceCreated)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	service.removeOwnedWorkspace = func(root, path, taskID, token string) (bool, error) {
+		close(entered)
+		<-release
+		return workspace.RemoveOwned(root, path, taskID, token)
+	}
+	deleteResult := make(chan error, 1)
+	go func() {
+		_, deleteErr := service.DeleteTasks([]string{created.ID})
+		deleteResult <- deleteErr
+	}()
+	<-entered
+	type createResult struct {
+		task task.Task
+		err  error
+	}
+	createdResult := make(chan createResult, 1)
+	go func() {
+		concurrent, createErr := service.CreateTask("并发新增", "", task.DefaultColor)
+		createdResult <- createResult{task: concurrent, err: createErr}
+	}()
+	close(release)
+	if err := <-deleteResult; err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	result := <-createdResult
+	if result.err != nil {
+		t.Fatalf("并发 CreateTask() error = %v", result.err)
+	}
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := taskIDs(persisted.Tasks), []string{result.task.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("并发删除后的任务 = %#v，期望 %#v", got, want)
+	}
+}
+
+func TestServiceKeepsTaskRecordWhenFinalDeleteSaveFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 权限模型不使用目录写权限触发保存失败")
+	}
+	root := filepath.Join(t.TempDir(), "workspaces")
+	repositoryDirectory := t.TempDir()
+	repository := storage.New(filepath.Join(repositoryDirectory, "state.json"), settings.Settings{
+		WorkspaceRoot: root,
+		TaskTreeWidth: settings.DefaultTaskTreeWidth,
+	})
+	service := New(repository, &closerStub{}, func() time.Time {
+		return time.Date(2026, time.July, 22, 10, 0, 0, 0, time.UTC)
+	})
+	created, err := service.CreateTask("保存失败", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	workspacePath := filepath.Join(root, created.ID)
+	setFailedBeforeStartExecution(t, repository, created.ID, root, workspacePath, task.LifecycleWorkspaceCreated)
+	if err := os.Chmod(repositoryDirectory, 0o500); err != nil {
+		t.Fatalf("Chmod() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(repositoryDirectory, 0o700) })
+
+	if _, err := service.DeleteTasks([]string{created.ID}); err == nil {
+		t.Fatal("DeleteTasks() error = nil")
+	}
+	if err := os.Chmod(repositoryDirectory, 0o700); err != nil {
+		t.Fatalf("restore Chmod() error = %v", err)
+	}
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(persisted.Tasks) != 1 || persisted.Tasks[0].ID != created.ID {
+		t.Fatalf("保存失败后任务记录变化: %#v", persisted.Tasks)
+	}
+}
+
+func TestServiceRejectsFailedBeforeStartDeletionWithUnknownOrUnsafeWorkspace(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		ownership task.LifecycleWorkspaceOwnership
+		unsafe    bool
+	}{
+		{name: "unknown", ownership: task.LifecycleWorkspaceUnknown},
+		{name: "unsafe", ownership: task.LifecycleWorkspaceCreated, unsafe: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			service, repository, root := newService(t)
+			created, err := service.CreateTask("不可安全删除", "", task.DefaultColor)
+			if err != nil {
+				t.Fatalf("CreateTask() error = %v", err)
+			}
+			workspacePath := filepath.Join(root, created.ID)
+			if testCase.unsafe {
+				workspacePath = filepath.Join(t.TempDir(), created.ID)
+				if err := os.MkdirAll(workspacePath, 0o700); err != nil {
+					t.Fatalf("MkdirAll() error = %v", err)
+				}
+			}
+			setFailedBeforeStartExecution(t, repository, created.ID, root, workspacePath, testCase.ownership)
+
+			if _, err := service.DeleteTasks([]string{created.ID}); err == nil {
+				t.Fatal("DeleteTasks() error = nil")
+			}
+			persisted, err := repository.Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if len(persisted.Tasks) != 1 || persisted.Tasks[0].ID != created.ID || persisted.Tasks[0].LifecycleExecution == nil {
+				t.Fatalf("拒绝删除后任务记录变化: %#v", persisted.Tasks)
+			}
+			if testCase.unsafe {
+				if _, err := os.Stat(workspacePath); err != nil {
+					t.Fatalf("危险路径内容被删除: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestServiceDeletesFailedBeforeStartTaskWhenOwnedWorkspaceIsMissing(t *testing.T) {
+	service, repository, root := newService(t)
+	created, err := service.CreateTask("目录已不存在", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	setFailedBeforeStartExecution(t, repository, created.ID, root, filepath.Join(root, created.ID), task.LifecycleWorkspaceCreated)
+	if err := os.RemoveAll(filepath.Join(root, created.ID)); err != nil {
+		t.Fatalf("RemoveAll() error = %v", err)
+	}
+
+	remaining, err := service.DeleteTasks([]string{created.ID})
+	if err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("DeleteTasks() tasks = %#v，期望为空", remaining)
+	}
+}
+
+func TestServiceKeepsAllRecordsWhenLaterWorkspaceCleanupFails(t *testing.T) {
+	service, repository, root := newService(t)
+	first, err := service.CreateTask("先清理目录", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask(first) error = %v", err)
+	}
+	second, err := service.CreateTask("后清理失败", "", task.DefaultColor)
+	if err != nil {
+		t.Fatalf("CreateTask(second) error = %v", err)
+	}
+	firstPath := filepath.Join(root, first.ID)
+	unsafePath := filepath.Join(t.TempDir(), second.ID)
+	if err := os.MkdirAll(unsafePath, 0o700); err != nil {
+		t.Fatalf("MkdirAll(second) error = %v", err)
+	}
+	setFailedBeforeStartExecution(t, repository, first.ID, root, firstPath, task.LifecycleWorkspaceCreated)
+	setFailedBeforeStartExecution(t, repository, second.ID, root, unsafePath, task.LifecycleWorkspaceCreated)
+
+	if _, err := service.DeleteTasks([]string{first.ID, second.ID}); err == nil {
+		t.Fatal("DeleteTasks() error = nil")
+	}
+	if _, err := os.Stat(firstPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("首个安全目录未清理: %v", err)
+	}
+	if _, err := os.Stat(unsafePath); err != nil {
+		t.Fatalf("危险目录被清理: %v", err)
+	}
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := taskIDs(persisted.Tasks), []string{first.ID, second.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("清理失败后任务记录 = %#v，期望 %#v", got, want)
+	}
+
+	data := persisted
+	for index := range data.Tasks {
+		if data.Tasks[index].ID == second.ID {
+			data.Tasks[index].LifecycleExecution.WorkspaceOwnership = task.LifecycleWorkspaceNotCreated
+		}
+	}
+	if err := repository.SaveTaskSnapshot(data.Tasks); err != nil {
+		t.Fatalf("SaveTaskSnapshot() error = %v", err)
+	}
+	if _, err := service.DeleteTasks([]string{first.ID, second.ID}); err != nil {
+		t.Fatalf("修复归属后的 DeleteTasks() error = %v", err)
+	}
+}
+
+func setFailedBeforeStartExecution(t *testing.T, repository *storage.Repository, taskID, workspaceRoot, workspacePath string, ownership task.LifecycleWorkspaceOwnership) {
+	t.Helper()
+	token, err := workspace.NewOwnershipToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipToken() error = %v", err)
+	}
+	if ownership == task.LifecycleWorkspaceCreated && workspacePath == filepath.Join(workspaceRoot, taskID) {
+		if _, statErr := os.Lstat(workspacePath); errors.Is(statErr, os.ErrNotExist) {
+			if _, createErr := workspace.CreateOwned(workspaceRoot, taskID, token); createErr != nil {
+				t.Fatalf("CreateOwned() error = %v", createErr)
+			}
+		}
+	}
+	if ownership == task.LifecycleWorkspaceUnknown {
+		token = ""
+	}
+	setFailedBeforeStartExecutionWithToken(t, repository, taskID, workspaceRoot, workspacePath, ownership, token)
+}
+
+func setFailedBeforeStartExecutionWithToken(t *testing.T, repository *storage.Repository, taskID, workspaceRoot, workspacePath string, ownership task.LifecycleWorkspaceOwnership, token string) {
+	t.Helper()
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	for index := range data.Tasks {
+		if data.Tasks[index].ID != taskID {
+			continue
+		}
+		data.Tasks[index].LifecycleExecution = &task.LifecycleExecution{
+			RunID:              "failed-before-start",
+			Revision:           2,
+			Hook:               task.LifecycleHookBeforeStart,
+			ChainID:            "prepare",
+			CurrentIndex:       1,
+			CommandCount:       1,
+			CurrentCommandID:   "prepare-command",
+			CurrentCommandName: "准备任务",
+			State:              task.LifecycleExecutionFailed,
+			Error:              "准备失败",
+			WorkspaceRoot:      workspaceRoot,
+			WorkspacePath:      workspacePath,
+			WorkspaceOwnership: ownership,
+			WorkspaceToken:     token,
+		}
+	}
+	if err := repository.SaveTaskSnapshot(data.Tasks); err != nil {
+		t.Fatalf("SaveTaskSnapshot() error = %v", err)
 	}
 }
 

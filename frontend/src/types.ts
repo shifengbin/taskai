@@ -10,6 +10,7 @@ export type ColorScheme = 'light' | 'dark'
 export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'toggle-shelved' | 'command'
 export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'
 export type LifecycleExecutionState = 'running' | 'failed'
+export type LifecycleWorkspaceOwnership = 'unknown' | 'not-created' | 'created'
 export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace' | 'git-clone' | 'git-clone-repository' | 'manifest-file' | 'update-default-branch'
 export type LifecycleCommandChainArgumentMode = 'enabled' | 'disabled'
 export type TaskTemplateFieldInputType = 'string' | 'bool'
@@ -54,6 +55,10 @@ export interface LifecycleExecution {
   commandCount: number
   state: LifecycleExecutionState
   error?: string
+	workspaceRoot?: string
+	workspacePath?: string
+	workspaceOwnership?: LifecycleWorkspaceOwnership
+	workspaceToken?: string
 }
 
 export interface LifecycleExecutionWatermark {

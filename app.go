@@ -543,9 +543,15 @@ func (app *App) RetryTaskLifecycleCommandChain(taskID string) (task.Task, error)
 		if current.Status != task.StatusPending {
 			return task.Task{}, fmt.Errorf("开始前命令链只能在未执行任务上重试")
 		}
-		prepared, err := app.tasks.PrepareStartTask(taskID)
-		if err != nil {
-			return task.Task{}, err
+		prepared := current
+		if current.LifecycleExecution.WorkspaceOwnership == task.LifecycleWorkspaceUnknown {
+			prepared, err = app.tasks.PrepareStartTask(taskID)
+			if err != nil {
+				return task.Task{}, err
+			}
+		} else {
+			prepared.WorkspaceRoot = current.LifecycleExecution.WorkspaceRoot
+			prepared.WorkspacePath = current.LifecycleExecution.WorkspacePath
 		}
 		return app.scheduleLifecycleHookLocked(prepared, hook)
 	case task.LifecycleHookPostStart:
@@ -622,6 +628,24 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 		CommandCount: 1,
 		State:        task.LifecycleExecutionRunning,
 	}
+	if hook == task.LifecycleHookBeforeStart {
+		workspaceToken, tokenErr := task.NewLifecycleWorkspaceToken()
+		if tokenErr != nil {
+			return task.Task{}, tokenErr
+		}
+		execution.WorkspaceRoot = current.WorkspaceRoot
+		execution.WorkspacePath = current.WorkspacePath
+		execution.WorkspaceOwnership = task.LifecycleWorkspaceNotCreated
+		execution.WorkspaceToken = workspaceToken
+		if previous := current.LifecycleExecution; previous != nil && previous.WorkspaceOwnership != task.LifecycleWorkspaceUnknown {
+			execution.WorkspaceRoot = previous.WorkspaceRoot
+			execution.WorkspacePath = previous.WorkspacePath
+			execution.WorkspaceOwnership = previous.WorkspaceOwnership
+			execution.WorkspaceToken = previous.WorkspaceToken
+			current.WorkspaceRoot = previous.WorkspaceRoot
+			current.WorkspacePath = previous.WorkspacePath
+		}
+	}
 	chain, commands, chainErr := lifecycleChain(data.Settings, chainID)
 	if chainErr == nil {
 		execution.ChainID = chain.ID
@@ -669,6 +693,7 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 			Directory:      directory,
 			WorkspaceRoot:  current.WorkspaceRoot,
 			WorkspacePath:  current.WorkspacePath,
+			WorkspaceToken: execution.WorkspaceToken,
 			ShellPath:      data.Settings.ShellPath,
 			Environment:    append(app.taskCommandEnvironment(current.ID), templateEnvironment...),
 			Input:          append([]byte(nil), input...),
@@ -695,6 +720,23 @@ func (app *App) executeLifecycleRun(run lifecycleRun) {
 		}
 		execution = next
 		app.publishLifecycleTask(updated)
+	}
+	if run.hook == task.LifecycleHookBeforeStart {
+		request.OnWorkspaceCreated = func() error {
+			next := execution
+			next.Revision++
+			next.WorkspaceOwnership = task.LifecycleWorkspaceCreated
+			updated, applied, err := app.tasks.UpdateLifecycleExecutionIfNewer(run.task.ID, &next)
+			if err != nil {
+				return err
+			}
+			if !applied {
+				return fmt.Errorf("生命周期执行记录已变化，无法保存工作目录归属")
+			}
+			execution = next
+			app.publishLifecycleTask(updated)
+			return nil
+		}
 	}
 	_, err := app.lifecycleCommandRunner.Run(request)
 	if err != nil {

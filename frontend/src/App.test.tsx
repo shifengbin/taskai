@@ -315,9 +315,17 @@ describe('App confirmation flows', () => {
 			id: 'pending-locked', title: '等待重试的任务', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z',
 			lifecycleExecution: {hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed'},
 		}
+		const failedTask: TaskRecord = {
+			id: 'pending-failed', title: '启动失败的任务', description: '', status: 'pending', createdAt: '2026-07-20T00:00:00Z',
+			lifecycleExecution: {
+				hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed',
+				workspaceRoot: '/tmp/workspaces', workspacePath: '/tmp/workspaces/pending-failed', workspaceOwnership: 'created',
+			},
+		}
 		bindings.ListTasks.mockResolvedValue([
 			{id: 'pending-1', title: '待执行任务', description: '', status: 'pending', createdAt: '2026-07-22T00:00:00Z'},
 			{id: 'pending-2', title: '待整理任务', description: '', status: 'pending', createdAt: '2026-07-21T00:00:00Z'},
+			failedTask,
 			lockedTask,
 		])
 		bindings.GetSettings.mockResolvedValue({
@@ -334,17 +342,18 @@ describe('App confirmation flows', () => {
 		await user.click(screen.getByRole('button', {name: '全选未执行任务'}))
 		expect(screen.getByRole('checkbox', {name: '选择任务 待执行任务'})).toBeChecked()
 		expect(screen.getByRole('checkbox', {name: '选择任务 待整理任务'})).toBeChecked()
+		expect(screen.getByRole('checkbox', {name: '选择任务 启动失败的任务'})).toBeChecked()
 
 		await user.click(screen.getByRole('button', {name: '删除已选任务记录'}))
-		expect(screen.getByText('删除 2 个任务记录？')).toBeInTheDocument()
-		expect(screen.getByText('此操作只会移除任务记录，不会删除工作目录或运行生命周期命令。此操作无法撤销。')).toBeInTheDocument()
+		expect(screen.getByText('删除 3 个任务记录？')).toBeInTheDocument()
+		expect(screen.getByText('普通任务只会移除任务记录。启动失败任务仅会清理由 TaskAI 实际新建的工作目录；未创建或复用的目录不会处理。不会运行生命周期命令。此操作无法撤销。')).toBeInTheDocument()
 		await user.click(screen.getByRole('button', {name: '取消'}))
 		expect(bindings.DeleteTasks).not.toHaveBeenCalled()
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 
 		await user.click(screen.getByRole('button', {name: '删除已选任务记录'}))
 		await user.click(screen.getByRole('button', {name: '删除记录'}))
-		await waitFor(() => expect(bindings.DeleteTasks).toHaveBeenCalledWith(['pending-1', 'pending-2']))
+		await waitFor(() => expect(bindings.DeleteTasks).toHaveBeenCalledWith(['pending-1', 'pending-2', 'pending-failed']))
 		await waitFor(() => expect(screen.queryByText('待执行任务')).not.toBeInTheDocument())
 		expect(screen.getByText('等待重试的任务')).toBeInTheDocument()
 		expect(screen.queryByText('已选 2 项')).not.toBeInTheDocument()

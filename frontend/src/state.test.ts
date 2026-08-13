@@ -5,7 +5,8 @@ import {
 	applyTerminalEvent,
   bufferPendingRealtimeStatusEvent,
   bufferPendingTerminalEvent,
-  clearTaskTerminalTracking,
+	clearTaskTerminalTracking,
+	canDeleteTaskRecord,
 	mergeLifecycleTask,
   mergePendingTerminalEvents,
   parseTerminalEventTitle,
@@ -17,6 +18,24 @@ import {
 import {clampTaskTreeWidth, type TaskRecord, type TerminalRecord} from './types'
 
 describe('终端状态路由', () => {
+	it('仅允许明确归属的开始前失败未执行任务进入删除流程', () => {
+		const base: TaskRecord = {id: 'task-a', title: '启动失败', description: '', status: 'pending', createdAt: '2026-08-12T00:00:00Z'}
+		expect(canDeleteTaskRecord(base)).toBe(true)
+		expect(canDeleteTaskRecord({...base, lifecycleExecution: {
+			hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed',
+			workspaceRoot: '/tmp/workspaces', workspacePath: '/tmp/workspaces/task-a', workspaceOwnership: 'created',
+		}})).toBe(true)
+		expect(canDeleteTaskRecord({...base, lifecycleExecution: {
+			hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'failed', workspaceOwnership: 'unknown',
+		}})).toBe(false)
+		expect(canDeleteTaskRecord({...base, lifecycleExecution: {
+			hook: 'beforeStart', chainId: 'prepare', currentIndex: 1, commandCount: 1, state: 'running',
+			workspaceRoot: '/tmp/workspaces', workspacePath: '/tmp/workspaces/task-a', workspaceOwnership: 'not-created',
+		}})).toBe(false)
+		expect(canDeleteTaskRecord({...base, status: 'completed', lifecycleExecution: {
+			hook: 'postEnd', chainId: 'cleanup', currentIndex: 1, commandCount: 1, state: 'failed',
+		}})).toBe(false)
+	})
 	 it('保留同一命令链运行批次中版本更高的进度，避免旧绑定返回覆盖事件', () => {
 		const current: TaskRecord[] = [{
 			id: 'task-a', title: '发布服务', description: '', status: 'running', createdAt: '2026-07-30T00:00:00Z',
