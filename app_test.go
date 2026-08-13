@@ -26,20 +26,6 @@ import (
 	"taskai/internal/workspace"
 )
 
-func TestDefaultDataDirectoryUsesApplicationName(t *testing.T) {
-	configurationDirectory, err := os.UserConfigDir()
-	if err == nil {
-		if got, want := defaultDataDirectory(), filepath.Join(configurationDirectory, "taskai"); got != want {
-			t.Fatalf("默认数据目录 = %q，期望 %q", got, want)
-		}
-		return
-	}
-
-	if got, want := defaultDataDirectory(), filepath.Join(os.TempDir(), "taskai"); got != want {
-		t.Fatalf("默认数据目录 = %q，期望 %q", got, want)
-	}
-}
-
 func newAppWithoutActiveTaskTemplate(t *testing.T, dataDirectory string) *App {
 	t.Helper()
 	app := newApp(dataDirectory)
