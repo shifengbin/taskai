@@ -38,6 +38,9 @@ func newAppWithoutActiveTaskTemplate(t *testing.T, dataDirectory string) *App {
 	if _, err := app.SaveSettings(current); err != nil {
 		t.Fatalf("SaveSettings() error = %v", err)
 	}
+	if _, err := app.SaveDefaultLifecyclePreset(settings.DefaultLifecyclePresetID); err != nil {
+		t.Fatalf("SaveDefaultLifecyclePreset() error = %v", err)
+	}
 	return app
 }
 
@@ -238,7 +241,7 @@ func TestAppExposesLifecyclePresetBindings(t *testing.T) {
 		t.Fatalf("SaveLifecyclePreset() error = %v", err)
 	}
 	listed, err := app.ListLifecyclePresets()
-	if err != nil || len(listed) != 2 {
+	if err != nil || len(listed) != 3 {
 		t.Fatalf("ListLifecyclePresets() = (%#v, %v)", listed, err)
 	}
 	copy, err := app.CopyLifecyclePreset(preset.ID)
@@ -1061,8 +1064,8 @@ func TestLifecyclePresetChainsResolveWithConfiguredParameters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lifecycleChain(更新仓库) error = %v", err)
 	}
-	if updateRepositories.Name != "更新仓库" || !reflect.DeepEqual(updateRepositories.ApplicableHooks, []settings.LifecycleHook{settings.LifecycleHookUpdateTask}) {
-		t.Fatalf("更新仓库链 = %#v", updateRepositories)
+	if updateRepositories.Name != "更新框架仓库" || !reflect.DeepEqual(updateRepositories.ApplicableHooks, []settings.LifecycleHook{settings.LifecycleHookUpdateTask}) {
+		t.Fatalf("更新框架仓库链 = %#v", updateRepositories)
 	}
 	if got := lifecycleCommandIDsAndArguments(updateCommands); !reflect.DeepEqual(got, []struct {
 		ID        string

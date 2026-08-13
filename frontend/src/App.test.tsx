@@ -1658,6 +1658,54 @@ describe('App confirmation flows', () => {
 		))
 	})
 
+	it('新安装展示公司框架默认预设并保存展开后的链映射', async () => {
+		const user = userEvent.setup()
+		const createWorkspace = {id: 'system.lifecycle-chain.create-workspace', name: '创建任务工作目录', commands: [{commandId: 'system.lifecycle.create-workspace', arguments: []}], applicableHooks: ['beforeStart']}
+		const deleteWorkspace = {id: 'system.lifecycle-chain.delete-workspace', name: '删除任务工作目录', commands: [{commandId: 'system.lifecycle.delete-workspace', arguments: []}], applicableHooks: ['postEnd']}
+		const iterationsAI = {id: 'preset.lifecycle-chain.iterations-ai', name: 'iterations-ai', commands: [{commandId: 'system.lifecycle.create-workspace', arguments: []}], applicableHooks: ['beforeStart']}
+		const updateRepositories = {id: 'preset.lifecycle-chain.update-repositories', name: '更新框架仓库', commands: [{commandId: 'system.lifecycle.git-clone', arguments: ['dir=workspaces']}], applicableHooks: ['updateTask']}
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			lifecycleChains: [createWorkspace, deleteWorkspace, iterationsAI, updateRepositories],
+			lifecyclePresets: [
+				{id: 'preset.lifecycle-preset.default', name: '默认预设', chains: {beforeStart: createWorkspace.id, postEnd: deleteWorkspace.id}},
+				{id: 'preset.lifecycle-preset.company-framework', name: '公司框架', chains: {beforeStart: iterationsAI.id, postEnd: deleteWorkspace.id, updateTask: updateRepositories.id}},
+			],
+			defaultLifecyclePresetId: 'preset.lifecycle-preset.company-framework',
+		})
+		bindings.CreateTaskWithExtraInfoAndLifecycleChains.mockResolvedValue({
+			id: 'task-company-framework', title: '公司框架任务', description: '', color: '#4f46e5', status: 'pending', createdAt: '2026-08-12T00:00:00Z',
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '生命周期编排'}))
+		expect(screen.getByLabelText('默认预设')).toHaveTextContent('公司框架')
+		const companyPresetRow = screen.getByLabelText('删除预设 公司框架').parentElement?.parentElement as HTMLElement
+		expect(companyPresetRow).toHaveTextContent('公司框架')
+		expect(companyPresetRow).toHaveTextContent('默认')
+		expect(screen.getAllByText('更新框架仓库').length).toBeGreaterThan(0)
+		await user.click(screen.getByRole('button', {name: '取消'}))
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		expect(screen.getByLabelText('命令链预设')).toHaveTextContent('公司框架')
+		expect(screen.getByLabelText('开始前')).toHaveTextContent('iterations-ai')
+		expect(screen.getByLabelText('开始后')).toHaveTextContent('不执行命令链')
+		expect(screen.getByLabelText('结束前')).toHaveTextContent('不执行命令链')
+		expect(screen.getByLabelText('结束后')).toHaveTextContent('删除任务工作目录')
+		expect(screen.getByLabelText('更新任务后')).toHaveTextContent('更新框架仓库')
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '公司框架任务')
+		await user.click(screen.getByRole('button', {name: '创建'}))
+
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndLifecycleChains).toHaveBeenCalledWith(
+			'公司框架任务', '', expect.any(String), [], {
+				beforeStart: 'preset.lifecycle-chain.iterations-ai',
+				postEnd: 'system.lifecycle-chain.delete-workspace',
+				updateTask: 'preset.lifecycle-chain.update-repositories',
+			},
+		))
+	})
+
 	it('新建任务选择不使用预设时显式保存空命令链映射', async () => {
 		const user = userEvent.setup()
 		bindings.GetSettings.mockResolvedValue({
