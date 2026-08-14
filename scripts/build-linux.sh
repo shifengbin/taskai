@@ -5,7 +5,7 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 architecture="amd64"
 generate_deb=false
-deb_version="${TASKAI_DEB_VERSION:-}"
+deb_version="${TASKAI_DEB_VERSION:-${TASKAI_VERSION:-}}"
 version_from_cli=false
 package_workdir=""
 staging_dir=""
@@ -116,6 +116,15 @@ if [[ "$generate_deb" == true ]]; then
   fi
 fi
 
+app_version="$deb_version"
+if [[ -z "$app_version" ]]; then
+  git_revision="$(git -C "$project_dir" rev-parse --short HEAD 2>/dev/null || true)"
+  app_version="0.0.0+git.${git_revision:-local}"
+fi
+if [[ "$app_version" != v* ]]; then
+  app_version="v$app_version"
+fi
+
 prepare_wails_linux_file_drop_patch() {
   local module_dir
   local module_version
@@ -141,7 +150,11 @@ prepare_wails_linux_file_drop_patch() {
 
 cd "$project_dir"
 prepare_wails_linux_file_drop_patch
-GOWORK="$wails_go_work" wails build -platform "linux/$architecture" "${build_tags[@]}" -clean
+GOWORK="$wails_go_work" wails build \
+  -platform "linux/$architecture" \
+  "${build_tags[@]}" \
+  -ldflags "-X main.appVersion=$app_version" \
+  -clean
 echo "Linux 构建完成: $project_dir/build/bin/taskai"
 
 if [[ "$generate_deb" != true ]]; then

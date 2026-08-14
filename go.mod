@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/x/conpty v0.1.0
 	github.com/creack/pty v1.1.24
 	github.com/wailsapp/wails/v2 v2.12.0
+	golang.org/x/mod v0.23.0
 	golang.org/x/sys v0.30.0
 	gopkg.in/yaml.v3 v3.0.1
 )

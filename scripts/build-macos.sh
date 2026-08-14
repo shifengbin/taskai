@@ -98,8 +98,20 @@ if [[ "$generate_dmg" == true ]]; then
   fi
 fi
 
+app_version="$dmg_version"
+if [[ -z "$app_version" ]]; then
+  git_revision="$(git -C "$project_dir" rev-parse --short HEAD 2>/dev/null || true)"
+  app_version="0.0.0+git.${git_revision:-local}"
+fi
+if [[ "$app_version" != v* ]]; then
+  app_version="v$app_version"
+fi
+
 cd "$project_dir"
-wails build -platform "darwin/$architecture" -clean
+wails build \
+  -platform "darwin/$architecture" \
+  -ldflags "-X main.appVersion=$app_version" \
+  -clean
 app_path="$project_dir/build/bin/taskai.app"
 echo "macOS 构建完成: $app_path"
 

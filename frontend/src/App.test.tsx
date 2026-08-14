@@ -57,6 +57,7 @@ const bindings = vi.hoisted(() => ({
 	RetryTaskLifecycleCommandChain: vi.fn(),
   FinishTask: vi.fn(),
   GetSettings: vi.fn(),
+  GetUpdateState: vi.fn(),
   SaveSettings: vi.fn(),
 	SelectTerminal: vi.fn(),
   DetectShells: vi.fn(),
@@ -64,12 +65,15 @@ const bindings = vi.hoisted(() => ({
   CreateCommandTerminal: vi.fn(),
   ExecuteTaskMenuCommand: vi.fn(),
   OpenTaskFolder: vi.fn(),
+  OpenUpdateReleasePage: vi.fn(),
   RunTaskCommand: vi.fn(),
   WriteTerminal: vi.fn(),
   ResizeTerminal: vi.fn(),
   CloseTerminal: vi.fn(),
   HasRunningTasks: vi.fn(),
   PrepareQuit: vi.fn(),
+  LaunchDownloadedUpdate: vi.fn(),
+  StartUpdateDownload: vi.fn(),
 }))
 const runtime = vi.hoisted(() => ({ClipboardSetText: vi.fn(), EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: vi.fn()}))
 const terminalSessionRegistry = vi.hoisted(() => ({
@@ -183,6 +187,7 @@ describe('App confirmation flows', () => {
     bindings.GetSettings.mockResolvedValue({
       workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
     })
+    bindings.GetUpdateState.mockResolvedValue({status: 'idle'})
     bindings.DetectShells.mockResolvedValue(['/bin/sh', '/bin/zsh'])
     bindings.FinishTask.mockResolvedValue({
       id: 'task-1', title: '清理临时文件', description: '', status: 'completed', createdAt: '2026-07-22T00:00:00Z',
@@ -570,6 +575,7 @@ describe('App confirmation flows', () => {
         ],
       }],
     })
+		bindings.GetUpdateState.mockResolvedValue({status: 'idle'})
     render(<App/>)
 
     await user.click(await screen.findByRole('tab', {name: /执行中/}))
