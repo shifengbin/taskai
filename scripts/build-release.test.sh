@@ -73,5 +73,7 @@ grep -F 'bash scripts/generate-update-manifest.sh' "$workflow" >/dev/null
 grep -F 'bash scripts/is-prerelease.sh' "$workflow" >/dev/null
 grep -F 'artifact-path: build/bin/*-installer.exe' "$workflow" >/dev/null
 grep -F 'artifacts/taskai-windows-exe/*-installer.exe' "$workflow" >/dev/null
+grep -F 'choco install nsis --no-progress --yes' "$workflow" >/dev/null
+grep -F 'Get-Command makensis -ErrorAction Stop' "$workflow" >/dev/null
 
 echo "Release 更新清单测试通过"
