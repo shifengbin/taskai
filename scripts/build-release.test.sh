@@ -74,6 +74,8 @@ grep -F 'bash scripts/is-prerelease.sh' "$workflow" >/dev/null
 grep -F 'artifact-path: build/bin/*-installer.exe' "$workflow" >/dev/null
 grep -F 'artifacts/taskai-windows-exe/*-installer.exe' "$workflow" >/dev/null
 grep -F 'choco install nsis --no-progress --yes' "$workflow" >/dev/null
-grep -F 'Get-Command makensis -ErrorAction Stop' "$workflow" >/dev/null
+grep -F '$NSISPath = Join-Path ${env:ProgramFiles(x86)} '\''NSIS'\''' "$workflow" >/dev/null
+grep -F '$NSISPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append' "$workflow" >/dev/null
+grep -F '& $MakeNSIS -VERSION' "$workflow" >/dev/null
 
 echo "Release 更新清单测试通过"
