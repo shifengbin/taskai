@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestGitHubSourceOpenAssetRejectsHTTPStatus(t *testing.T) {
@@ -132,6 +133,112 @@ func TestServiceRejectsConcurrentDownload(t *testing.T) {
 	}
 	if state := service.State(); state.Status != StatusDownloaded || state.InstallPath == "" {
 		t.Fatalf("state = %#v", state)
+	}
+}
+
+func TestServiceCheckCannotReplaceCandidateDuringDownload(t *testing.T) {
+	content := []byte("installer")
+	started := make(chan struct{})
+	releaseRead := make(chan struct{})
+	source := &scriptedReleaseSource{
+		list: func(context.Context) ([]Release, error) {
+			return []Release{testRelease("v1.2.0", false, "taskai.deb")}, nil
+		},
+		manifest: func(_ context.Context, release Release) (Manifest, error) {
+			manifest := testManifest(release.TagName, "linux-amd64", "taskai.deb")
+			manifest.Assets["linux-amd64"] = testAsset("taskai.deb", content)
+			return manifest, nil
+		},
+		open: func(context.Context, string) (io.ReadCloser, error) {
+			return io.NopCloser(&blockingReader{started: started, release: releaseRead, content: content}), nil
+		},
+	}
+	service, err := NewService(Options{
+		CurrentVersion: "v1.0.0",
+		Platform:       "linux-amd64",
+		Source:         source,
+		CacheDirectory: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.setCandidate(testCandidate("v1.1.0", "taskai.deb", content))
+
+	downloadResult := make(chan error, 1)
+	go func() { downloadResult <- service.Download(context.Background()) }()
+	<-started
+	if err := service.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if state := service.State(); state.Status != StatusDownloading || state.Version != "v1.1.0" {
+		t.Fatalf("check replaced downloading state = %#v", state)
+	}
+	close(releaseRead)
+	if err := <-downloadResult; err != nil {
+		t.Fatal(err)
+	}
+	if state := service.State(); state.Status != StatusDownloaded || state.Version != "v1.1.0" {
+		t.Fatalf("download completion published mismatched state = %#v", state)
+	}
+	if err := service.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if state := service.State(); state.Status != StatusAvailable || state.Version != "v1.2.0" {
+		t.Fatalf("later check did not select newer candidate = %#v", state)
+	}
+}
+
+func TestServicePublishesCandidateBeforeConcurrentDownloadState(t *testing.T) {
+	content := []byte("installer")
+	availablePublishing := make(chan struct{})
+	releaseAvailablePublish := make(chan struct{})
+	assetOpened := make(chan struct{})
+	source := &scriptedReleaseSource{
+		list: func(context.Context) ([]Release, error) { return nil, nil },
+		open: func(context.Context, string) (io.ReadCloser, error) {
+			close(assetOpened)
+			return nil, errors.New("stop after ordering assertion")
+		},
+	}
+	service, err := NewService(Options{
+		CurrentVersion: "v1.0.0",
+		Platform:       "linux-amd64",
+		Source:         source,
+		CacheDirectory: t.TempDir(),
+		Publish: func(state State) {
+			if state.Status == StatusAvailable {
+				close(availablePublishing)
+				<-releaseAvailablePublish
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidateSet := make(chan struct{})
+	go func() {
+		service.setCandidate(testCandidate("v1.1.0", "taskai.deb", content))
+		close(candidateSet)
+	}()
+	<-availablePublishing
+	downloadResult := make(chan error, 1)
+	go func() { downloadResult <- service.Download(context.Background()) }()
+
+	select {
+	case <-assetOpened:
+		t.Fatal("download state overtook the available-state publication")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseAvailablePublish)
+	<-candidateSet
+	if err := <-downloadResult; err == nil {
+		t.Fatal("Download() error = nil")
+	}
+	select {
+	case <-assetOpened:
+	default:
+		t.Fatal("download did not proceed after available state was published")
 	}
 }
 

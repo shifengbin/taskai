@@ -26,32 +26,52 @@ if (Test-Path -LiteralPath $IconPath) {
     Remove-Item -LiteralPath $IconPath -Force
 }
 
-# 将版本号写入 wails.json，使 Wails 构建产物与 NSIS 安装程序使用与三端一致的发布版本。
-if ($Version) {
-    $config = Get-Content -LiteralPath $WailsJsonPath -Raw | ConvertFrom-Json
-    if ($null -ne $config.PSObject.Properties['version']) {
-        $config.version = $Version
-    } else {
-        $config | Add-Member -NotePropertyName 'version' -NotePropertyValue $Version
-    }
-    [System.IO.File]::WriteAllText($WailsJsonPath, ($config | ConvertTo-Json -Depth 10))
-}
-
 $Arguments = @('build', '-platform', "windows/$Architecture", '-clean')
-$AppVersion = if ($Version) { "v$($Version.TrimStart('v'))" } else { 'v0.0.0-dev' }
+$AppVersion = 'v0.0.0-dev'
+$ProductVersion = $null
+if ($Version) {
+    $VersionWithoutPrefix = $Version.TrimStart('v')
+    if ($VersionWithoutPrefix -notmatch '^(?<product>(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$') {
+        throw "无效的语义版本: $Version"
+    }
+    $AppVersion = "v$VersionWithoutPrefix"
+    $ProductVersion = $Matches['product']
+}
 $Arguments += @('-ldflags', "-X main.appVersion=$AppVersion")
 if ($NSIS) {
     $Arguments += '-nsis'
 }
 
-Push-Location $ProjectDir
+$OriginalWailsJson = $null
+$LocationPushed = $false
 try {
+    if ($ProductVersion) {
+        $OriginalWailsJson = [System.IO.File]::ReadAllBytes($WailsJsonPath)
+        $config = Get-Content -LiteralPath $WailsJsonPath -Raw | ConvertFrom-Json
+        if ($null -eq $config.info) {
+            $config | Add-Member -Force -NotePropertyName 'info' -NotePropertyValue ([pscustomobject]@{})
+        }
+        if ($null -ne $config.info.PSObject.Properties['productVersion']) {
+            $config.info.productVersion = $ProductVersion
+        } else {
+            $config.info | Add-Member -NotePropertyName 'productVersion' -NotePropertyValue $ProductVersion
+        }
+        [System.IO.File]::WriteAllText($WailsJsonPath, ($config | ConvertTo-Json -Depth 10))
+    }
+
+    Push-Location $ProjectDir
+    $LocationPushed = $true
     & wails @Arguments
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
 } finally {
-    Pop-Location
+    if ($LocationPushed) {
+        Pop-Location
+    }
+    if ($null -ne $OriginalWailsJson) {
+        [System.IO.File]::WriteAllBytes($WailsJsonPath, $OriginalWailsJson)
+    }
 }
 
 Write-Host "Windows 构建完成: $ProjectDir\build\bin\taskai.exe"

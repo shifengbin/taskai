@@ -47,21 +47,29 @@ func NewGitHubSource(client *http.Client, apiBase, allowedAssetPrefix string) (*
 }
 
 func (source *GitHubSource) ListReleases(ctx context.Context) ([]Release, error) {
-	endpoint := *source.apiBase
-	endpoint.Path += "/repos/shifengbin/taskai/releases"
-	query := endpoint.Query()
-	query.Set("per_page", "100")
-	endpoint.RawQuery = query.Encode()
-
-	response, err := source.get(ctx, endpoint.String())
-	if err != nil {
-		return nil, fmt.Errorf("获取 GitHub Releases: %w", err)
-	}
-	defer response.Body.Close()
-
 	var releases []Release
-	if err := json.NewDecoder(io.LimitReader(response.Body, releasesResponseMaxBytes)).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("解析 GitHub Releases: %w", err)
+	for page := 1; ; page++ {
+		endpoint := *source.apiBase
+		endpoint.Path += "/repos/shifengbin/taskai/releases"
+		query := endpoint.Query()
+		query.Set("per_page", "100")
+		query.Set("page", fmt.Sprintf("%d", page))
+		endpoint.RawQuery = query.Encode()
+
+		response, err := source.get(ctx, endpoint.String())
+		if err != nil {
+			return nil, fmt.Errorf("获取 GitHub Releases 第 %d 页: %w", page, err)
+		}
+		var pageReleases []Release
+		decodeErr := json.NewDecoder(io.LimitReader(response.Body, releasesResponseMaxBytes)).Decode(&pageReleases)
+		response.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("解析 GitHub Releases 第 %d 页: %w", page, decodeErr)
+		}
+		releases = append(releases, pageReleases...)
+		if len(pageReleases) < 100 {
+			break
+		}
 	}
 	return releases, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -17,60 +18,116 @@ type Cache struct {
 	root string
 }
 
-func (cache *Cache) Restore(currentVersion string, candidate Candidate) (string, bool, error) {
+const cacheMetadataName = "candidate.json"
+
+type cacheMetadata struct {
+	Platform  string    `json:"platform"`
+	Candidate Candidate `json:"candidate"`
+}
+
+func (cache *Cache) RestoreLatest(currentVersion, platform string) (Candidate, string, bool, error) {
 	if cache.root == "" {
-		return "", false, nil
+		return Candidate{}, "", false, nil
+	}
+	current := canonicalVersion(currentVersion)
+	if !semver.IsValid(current) || platform == "" {
+		return Candidate{}, "", false, nil
 	}
 	entries, err := os.ReadDir(cache.root)
 	if os.IsNotExist(err) {
-		return "", false, nil
+		return Candidate{}, "", false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("读取更新缓存目录: %w", err)
+		return Candidate{}, "", false, fmt.Errorf("读取更新缓存目录: %w", err)
 	}
 
-	current := canonicalVersion(currentVersion)
-	candidateValid := semver.IsValid(current) && semver.IsValid(candidate.Version) && semver.Compare(candidate.Version, current) > 0
+	var latest Candidate
+	var latestPath string
 	for _, entry := range entries {
-		if candidateValid && entry.IsDir() && entry.Name() == candidate.Version {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(cache.root, entry.Name())); err != nil {
-			return "", false, fmt.Errorf("清理过期更新缓存 %s: %w", entry.Name(), err)
-		}
-	}
-	if !candidateValid || !validManifestAsset(candidate.Asset) || filepath.Base(candidate.Asset.Name) != candidate.Asset.Name {
-		return "", false, nil
-	}
-
-	directory := cache.VersionDirectory(candidate.Version)
-	entries, err = os.ReadDir(directory)
-	if os.IsNotExist(err) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, fmt.Errorf("读取目标版本缓存: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.Name() == candidate.Asset.Name && !entry.IsDir() {
-			continue
-		}
-		if strings.HasSuffix(entry.Name(), ".part") || entry.Name() != candidate.Asset.Name {
-			if err := os.RemoveAll(filepath.Join(directory, entry.Name())); err != nil {
-				return "", false, fmt.Errorf("清理目标版本临时缓存 %s: %w", entry.Name(), err)
+		entryPath := filepath.Join(cache.root, entry.Name())
+		if !entry.IsDir() {
+			if err := os.RemoveAll(entryPath); err != nil {
+				return Candidate{}, "", false, fmt.Errorf("清理无效更新缓存 %s: %w", entry.Name(), err)
 			}
+			continue
+		}
+		candidate, path, ok, err := cache.restoreVersion(current, platform, entry.Name())
+		if err != nil {
+			return Candidate{}, "", false, err
+		}
+		if !ok {
+			if err := os.RemoveAll(entryPath); err != nil {
+				return Candidate{}, "", false, fmt.Errorf("清理无效更新缓存 %s: %w", entry.Name(), err)
+			}
+			continue
+		}
+		if latest.Version == "" || semver.Compare(candidate.Version, latest.Version) > 0 {
+			latest = candidate
+			latestPath = path
+		}
+	}
+
+	for _, entry := range entries {
+		if latest.Version != "" && entry.IsDir() && entry.Name() == latest.Version {
+			continue
+		}
+		entryPath := filepath.Join(cache.root, entry.Name())
+		if err := os.RemoveAll(entryPath); err != nil {
+			return Candidate{}, "", false, fmt.Errorf("清理过期更新缓存 %s: %w", entry.Name(), err)
+		}
+	}
+	if latest.Version == "" {
+		return Candidate{}, "", false, nil
+	}
+	return latest, latestPath, true, nil
+}
+
+func (cache *Cache) restoreVersion(currentVersion, platform, versionDirectory string) (Candidate, string, bool, error) {
+	directory := cache.VersionDirectory(versionDirectory)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return Candidate{}, "", false, fmt.Errorf("读取版本缓存 %s: %w", versionDirectory, err)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".part") {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(directory, entry.Name())); err != nil {
+			return Candidate{}, "", false, fmt.Errorf("清理下载临时缓存 %s: %w", entry.Name(), err)
+		}
+	}
+
+	data, err := os.ReadFile(filepath.Join(directory, cacheMetadataName))
+	if os.IsNotExist(err) {
+		return Candidate{}, "", false, nil
+	}
+	if err != nil {
+		return Candidate{}, "", false, fmt.Errorf("读取更新缓存元数据 %s: %w", versionDirectory, err)
+	}
+	var metadata cacheMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return Candidate{}, "", false, nil
+	}
+	candidate := metadata.Candidate
+	if metadata.Platform != platform || candidate.Version != versionDirectory || !validCachedCandidate(candidate) || semver.Compare(candidate.Version, currentVersion) <= 0 {
+		return Candidate{}, "", false, nil
+	}
+
+	for _, entry := range entries {
+		if (entry.Name() == candidate.Asset.Name || entry.Name() == cacheMetadataName) && !entry.IsDir() {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(directory, entry.Name())); err != nil {
+			return Candidate{}, "", false, fmt.Errorf("清理版本缓存文件 %s: %w", entry.Name(), err)
 		}
 	}
 
 	path := filepath.Join(directory, candidate.Asset.Name)
 	actual, err := describeAsset(path)
 	if err == nil && actual.Size == candidate.Asset.Size && actual.SHA256 == candidate.Asset.SHA256 {
-		return path, true, nil
+		return candidate, path, true, nil
 	}
-	if err := os.RemoveAll(directory); err != nil {
-		return "", false, fmt.Errorf("删除损坏的更新缓存: %w", err)
-	}
-	return "", false, nil
+	return Candidate{}, "", false, nil
 }
 
 func NewCache(root string) *Cache {
@@ -140,6 +197,74 @@ func (cache *Cache) Store(ctx context.Context, version string, asset ManifestAss
 	}
 	committed = true
 	return finalPath, nil
+}
+
+func (cache *Cache) StoreCandidate(ctx context.Context, candidate Candidate, platform string, reader io.Reader) (string, error) {
+	if platform == "" || !validCachedCandidate(candidate) {
+		return "", fmt.Errorf("无效的更新缓存候选: %s", candidate.Version)
+	}
+	path, err := cache.Store(ctx, candidate.Version, candidate.Asset, reader)
+	if err != nil {
+		return "", err
+	}
+	metadata := cacheMetadata{Platform: platform, Candidate: candidate}
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		_ = os.RemoveAll(cache.VersionDirectory(candidate.Version))
+		return "", fmt.Errorf("编码更新缓存元数据: %w", err)
+	}
+	data = append(data, '\n')
+	metadataPath := filepath.Join(cache.VersionDirectory(candidate.Version), cacheMetadataName)
+	if err := writeCacheMetadata(metadataPath, data); err != nil {
+		_ = os.RemoveAll(cache.VersionDirectory(candidate.Version))
+		return "", err
+	}
+	return path, nil
+}
+
+func validCachedCandidate(candidate Candidate) bool {
+	return semver.IsValid(candidate.Version) &&
+		candidate.Version == candidate.Tag &&
+		candidate.ReleaseURL == OfficialReleasePrefix+candidate.Tag &&
+		candidate.DownloadURL != "" &&
+		validManifestAsset(candidate.Asset) &&
+		candidate.Asset.Name != cacheMetadataName &&
+		filepath.Base(candidate.Asset.Name) == candidate.Asset.Name
+}
+
+func writeCacheMetadata(path string, data []byte) error {
+	partPath := path + ".part"
+	if err := os.Remove(partPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("清理旧缓存元数据临时文件: %w", err)
+	}
+	file, err := os.OpenFile(partPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("创建缓存元数据临时文件: %w", err)
+	}
+	committed := false
+	defer func() {
+		_ = file.Close()
+		if !committed {
+			_ = os.Remove(partPath)
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		return fmt.Errorf("写入更新缓存元数据: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("同步更新缓存元数据: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("关闭更新缓存元数据: %w", err)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("替换旧更新缓存元数据: %w", err)
+	}
+	if err := os.Rename(partPath, path); err != nil {
+		return fmt.Errorf("提交更新缓存元数据: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 type contextReader struct {

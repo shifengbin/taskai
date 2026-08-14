@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -134,6 +137,83 @@ func TestServiceStopCancelsActiveCheckAndCleansUpTimer(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	if calls.Load() != 1 {
 		t.Fatalf("ListReleases() calls after Stop = %d, want 1", calls.Load())
+	}
+}
+
+func TestServiceRestoresDownloadedUpdateBeforeOfflineStartupCheck(t *testing.T) {
+	cacheDirectory := t.TempDir()
+	content := []byte("cached installer")
+	candidate := testCandidate("v1.2.0", "taskai.deb", content)
+	cache := NewCache(cacheDirectory)
+	path, err := cache.StoreCandidate(context.Background(), candidate, "linux-amd64", strings.NewReader(string(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleDirectory := cache.VersionDirectory("v1.1.0")
+	if err := os.MkdirAll(staleDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staleDirectory, "installer.part"), []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	service, err := NewService(Options{
+		CurrentVersion: "v1.0.0",
+		Platform:       "linux-amd64",
+		Source: &scriptedReleaseSource{
+			list: func(context.Context) ([]Release, error) { return nil, errors.New("offline") },
+		},
+		CacheDirectory: cacheDirectory,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := service.State()
+	if state.Status != StatusDownloaded || state.Version != candidate.Version || state.InstallPath != path {
+		t.Fatalf("restored state = %#v", state)
+	}
+	if err := service.Check(context.Background()); err == nil {
+		t.Fatal("offline Check() error = nil")
+	}
+	if state := service.State(); state.Status != StatusDownloaded || state.InstallPath != path {
+		t.Fatalf("offline check changed restored state = %#v", state)
+	}
+	if _, err := os.Stat(staleDirectory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale partial cache remains: %v", err)
+	}
+}
+
+func TestServicePartialManifestFailurePreservesHigherDownloadedCandidate(t *testing.T) {
+	service, err := NewService(Options{
+		CurrentVersion: "v1.0.0",
+		Platform:       "linux-amd64",
+		Source: &scriptedReleaseSource{
+			list: func(context.Context) ([]Release, error) {
+				return []Release{
+					testRelease("v3.0.0", false, "taskai.deb"),
+					testRelease("v1.5.0", false, "taskai.deb"),
+				}, nil
+			},
+			manifest: func(_ context.Context, release Release) (Manifest, error) {
+				if release.TagName == "v3.0.0" {
+					return Manifest{}, errors.New("manifest unavailable")
+				}
+				return testManifest(release.TagName, "linux-amd64", "taskai.deb"), nil
+			},
+		},
+		CacheDirectory: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.target = testCandidate("v2.0.0", "taskai.deb", []byte("cached"))
+	service.state = State{Status: StatusDownloaded, Version: "v2.0.0", InstallPath: "/cached/taskai.deb"}
+
+	if err := service.Check(context.Background()); err == nil {
+		t.Fatal("Check() error = nil, want partial manifest failure")
+	}
+	if state := service.State(); state.Status != StatusDownloaded || state.Version != "v2.0.0" {
+		t.Fatalf("partial failure changed state = %#v", state)
 	}
 }
 

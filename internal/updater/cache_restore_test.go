@@ -11,25 +11,27 @@ import (
 
 func TestCacheRestoreRevalidatesInstallerOnEveryStartup(t *testing.T) {
 	content := []byte("valid installer")
-	asset := testAsset("taskai.deb", content)
+	candidate := testCandidate("v1.2.0", "taskai.deb", content)
 	cache := NewCache(t.TempDir())
-	path, err := cache.Store(context.Background(), "v1.2.0", asset, strings.NewReader(string(content)))
+	path, err := cache.StoreCandidate(context.Background(), candidate, "linux-amd64", strings.NewReader(string(content)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate := Candidate{Version: "v1.2.0", Asset: asset}
 
-	restoredPath, ok, err := cache.Restore("v1.0.0", candidate)
+	restored, restoredPath, ok, err := cache.RestoreLatest("v1.0.0", "linux-amd64")
 	if err != nil || !ok || restoredPath != path {
-		t.Fatalf("Restore() = %q, %v, %v", restoredPath, ok, err)
+		t.Fatalf("RestoreLatest() = %#v, %q, %v, %v", restored, restoredPath, ok, err)
+	}
+	if restored != candidate {
+		t.Fatalf("restored candidate = %#v, want %#v", restored, candidate)
 	}
 	corrupted := append([]byte(nil), content...)
 	corrupted[0] ^= 0xff
 	if err := os.WriteFile(path, corrupted, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if restoredPath, ok, err := cache.Restore("v1.0.0", candidate); err != nil || ok || restoredPath != "" {
-		t.Fatalf("Restore(corrupted) = %q, %v, %v", restoredPath, ok, err)
+	if restored, restoredPath, ok, err := cache.RestoreLatest("v1.0.0", "linux-amd64"); err != nil || ok || restoredPath != "" || restored != (Candidate{}) {
+		t.Fatalf("RestoreLatest(corrupted) = %#v, %q, %v, %v", restored, restoredPath, ok, err)
 	}
 	if _, err := os.Stat(cache.VersionDirectory(candidate.Version)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("corrupted cache directory still exists: %v", err)
@@ -40,8 +42,8 @@ func TestCacheRestoreRemovesPartsAndNonCandidateVersions(t *testing.T) {
 	root := t.TempDir()
 	cache := NewCache(root)
 	content := []byte("target installer")
-	asset := testAsset("taskai-amd64-installer.exe", content)
-	if _, err := cache.Store(context.Background(), "v1.2.0", asset, strings.NewReader(string(content))); err != nil {
+	candidate := testCandidate("v1.2.0", "taskai-amd64-installer.exe", content)
+	if _, err := cache.StoreCandidate(context.Background(), candidate, "windows-amd64", strings.NewReader(string(content))); err != nil {
 		t.Fatal(err)
 	}
 	for _, version := range []string{"v0.9.0", "v1.0.0", "v1.3.0", "invalid"} {
@@ -58,9 +60,12 @@ func TestCacheRestoreRemovesPartsAndNonCandidateVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, ok, err := cache.Restore("v1.0.0", Candidate{Version: "v1.2.0", Asset: asset})
+	restored, path, ok, err := cache.RestoreLatest("v1.0.0", "windows-amd64")
 	if err != nil || !ok || path == "" {
-		t.Fatalf("Restore() = %q, %v, %v", path, ok, err)
+		t.Fatalf("RestoreLatest() = %#v, %q, %v, %v", restored, path, ok, err)
+	}
+	if restored != candidate {
+		t.Fatalf("restored candidate = %#v, want %#v", restored, candidate)
 	}
 	for _, removed := range []string{"v0.9.0", "v1.0.0", "v1.3.0", "invalid"} {
 		if _, err := os.Stat(cache.VersionDirectory(removed)); !errors.Is(err, os.ErrNotExist) {
@@ -74,15 +79,54 @@ func TestCacheRestoreRemovesPartsAndNonCandidateVersions(t *testing.T) {
 
 func TestCacheRestoreRejectsCurrentOrOlderCandidate(t *testing.T) {
 	content := []byte("old installer")
-	asset := testAsset("taskai.deb", content)
+	candidate := testCandidate("v1.0.0", "taskai.deb", content)
 	cache := NewCache(t.TempDir())
-	if _, err := cache.Store(context.Background(), "v1.0.0", asset, strings.NewReader(string(content))); err != nil {
+	if _, err := cache.StoreCandidate(context.Background(), candidate, "linux-amd64", strings.NewReader(string(content))); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := cache.Restore("v1.0.0", Candidate{Version: "v1.0.0", Asset: asset}); err != nil || ok {
-		t.Fatalf("Restore(current) ok = %v, error = %v", ok, err)
+	if _, _, ok, err := cache.RestoreLatest("v1.0.0", "linux-amd64"); err != nil || ok {
+		t.Fatalf("RestoreLatest(current) ok = %v, error = %v", ok, err)
 	}
 	if _, err := os.Stat(cache.VersionDirectory("v1.0.0")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("current-version cache still exists: %v", err)
+	}
+}
+
+func TestCacheRestoreKeepsOnlyHighestValidPlatformCandidate(t *testing.T) {
+	cache := NewCache(t.TempDir())
+	for _, candidate := range []Candidate{
+		testCandidate("v1.1.0", "taskai.deb", []byte("older")),
+		testCandidate("v1.3.0", "taskai.deb", []byte("latest")),
+	} {
+		if _, err := cache.StoreCandidate(context.Background(), candidate, "linux-amd64", strings.NewReader(map[string]string{
+			"v1.1.0": "older",
+			"v1.3.0": "latest",
+		}[candidate.Version])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrongPlatform := testCandidate("v1.4.0", "taskai-amd64-installer.exe", []byte("windows"))
+	if _, err := cache.StoreCandidate(context.Background(), wrongPlatform, "windows-amd64", strings.NewReader("windows")); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, _, ok, err := cache.RestoreLatest("v1.0.0", "linux-amd64")
+	if err != nil || !ok || restored.Version != "v1.3.0" {
+		t.Fatalf("RestoreLatest() = %#v, %v, %v", restored, ok, err)
+	}
+	for _, removed := range []string{"v1.1.0", "v1.4.0"} {
+		if _, err := os.Stat(cache.VersionDirectory(removed)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("stale cache %s still exists: %v", removed, err)
+		}
+	}
+}
+
+func testCandidate(version, assetName string, content []byte) Candidate {
+	return Candidate{
+		Version:     version,
+		Tag:         version,
+		ReleaseURL:  OfficialReleasePrefix + version,
+		Asset:       testAsset(assetName, content),
+		DownloadURL: "https://github.com/shifengbin/taskai/releases/download/" + version + "/" + assetName,
 	}
 }

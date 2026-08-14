@@ -9,22 +9,29 @@ import {TooltipProvider} from './ui'
 afterEach(cleanup)
 
 describe('UpdateControl state synchronization', () => {
-	it('queries the current state before subscribing and cleans up on unmount', async () => {
+	it('queries, subscribes, and rechecks without letting a stale snapshot overwrite an event', async () => {
 		let resolveState: ((state: UpdateState) => void) | undefined
+		let listener: ((state: UpdateState) => void) | undefined
 		const initialState = new Promise<UpdateState>((resolve) => { resolveState = resolve })
 		const unsubscribe = vi.fn()
 		const client = updateClient({
-			getUpdateState: vi.fn(() => initialState),
-			onUpdateState: vi.fn(() => unsubscribe),
+			getUpdateState: vi.fn()
+				.mockImplementationOnce(() => initialState)
+				.mockResolvedValue(updateState({status: 'downloading', version: 'v1.2.3'})),
+			onUpdateState: vi.fn((next) => {
+				listener = next
+				return unsubscribe
+			}),
 		})
 
 		const view = renderUpdateControl(client)
 		expect(client.getUpdateState).toHaveBeenCalledOnce()
-		expect(client.onUpdateState).not.toHaveBeenCalled()
-
-		resolveState?.({status: 'available', version: 'v1.2.3', releaseUrl: 'https://github.com/shifengbin/taskai/releases/tag/v1.2.3'})
-		expect(await screen.findByRole('button', {name: '下载新版本 v1.2.3'})).toHaveTextContent('new')
 		expect(client.onUpdateState).toHaveBeenCalledOnce()
+
+		act(() => listener?.({status: 'downloading', version: 'v1.2.3'}))
+		act(() => resolveState?.({status: 'available', version: 'v1.2.3', releaseUrl: 'https://github.com/shifengbin/taskai/releases/tag/v1.2.3'}))
+		expect(await screen.findByRole('button', {name: '正在下载 v1.2.3'})).toHaveTextContent('下载中')
+		await waitFor(() => expect(client.getUpdateState).toHaveBeenCalledTimes(2))
 
 		view.unmount()
 		expect(unsubscribe).toHaveBeenCalledOnce()

@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -54,6 +55,42 @@ func TestGitHubSourceListsReleasesAndFetchesManifest(t *testing.T) {
 	}
 	if manifest.Tag != "v1.2.3-rc.1" {
 		t.Fatalf("manifest = %#v", manifest)
+	}
+}
+
+func TestGitHubSourceListsEveryReleasePage(t *testing.T) {
+	var pages []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		pages = append(pages, request.URL.Query().Get("page"))
+		var releases []Release
+		if request.URL.Query().Get("page") == "1" {
+			releases = make([]Release, 100)
+			for index := range releases {
+				releases[index] = Release{TagName: fmt.Sprintf("v1.0.%d", index)}
+			}
+		} else {
+			releases = []Release{{TagName: "v2.0.0"}}
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(writer).Encode(releases); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer server.Close()
+
+	source, err := NewGitHubSource(server.Client(), server.URL, server.URL+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	releases, err := source.ListReleases(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(releases) != 101 || releases[100].TagName != "v2.0.0" {
+		t.Fatalf("ListReleases() returned %d releases", len(releases))
+	}
+	if strings.Join(pages, ",") != "1,2" {
+		t.Fatalf("requested pages = %v", pages)
 	}
 }
 

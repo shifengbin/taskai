@@ -1,4 +1,4 @@
-//go:build !bindings
+//go:build !bindings && !updater_integration
 
 package main
 

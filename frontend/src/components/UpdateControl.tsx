@@ -45,29 +45,41 @@ export function UpdateControl({client = api, onError}: UpdateControlProps) {
 
 	useEffect(() => {
 		let active = true
-		let unsubscribe: (() => void) | undefined
-		void client.getUpdateState()
-			.then((current) => {
-				if (!active) return
-				setState(current?.status ? current : idleState)
-				unsubscribe = client.onUpdateState((next) => {
-					if (!active) return
-					setState(next)
-					if (next.status === 'download_failed') {
-						setDownloadFailureOpen(true)
-					}
-					if (next.status === 'downloaded') {
-						setDownloadFailureOpen(false)
-						setInstallDialogOpen(true)
-					}
-				})
-			})
-			.catch((error) => {
+		let eventRevision = 0
+		const applyState = (next: UpdateState) => {
+			setState(next?.status ? next : idleState)
+		}
+		const initialState = client.getUpdateState()
+		const unsubscribe = client.onUpdateState((next) => {
+			if (!active) return
+			eventRevision += 1
+			applyState(next)
+			if (next.status === 'download_failed') {
+				setDownloadFailureOpen(true)
+			}
+			if (next.status === 'downloaded') {
+				setDownloadFailureOpen(false)
+				setInstallDialogOpen(true)
+			}
+		})
+		void (async () => {
+			try {
+				const initial = await initialState
+				if (active && eventRevision === 0) applyState(initial)
+			} catch (error) {
 				if (active) onErrorRef.current?.(errorMessage(error))
-			})
+			}
+			const revisionBeforeRecheck = eventRevision
+			try {
+				const current = await client.getUpdateState()
+				if (active && eventRevision === revisionBeforeRecheck) applyState(current)
+			} catch (error) {
+				if (active) onErrorRef.current?.(errorMessage(error))
+			}
+		})()
 		return () => {
 			active = false
-			unsubscribe?.()
+			unsubscribe()
 		}
 	}, [client])
 

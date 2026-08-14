@@ -62,6 +62,7 @@ type Service struct {
 	cache          *Cache
 
 	checkMu     sync.Mutex
+	eventMu     sync.Mutex
 	mu          sync.RWMutex
 	state       State
 	target      Candidate
@@ -89,7 +90,7 @@ func NewService(options Options) (*Service, error) {
 	if options.CheckTimeout <= 0 {
 		options.CheckTimeout = DefaultCheckTimeout
 	}
-	return &Service{
+	service := &Service{
 		currentVersion: currentVersion,
 		platform:       options.Platform,
 		source:         options.Source,
@@ -98,17 +99,35 @@ func NewService(options Options) (*Service, error) {
 		publish:        options.Publish,
 		cache:          NewCache(options.CacheDirectory),
 		state:          State{Status: StatusIdle},
-	}, nil
+	}
+	candidate, path, ok, err := service.cache.RestoreLatest(currentVersion, options.Platform)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		service.target = candidate
+		service.state = State{
+			Status:      StatusDownloaded,
+			Version:     candidate.Version,
+			ReleaseURL:  candidate.ReleaseURL,
+			AssetName:   candidate.Asset.Name,
+			InstallPath: path,
+		}
+	}
+	return service, nil
 }
 
 func (service *Service) Download(ctx context.Context) error {
+	service.eventMu.Lock()
 	service.mu.Lock()
 	if service.downloading {
 		service.mu.Unlock()
+		service.eventMu.Unlock()
 		return ErrDownloadInProgress
 	}
 	if service.target.Version == "" {
 		service.mu.Unlock()
+		service.eventMu.Unlock()
 		return fmt.Errorf("没有可下载的更新")
 	}
 	service.downloading = true
@@ -122,6 +141,7 @@ func (service *Service) Download(ctx context.Context) error {
 	service.state = state
 	service.mu.Unlock()
 	service.publishState(state)
+	service.eventMu.Unlock()
 
 	defer func() {
 		service.mu.Lock()
@@ -136,7 +156,7 @@ func (service *Service) Download(ctx context.Context) error {
 	}
 	defer reader.Close()
 
-	path, err := service.cache.Store(ctx, candidate.Version, candidate.Asset, reader)
+	path, err := service.cache.StoreCandidate(ctx, candidate, service.platform, reader)
 	if err != nil {
 		service.setDownloadFailed(candidate, err)
 		return err
@@ -148,10 +168,17 @@ func (service *Service) Download(ctx context.Context) error {
 		AssetName:   candidate.Asset.Name,
 		InstallPath: path,
 	}
+	service.eventMu.Lock()
 	service.mu.Lock()
+	if service.target != candidate {
+		service.mu.Unlock()
+		service.eventMu.Unlock()
+		return fmt.Errorf("下载期间更新目标已变化")
+	}
 	service.state = downloaded
 	service.mu.Unlock()
 	service.publishState(downloaded)
+	service.eventMu.Unlock()
 	return nil
 }
 
@@ -222,6 +249,9 @@ func (service *Service) Check(ctx context.Context) error {
 		}
 		manifests[release.TagName] = manifest
 	}
+	if fetchErr != nil {
+		return fetchErr
+	}
 
 	for len(manifests) > 0 {
 		candidate, ok := SelectCandidate(service.currentVersion, service.platform, releases, manifests)
@@ -234,9 +264,6 @@ func (service *Service) Check(ctx context.Context) error {
 		}
 		service.setCandidate(candidate)
 		return nil
-	}
-	if fetchErr != nil {
-		return fetchErr
 	}
 	service.setIdle()
 	return nil
@@ -262,24 +289,24 @@ func (service *Service) checkSilently(ctx context.Context) {
 }
 
 func (service *Service) setCandidate(candidate Candidate) {
-	service.mu.RLock()
-	preserve := service.target.Tag == candidate.Tag && (service.downloading || service.state.Status == StatusDownloaded || service.state.Status == StatusDownloadFailed)
-	service.mu.RUnlock()
-	if preserve {
-		return
-	}
-
 	state := State{
 		Status:     StatusAvailable,
 		Version:    candidate.Version,
 		ReleaseURL: candidate.ReleaseURL,
 		AssetName:  candidate.Asset.Name,
 	}
-	if path, ok, _ := service.cache.Restore(service.currentVersion, candidate); ok {
-		state.Status = StatusDownloaded
-		state.InstallPath = path
-	}
+	service.eventMu.Lock()
 	service.mu.Lock()
+	if service.downloading || (semver.IsValid(service.target.Version) && semver.Compare(service.target.Version, candidate.Version) > 0) {
+		service.mu.Unlock()
+		service.eventMu.Unlock()
+		return
+	}
+	if service.target.Tag == candidate.Tag && (service.state.Status == StatusDownloaded || service.state.Status == StatusDownloadFailed) {
+		service.mu.Unlock()
+		service.eventMu.Unlock()
+		return
+	}
 	changed := service.state != state
 	service.target = candidate
 	service.state = state
@@ -287,11 +314,18 @@ func (service *Service) setCandidate(candidate Candidate) {
 	if changed && service.publish != nil {
 		service.publishState(state)
 	}
+	service.eventMu.Unlock()
 }
 
 func (service *Service) setIdle() {
 	state := State{Status: StatusIdle}
+	service.eventMu.Lock()
 	service.mu.Lock()
+	if service.downloading || service.state.Status == StatusDownloaded {
+		service.mu.Unlock()
+		service.eventMu.Unlock()
+		return
+	}
 	changed := service.state != state
 	service.target = Candidate{}
 	service.state = state
@@ -299,6 +333,7 @@ func (service *Service) setIdle() {
 	if changed && service.publish != nil {
 		service.publishState(state)
 	}
+	service.eventMu.Unlock()
 }
 
 func (service *Service) setDownloadFailed(candidate Candidate, downloadErr error) {
@@ -309,10 +344,17 @@ func (service *Service) setDownloadFailed(candidate Candidate, downloadErr error
 		AssetName:  candidate.Asset.Name,
 		Error:      downloadErr.Error(),
 	}
+	service.eventMu.Lock()
 	service.mu.Lock()
+	if service.target != candidate {
+		service.mu.Unlock()
+		service.eventMu.Unlock()
+		return
+	}
 	service.state = state
 	service.mu.Unlock()
 	service.publishState(state)
+	service.eventMu.Unlock()
 }
 
 func (service *Service) publishState(state State) {
