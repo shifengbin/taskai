@@ -41,5 +41,5 @@ macOS universal 构建在 Wails 生成绑定阶段编译 `internal/workspace` �
 3. 运行前端测试与构建，确认嵌入资源完整。
 4. 将当前主分支合并到 worktree 分支后再次执行完整测试。
 5. 使用项目脚本编译 Linux 可执行程序。
-6. 使用 `wails dev` 启动应用，从输出取得调试地址，并通过浏览器检查应用能够加载、任务列表能够显示且没有启动错误；验证完成后关闭调试进程。
+6. 使用 `wails dev -tags webkit2_41` 启动应用，从输出取得调试地址，并通过浏览器检查应用能够加载、任务列表能够显示且没有启动错误；验证完成后关闭调试进程。
 7. macOS GitHub Actions 继续执行 `scripts/build-macos.sh --dmg`，其中 Wails 的 `darwin/universal` 构建是最终平台集成验证，预期不再出现 `C.acl_delete_file_np` 错误。
