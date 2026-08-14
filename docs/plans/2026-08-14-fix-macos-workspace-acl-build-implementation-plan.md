@@ -173,4 +173,5 @@ Run: `wails dev -tags webkit2_41`
 - 完整测试：`go test -race ./...` 通过；前端 16 个测试文件、336 项测试通过；生产前端构建通过。
 - 可执行程序：`bash scripts/build-linux.sh amd64` 成功生成 `build/bin/taskai`。
 - Wails 集成测试：`wails dev -tags webkit2_41` 成功启动，调试地址为 `http://localhost:34115`。chrome-devtools 确认“任务工作台”、任务状态和任务列表正常显示，业务资源请求成功；唯一 404 为已有的 `/favicon.ico`，与本次启动和 ACL 修复无关。验证后已关闭调试进程。
+- 合并后验证：worktree 分支无冲突合并到 `main`；`go test -race ./...`、前端 336 项测试、前端生产构建、Darwin amd64/arm64 工作区包交叉编译与 `bash scripts/build-linux.sh amd64` 均再次通过。
 - macOS 最终验证：代码不再包含 Darwin cgo 文件；实际 Wails `darwin/universal` 与 DMG 仍由 macOS GitHub Actions runner 验证。
