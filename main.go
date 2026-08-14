@@ -5,11 +5,8 @@ import (
 	"embed"
 	"encoding/hex"
 
-	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-
-	"taskai/internal/appdata"
 )
 
 //go:embed all:frontend/dist
@@ -18,18 +15,7 @@ var assets embed.FS
 const taskAISingleInstanceID = "com.taskai.desktop"
 
 func main() {
-	dataDirectory, instanceLock, err := resolveApplicationDataDirectory(appdata.CoordinationDirectory(), defaultDataDirectory)
-	if err != nil {
-		println("Error:", err.Error())
-		return
-	}
-	defer instanceLock.Close()
-
-	app := newApp(dataDirectory)
-
-	err = wails.Run(applicationOptions(app, dataDirectory))
-
-	if err != nil {
+	if err := runApplication(); err != nil {
 		println("Error:", err.Error())
 	}
 }

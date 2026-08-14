@@ -25,6 +25,14 @@ set -euo pipefail
   exit 1
 }
 grep -F 'replace github.com/wailsapp/wails/v2 v2.12.0 =>' "$GOWORK" >/dev/null
+[[ " $* " == *" -ldflags "* ]] || {
+  echo "Wails 构建缺少 -ldflags" >&2
+  exit 1
+}
+[[ " $* " == *"-X main.appVersion=${TASKAI_EXPECT_APP_VERSION}"* ]] || {
+  echo "Wails 构建未注入预期应用版本 ${TASKAI_EXPECT_APP_VERSION}: $*" >&2
+  exit 1
+}
 mkdir -p "$PWD/build/bin"
 cp /bin/true "$PWD/build/bin/taskai"
 EOF
@@ -64,7 +72,12 @@ EOF
 chmod +x "$fake_bin/pkg-config"
 
 run_build() {
-  PATH="$fake_bin:$PATH" TASKAI_WAILS_MODULE_DIR="$wails_module_dir" "$test_project/scripts/build-linux.sh" "$@"
+  local expected_app_version="$1"
+  shift
+  PATH="$fake_bin:$PATH" \
+    TASKAI_EXPECT_APP_VERSION="$expected_app_version" \
+    TASKAI_WAILS_MODULE_DIR="$wails_module_dir" \
+    "$test_project/scripts/build-linux.sh" "$@"
 }
 
 assert_transparent_corner() {
@@ -88,7 +101,7 @@ assert_transparent_corner() {
 
 assert_transparent_corner "$project_dir/build/appicon.png" "发布图标源文件"
 
-run_build --deb --version 1.2.3
+run_build v1.2.3 --deb --version 1.2.3
 
 package_path="$test_project/build/bin/taskai_1.2.3_amd64.deb"
 [[ -f "$package_path" ]] || {
@@ -115,17 +128,17 @@ packaged_icon="$test_dir/taskai.png"
 dpkg-deb --fsys-tarfile "$package_path" | tar -xOf - ./usr/share/icons/hicolor/512x512/apps/taskai.png > "$packaged_icon"
 assert_transparent_corner "$packaged_icon" "DEB 安装图标"
 
-TASKAI_DEB_VERSION=2.3.4 run_build --deb
+TASKAI_DEB_VERSION=2.3.4 run_build v2.3.4 --deb
 environment_package="$test_project/build/bin/taskai_2.3.4_amd64.deb"
 [[ -f "$environment_package" ]]
 [[ "$(dpkg-deb --field "$environment_package" Version)" == "2.3.4" ]]
 
-run_build --deb
+run_build v0.0.0+git.local --deb
 automatic_package="$test_project/build/bin/taskai_0.0.0+git.local_amd64.deb"
 [[ -f "$automatic_package" ]]
 [[ "$(dpkg-deb --field "$automatic_package" Version)" == "0.0.0+git.local" ]]
 
-if run_build --deb --version 'invalid_version'; then
+if run_build vinvalid_version --deb --version 'invalid_version'; then
   echo "非法 Debian 版本号不应生成 DEB 包" >&2
   exit 1
 fi

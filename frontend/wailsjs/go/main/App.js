@@ -102,12 +102,20 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function GetUpdateState() {
+  return window['go']['main']['App']['GetUpdateState']();
+}
+
 export function HasRunningTasks() {
   return window['go']['main']['App']['HasRunningTasks']();
 }
 
 export function HasTaskGitWorkspace(arg1) {
   return window['go']['main']['App']['HasTaskGitWorkspace'](arg1);
+}
+
+export function LaunchDownloadedUpdate() {
+  return window['go']['main']['App']['LaunchDownloadedUpdate']();
 }
 
 export function ListExtraInfoCatalogues() {
@@ -152,6 +160,10 @@ export function ListTerminalFonts() {
 
 export function OpenTaskFolder(arg1) {
   return window['go']['main']['App']['OpenTaskFolder'](arg1);
+}
+
+export function OpenUpdateReleasePage() {
+  return window['go']['main']['App']['OpenUpdateReleasePage']();
 }
 
 export function PrepareQuit() {
@@ -236,6 +248,10 @@ export function SetTaskShelved(arg1, arg2) {
 
 export function StartTask(arg1) {
   return window['go']['main']['App']['StartTask'](arg1);
+}
+
+export function StartUpdateDownload() {
+  return window['go']['main']['App']['StartUpdateDownload']();
 }
 
 export function SyncTaskGitRepository(arg1, arg2) {

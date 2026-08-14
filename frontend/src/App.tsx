@@ -50,6 +50,7 @@ import {
 import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
 import {TerminalShortcutSettings} from './components/TerminalShortcutSettings'
 import {TerminalView} from './components/TerminalView'
+import {UpdateControl} from './components/UpdateControl'
 import {TerminalSessionRegistry} from './terminal-session'
 import {
 	appendTerminalNote,
@@ -1238,6 +1239,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
         <header className="flex h-[52px] items-center gap-2 border-b-2 border-snap-outline bg-snap-surface px-3">
           <img className="taskai-brand-mark" src={taskAiMark} alt="任务 AI 图标"/>
           <span className="font-display text-base font-extrabold tracking-[0.3px] text-snap-ink">任务工作台</span>
+          <UpdateControl onError={showErrorMessage}/>
           <span className="flex-1"/>
             <SnapTooltip>
               <SnapTooltipTrigger asChild>

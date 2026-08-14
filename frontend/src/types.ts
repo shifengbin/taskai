@@ -7,6 +7,7 @@ export type TerminalExitReason = 'normal' | 'unexpected' | 'closed' | 'task-ende
 export type RealtimeStatus = 'idle' | 'working' | 'unread' | 'error'
 export type StatusManagementMode = 'title-change' | 'output-change' | 'http'
 export type ColorScheme = 'light' | 'dark'
+export type UpdateStatus = 'idle' | 'available' | 'downloading' | 'downloaded' | 'download_failed'
 export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' | 'toggle-shelved' | 'command'
 export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'
 export type LifecycleExecutionState = 'running' | 'failed'
@@ -16,6 +17,15 @@ export type LifecycleCommandChainArgumentMode = 'enabled' | 'disabled'
 export type TaskTemplateFieldInputType = 'string' | 'bool'
 export type TaskTemplateValues = Record<string, string | boolean>
 export type TerminalShortcutStep = {kind: 'text', text: string} | {kind: 'key', key: string, modifiers?: string[]} | {kind: 'enter'}
+
+export interface UpdateState {
+	status: UpdateStatus
+	version?: string
+	releaseUrl?: string
+	assetName?: string
+	error?: string
+	installPath?: string
+}
 
 export interface TerminalShortcut {
   id: string

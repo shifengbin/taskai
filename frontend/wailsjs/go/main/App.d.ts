@@ -5,6 +5,7 @@ import {settings} from '../models';
 import {terminal} from '../models';
 import {task} from '../models';
 import {application} from '../models';
+import {updater} from '../models';
 import {quickinput} from '../models';
 import {fonts} from '../models';
 
@@ -58,9 +59,13 @@ export function GetLifecycleCommandInput(arg1:string):Promise<string>;
 
 export function GetSettings():Promise<settings.Settings>;
 
+export function GetUpdateState():Promise<updater.State>;
+
 export function HasRunningTasks():Promise<boolean>;
 
 export function HasTaskGitWorkspace(arg1:string):Promise<boolean>;
+
+export function LaunchDownloadedUpdate():Promise<void>;
 
 export function ListExtraInfoCatalogues():Promise<Array<string>>;
 
@@ -83,6 +88,8 @@ export function ListTasks():Promise<Array<task.Task>>;
 export function ListTerminalFonts():Promise<Array<fonts.Candidate>>;
 
 export function OpenTaskFolder(arg1:string):Promise<void>;
+
+export function OpenUpdateReleasePage():Promise<void>;
 
 export function PrepareQuit():Promise<void>;
 
@@ -125,6 +132,8 @@ export function SelectTerminal(arg1:string,arg2:string):Promise<void>;
 export function SetTaskShelved(arg1:string,arg2:boolean):Promise<Array<task.Task>>;
 
 export function StartTask(arg1:string):Promise<task.Task>;
+
+export function StartUpdateDownload():Promise<void>;
 
 export function SyncTaskGitRepository(arg1:string,arg2:string):Promise<repositorygit.Repository>;
 

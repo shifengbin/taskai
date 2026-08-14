@@ -38,6 +38,8 @@ if ($Version) {
 }
 
 $Arguments = @('build', '-platform', "windows/$Architecture", '-clean')
+$AppVersion = if ($Version) { "v$($Version.TrimStart('v'))" } else { 'v0.0.0-dev' }
+$Arguments += @('-ldflags', "-X main.appVersion=$AppVersion")
 if ($NSIS) {
     $Arguments += '-nsis'
 }

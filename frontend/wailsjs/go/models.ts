@@ -107,7 +107,7 @@ export namespace repositorygit {
 }
 
 export namespace settings {
-	
+
 	export class LifecycleCommand {
 	    id: string;
 	    kind: string;
@@ -117,11 +117,11 @@ export namespace settings {
 	    chainArgumentMode: string;
 	    documentation?: string;
 	    applicableHooks: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleCommand(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -838,6 +838,33 @@ export namespace terminal {
 	        this.taskId = source["taskId"];
 	        this.state = source["state"];
 	        this.command = source["command"];
+	    }
+	}
+
+}
+
+export namespace updater {
+
+	export class State {
+	    status: string;
+	    version?: string;
+	    releaseUrl?: string;
+	    assetName?: string;
+	    error?: string;
+	    installPath?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new State(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.version = source["version"];
+	        this.releaseUrl = source["releaseUrl"];
+	        this.assetName = source["assetName"];
+	        this.error = source["error"];
+	        this.installPath = source["installPath"];
 	    }
 	}
 

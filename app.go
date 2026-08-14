@@ -28,7 +28,15 @@ import (
 	"taskai/internal/storage"
 	"taskai/internal/task"
 	"taskai/internal/terminal"
+	"taskai/internal/updater"
 )
+
+type updateService interface {
+	Start(context.Context)
+	Stop()
+	State() updater.State
+	Download(context.Context) error
+}
 
 type App struct {
 	mu               sync.RWMutex
@@ -59,6 +67,9 @@ type App struct {
 	agentCommandDetector   func() settings.DetectedAgentCommands
 	agentMenuSynchronizer  func(settings.DetectedAgentCommands) (settings.Settings, bool, error)
 	startupErrorPublisher  func(string)
+	updaterService         updateService
+	updateLauncher         updater.Launcher
+	updateStatePublisher   func(updater.State)
 	endingTasks            map[string]bool
 }
 
@@ -120,6 +131,8 @@ func newApp(dataDirectory string) *App {
 	app.agentCommandDetector = settings.DetectInstalledAgentCommands
 	app.agentMenuSynchronizer = repository.MergeDetectedAgentTaskMenuItems
 	app.startupErrorPublisher = app.publishRealtimeStatusError
+	app.updateStatePublisher = app.emitUpdateStateEvent
+	app.updaterService, app.updateLauncher = newApplicationUpdater(dataDirectory, app.publishUpdateStateEvent)
 	return app
 }
 
@@ -148,6 +161,9 @@ func (app *App) startup(ctx context.Context) {
 		}
 	}
 	app.registerRunningRealtimeTasks()
+	if app.updaterService != nil {
+		app.updaterService.Start(app.applicationContext())
+	}
 }
 
 func (app *App) signalStartupReady() {
@@ -163,8 +179,71 @@ func (app *App) waitForStartupSynchronization() {
 }
 
 func (app *App) shutdown(context.Context) {
+	if app.updaterService != nil {
+		app.updaterService.Stop()
+	}
 	_ = app.statusHTTP.Close()
 	_ = app.terminals.CloseAll()
+}
+
+func (app *App) GetUpdateState() updater.State {
+	if app.updaterService == nil {
+		return updater.State{Status: updater.StatusIdle}
+	}
+	return app.updaterService.State()
+}
+
+func (app *App) StartUpdateDownload() error {
+	if app.updaterService == nil {
+		return fmt.Errorf("当前平台不支持自动更新")
+	}
+	return app.updaterService.Download(app.applicationContext())
+}
+
+func (app *App) OpenUpdateReleasePage() error {
+	if app.updaterService == nil || app.updateLauncher == nil {
+		return fmt.Errorf("当前平台不支持自动更新")
+	}
+	releaseURL := app.updaterService.State().ReleaseURL
+	if releaseURL == "" {
+		return fmt.Errorf("没有可打开的更新页面")
+	}
+	return app.updateLauncher.OpenReleasePage(releaseURL)
+}
+
+func (app *App) LaunchDownloadedUpdate() error {
+	if app.updaterService == nil || app.updateLauncher == nil {
+		return fmt.Errorf("当前平台不支持自动更新")
+	}
+	state := app.updaterService.State()
+	if state.Status != updater.StatusDownloaded || state.InstallPath == "" {
+		return fmt.Errorf("更新安装包尚未下载完成")
+	}
+	return app.updateLauncher.LaunchInstaller(state.InstallPath)
+}
+
+func (app *App) applicationContext() context.Context {
+	app.mu.RLock()
+	defer app.mu.RUnlock()
+	if app.ctx != nil {
+		return app.ctx
+	}
+	return context.Background()
+}
+
+func (app *App) publishUpdateStateEvent(state updater.State) {
+	if app.updateStatePublisher != nil {
+		app.updateStatePublisher(state)
+	}
+}
+
+func (app *App) emitUpdateStateEvent(state updater.State) {
+	app.mu.RLock()
+	ctx := app.ctx
+	app.mu.RUnlock()
+	if ctx != nil {
+		runtime.EventsEmit(ctx, "updater:state-changed", state)
+	}
 }
 
 func (app *App) beforeClose(ctx context.Context) bool {

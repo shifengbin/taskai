@@ -15,6 +15,7 @@ import {
 	ExecuteTaskMenuCommand,
   FinishTask,
 	GetSettings,
+	GetUpdateState,
 	GetLifecycleCommandInput,
 	DeleteExtraInfoCatalogue,
 	DeleteExtraInfo,
@@ -36,7 +37,9 @@ import {
 	ListTaskGitRepositories,
 	ListTerminalFonts,
 	OpenTaskFolder,
+	OpenUpdateReleasePage,
 	PrepareQuit,
+	LaunchDownloadedUpdate,
 	PublishTaskGitRepository,
 	ReorderTasks,
 	ReorderQuickInputs,
@@ -56,6 +59,7 @@ import {
 	SelectTerminal,
 	SetTaskShelved,
 	StartTask,
+	StartUpdateDownload,
 	SyncTaskGitRepository,
 	CommitTaskGitRepository,
 	RetryTaskLifecycleCommandChain,
@@ -72,7 +76,7 @@ import {task as taskModel} from '../wailsjs/go/models'
 import {quickinput as quickInputModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskGitRepository, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskGitRepository, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord, UpdateState} from './types'
 import {normalizeTerminalTheme} from './terminal-theme'
 
 export const api = {
@@ -171,6 +175,10 @@ export const api = {
 		return SaveSettings(payload) as Promise<SettingsRecord>
 	},
 	detectShells: () => DetectShells() as Promise<string[]>,
+	getUpdateState: () => GetUpdateState() as Promise<UpdateState>,
+	startUpdateDownload: () => StartUpdateDownload(),
+	openUpdateReleasePage: () => OpenUpdateReleasePage(),
+	launchDownloadedUpdate: () => LaunchDownloadedUpdate(),
   createTerminal: (taskID: string, columns: number, rows: number) => CreateTerminal(taskID, columns, rows) as Promise<TerminalRecord>,
   createCommandTerminal: (taskID: string, command: string, arguments_: string[], columns: number, rows: number) => CreateCommandTerminal(taskID, command, arguments_, columns, rows) as Promise<TerminalRecord>,
 	executeTaskMenuCommand: (taskID: string, itemID: string, columns: number, rows: number) => ExecuteTaskMenuCommand(taskID, itemID, columns, rows) as Promise<TaskMenuCommandResult>,
@@ -210,5 +218,9 @@ export const api = {
 	onLifecycleEvent(listener: (task: TaskRecord) => void) {
 		EventsOn('task-lifecycle:event', listener)
 		return () => EventsOff('task-lifecycle:event')
+	},
+	onUpdateState(listener: (state: UpdateState) => void) {
+		EventsOn('updater:state-changed', listener)
+		return () => EventsOff('updater:state-changed')
 	},
 }

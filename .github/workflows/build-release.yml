@@ -15,16 +15,22 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       is-tag: ${{ steps.version.outputs.is-tag }}
+      is-prerelease: ${{ steps.version.outputs.is-prerelease }}
     steps:
+      - uses: actions/checkout@v4
+
       - id: version
         shell: bash
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            version="${GITHUB_REF_NAME#v}"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
             echo "is-tag=true" >> "$GITHUB_OUTPUT"
+            echo "is-prerelease=$(bash scripts/is-prerelease.sh "$version")" >> "$GITHUB_OUTPUT"
           else
             echo "version=0.0.0+git.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
             echo "is-tag=false" >> "$GITHUB_OUTPUT"
+            echo "is-prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -40,7 +46,7 @@ jobs:
           - os: windows-latest
             build-cmd: pwsh scripts/build-windows.ps1 -NSIS -Version "$VERSION"
             artifact-name: taskai-windows-exe
-            artifact-path: build/bin/*.exe
+            artifact-path: build/bin/*-installer.exe
           - os: macos-latest
             build-cmd: bash scripts/build-macos.sh --dmg --version "$VERSION"
             artifact-name: taskai-macos-dmg
@@ -95,17 +101,45 @@ jobs:
     if: needs.prepare.outputs.is-tag == 'true'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Generate update manifest
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          bash scripts/generate-update-manifest.sh \
+            "$VERSION" \
+            "$GITHUB_REF_NAME" \
+            "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            artifacts/taskai-linux-deb \
+            artifacts/taskai-windows-exe \
+            artifacts/taskai-macos-dmg \
+            taskai-update.json
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_PRERELEASE: ${{ needs.prepare.outputs.is-prerelease }}
         run: |
+          release_flags=()
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
+            "${release_flags[@]}" \
             artifacts/taskai-linux-deb/*.deb \
-            artifacts/taskai-windows-exe/*.exe \
-            artifacts/taskai-macos-dmg/*.dmg
+            artifacts/taskai-windows-exe/*-installer.exe \
+            artifacts/taskai-macos-dmg/*.dmg \
+            taskai-update.json
