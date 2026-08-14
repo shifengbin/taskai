@@ -90,7 +90,13 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis --no-progress --yes
-          Get-Command makensis -ErrorAction Stop
+          $NSISPath = Join-Path ${env:ProgramFiles(x86)} 'NSIS'
+          $MakeNSIS = Join-Path $NSISPath 'makensis.exe'
+          if (-not (Test-Path -LiteralPath $MakeNSIS -PathType Leaf)) {
+            throw "NSIS 安装完成但未找到 $MakeNSIS"
+          }
+          & $MakeNSIS -VERSION
+          $NSISPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Test Windows build script
         if: matrix.os == 'windows-latest'

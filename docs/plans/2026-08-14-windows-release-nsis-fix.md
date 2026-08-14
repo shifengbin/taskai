@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 让 Windows GitHub Actions 构建稳定生成 NSIS 安装包，并发布包含三端安装包和更新清单的 `v0.0.0-rc7`。
+**Goal:** 让 Windows GitHub Actions 构建稳定生成 NSIS 安装包，并发布包含三端安装包和更新清单的 `v0.0.0-rc8`。
 
 **Architecture:** 在 Windows 构建任务进入 Wails 前安装并验证 `makensis`，从依赖入口消除 Wails 静默跳过安装包的问题。保留现有严格的 `*-installer.exe` 资产选择，并用发布脚本测试固定工作流依赖。
 
@@ -22,7 +22,8 @@
 
 ```bash
 grep -F 'choco install nsis --no-progress --yes' "$workflow" >/dev/null
-grep -F 'Get-Command makensis -ErrorAction Stop' "$workflow" >/dev/null
+grep -F '$NSISPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append' "$workflow" >/dev/null
+grep -F '& $MakeNSIS -VERSION' "$workflow" >/dev/null
 ```
 
 **Step 2: Run test to verify it fails**
@@ -47,7 +48,13 @@ Expected: FAIL，因为当前工作流没有安装或验证 NSIS。
         shell: pwsh
         run: |
           choco install nsis --no-progress --yes
-          Get-Command makensis -ErrorAction Stop
+          $NSISPath = Join-Path ${env:ProgramFiles(x86)} 'NSIS'
+          $MakeNSIS = Join-Path $NSISPath 'makensis.exe'
+          if (-not (Test-Path -LiteralPath $MakeNSIS -PathType Leaf)) {
+            throw "NSIS 安装完成但未找到 $MakeNSIS"
+          }
+          & $MakeNSIS -VERSION
+          $NSISPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 ```
 
 **Step 2: Run test to verify it passes**
@@ -89,11 +96,11 @@ Run: `openspec validate application-auto-update --type spec --strict && openspec
 
 Expected: PASS。
 
-### Task 4: 合并修复并发布 rc7
+### Task 4: 合并修复并发布 rc8
 
 **Files:**
 - Merge: branch `fix/windows-release-nsis` into `main`
-- Tag: `v0.0.0-rc7`
+- Tag: `v0.0.0-rc8`
 
 **Step 1: Synchronize and merge**
 
@@ -103,9 +110,9 @@ Expected: PASS。
 
 Run: `git push origin main`
 
-Run: `git tag v0.0.0-rc7 && git push origin v0.0.0-rc7`
+Run: `git tag v0.0.0-rc8 && git push origin v0.0.0-rc8`
 
-Expected: GitHub Actions `build-release` 工作流由 `v0.0.0-rc7` 触发。
+Expected: GitHub Actions `build-release` 工作流由 `v0.0.0-rc8` 触发。
 
 **Step 3: Verify release assets**
 
