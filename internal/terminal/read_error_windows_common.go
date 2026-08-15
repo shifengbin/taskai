@@ -5,8 +5,11 @@ import (
 	"syscall"
 )
 
-const windowsErrorOperationAborted = syscall.Errno(995)
+const (
+	windowsErrorOperationAborted = syscall.Errno(995)
+	windowsErrorBrokenPipe       = syscall.Errno(109)
+)
 
 func isExpectedWindowsTerminalReadError(err error) bool {
-	return errors.Is(err, windowsErrorOperationAborted)
+	return errors.Is(err, windowsErrorOperationAborted) || errors.Is(err, windowsErrorBrokenPipe)
 }
