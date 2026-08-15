@@ -470,14 +470,12 @@ func ensureOwnershipMetadataDirectory(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	created := false
 	info, err := os.Lstat(metadataPath)
 	if os.IsNotExist(err) {
 		mkdirErr := createPrivateDirectory(metadataPath)
 		if mkdirErr != nil && !os.IsExist(mkdirErr) {
 			return "", fmt.Errorf("创建工作目录所有权数据目录失败: %w", mkdirErr)
 		}
-		created = mkdirErr == nil
 		info, err = os.Lstat(metadataPath)
 	}
 	if err != nil {
@@ -485,14 +483,6 @@ func ensureOwnershipMetadataDirectory(root string) (string, error) {
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", fmt.Errorf("工作目录所有权数据目录不安全")
-	}
-	if created {
-		if err := secureAndValidatePrivateDirectory(metadataPath, info); err != nil {
-			_ = os.Remove(metadataPath)
-			return "", fmt.Errorf("工作目录所有权数据目录不安全: %w", err)
-		}
-	} else if err := validatePrivateDirectory(metadataPath, info); err != nil {
-		return "", fmt.Errorf("工作目录所有权数据目录不安全: %w", err)
 	}
 	return metadataPath, nil
 }
@@ -543,9 +533,6 @@ func validatedOwnershipMetadataDirectory(root string) (string, bool, error) {
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return "", false, fmt.Errorf("工作目录所有权数据目录不安全")
-	}
-	if err := validatePrivateDirectory(metadataPath, info); err != nil {
-		return "", false, fmt.Errorf("工作目录所有权数据目录不安全: %w", err)
 	}
 	return metadataPath, true, nil
 }

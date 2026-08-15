@@ -74,7 +74,7 @@ export namespace quickinput {
 }
 
 export namespace repositorygit {
-
+	
 	export class Repository {
 	    path: string;
 	    branch?: string;
@@ -85,11 +85,11 @@ export namespace repositorygit {
 	    remoteBranchExists: boolean;
 	    synchronized: boolean;
 	    action: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Repository(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -107,7 +107,7 @@ export namespace repositorygit {
 }
 
 export namespace settings {
-
+	
 	export class LifecycleCommand {
 	    id: string;
 	    kind: string;
@@ -117,11 +117,11 @@ export namespace settings {
 	    chainArgumentMode: string;
 	    documentation?: string;
 	    applicableHooks: string[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new LifecycleCommand(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -267,11 +267,11 @@ export namespace settings {
 	    originalPrefix: string;
 	    notePrefix: string;
 	    listSuffix: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TerminalNoteTemplate(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.originalPrefix = source["originalPrefix"];
@@ -463,6 +463,7 @@ export namespace settings {
 		    return a;
 		}
 	}
+	
 	
 	
 	
@@ -844,7 +845,7 @@ export namespace terminal {
 }
 
 export namespace updater {
-
+	
 	export class State {
 	    status: string;
 	    version?: string;
@@ -852,11 +853,11 @@ export namespace updater {
 	    assetName?: string;
 	    error?: string;
 	    installPath?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new State(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.status = source["status"];
@@ -869,3 +870,4 @@ export namespace updater {
 	}
 
 }
+
