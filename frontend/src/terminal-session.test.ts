@@ -225,6 +225,16 @@ import {TerminalSessionRegistry, terminalVisualTheme} from './terminal-session'
 
 const terminal = {id: 'terminal-1', taskId: 'task-1', state: 'active' as const}
 
+// 输出按静默期合批写入：推进假定时器触发冲刷回调后再断言 terminal.write。
+// 常量与 terminal-session.ts 保持一致（静默 32ms / 恢复 48ms）。
+function flushTerminalOutput() {
+  vi.advanceTimersByTime(32)
+}
+
+function cursorRestoreSettled() {
+  vi.advanceTimersByTime(48)
+}
+
 describe('terminalVisualTheme', () => {
 	it('使用保存的独立主题，不随工作台亮暗模式切换', () => {
 		const savedTheme = {...terminalVisualTheme(), background: '#102030', foreground: '#E0F0FF'}
@@ -279,6 +289,7 @@ describe('TerminalSessionRegistry', () => {
   })
 
   it('创建和批量更新会话时使用已保存字号，保留视图挂载前的输出', () => {
+    vi.useFakeTimers()
     let savedFontSize = 16
     const registry = new TerminalSessionRegistry(vi.fn(), () => '', () => savedFontSize)
     const container = document.createElement('div')
@@ -290,6 +301,7 @@ describe('TerminalSessionRegistry', () => {
     savedFontSize = 20
     registry.setFontSize(savedFontSize)
     registry.attach(terminal, container, terminalVisualTheme(), onResize)
+    flushTerminalOutput()
 
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].options.fontSize).toBe(20)
@@ -300,6 +312,7 @@ describe('TerminalSessionRegistry', () => {
   })
 
   it('保存后将主题、字体和字号更新到已有会话', () => {
+    vi.useFakeTimers()
     const registry = new TerminalSessionRegistry(vi.fn())
     const container = document.createElement('div')
     document.body.append(container)
@@ -308,6 +321,7 @@ describe('TerminalSessionRegistry', () => {
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'ready'})
     registry.attach(terminal, container, terminalVisualTheme(), vi.fn())
     ;(registry as unknown as {setAppearance(fontFamily: string, fontSize: number, theme: typeof updatedTheme): void}).setAppearance('Fira Code', 16, updatedTheme)
+    flushTerminalOutput()
 
     expect(terminalInstances[0].options.theme).toMatchObject(updatedTheme)
     expect(terminalInstances[0].options.fontFamily).toBe('"Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace')
@@ -317,9 +331,11 @@ describe('TerminalSessionRegistry', () => {
   })
 
   it('直接写入按终端键持有的会话，并将滚屏限制为 1000 行', () => {
+    vi.useFakeTimers()
     const registry = new TerminalSessionRegistry(vi.fn())
 
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'first output chunk'})
+    flushTerminalOutput()
 
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].options.scrollback).toBe(1000)
@@ -499,6 +515,7 @@ describe('TerminalSessionRegistry', () => {
   })
 
   it('重新挂载同一终端时复用实例且不回放已写入内容', () => {
+    vi.useFakeTimers()
     const registry = new TerminalSessionRegistry(vi.fn())
     const firstContainer = document.createElement('div')
     const secondContainer = document.createElement('div')
@@ -507,6 +524,7 @@ describe('TerminalSessionRegistry', () => {
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'existing output'})
     registry.attach(terminal, firstContainer, terminalVisualTheme(), onResize)
     registry.attach(terminal, secondContainer, terminalVisualTheme(), onResize)
+    flushTerminalOutput()
 
     expect(terminalInstances).toHaveLength(1)
     expect(terminalInstances[0].write).toHaveBeenCalledTimes(1)
@@ -728,7 +746,8 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].dispose).toHaveBeenCalledOnce()
     expect(terminalInstances[0].onDataDisposable.dispose).toHaveBeenCalledOnce()
     expect(terminalInstances[0].onSelectionDisposable.dispose).toHaveBeenCalledOnce()
-    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+    // 会话被释放，尚未冲刷的缓冲随之丢弃，不再写入已销毁的终端
+    expect(terminalInstances[0].write).not.toHaveBeenCalled()
   })
 
   it('未分类退出时保留输出快照，避免终端标签与会话状态不一致', () => {
@@ -829,5 +848,162 @@ describe('TerminalSessionRegistry', () => {
 
     registry.disposeAll()
     expect(terminalInstances[1].dispose).toHaveBeenCalledOnce()
+  })
+
+  it('同一静默期内的多次输出事件合并为一次写入且保持到达顺序', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'chunk-a'})
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'chunk-b'})
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'chunk-c'})
+    expect(terminalInstances[0].write).not.toHaveBeenCalled()
+
+    flushTerminalOutput()
+
+    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].write).toHaveBeenCalledWith('chunk-achunk-bchunk-c')
+  })
+
+  it('跨静默期输出分批写入且顺序保持，退出时先冲刷缓冲再写退出通知', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'one'})
+    flushTerminalOutput()
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'two'})
+    flushTerminalOutput()
+    expect(terminalInstances[0].write.mock.calls).toEqual([['one'], ['two']])
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'tail'})
+    registry.handleTerminalEvent({type: 'exited', taskId: 'task-1', terminalId: 'terminal-1', exitReason: 'unexpected', exitCode: 1})
+    expect(terminalInstances[0].write.mock.calls).toEqual([['one'], ['two'], ['tail'], ['\r\n终端已退出\x1b[?25l']])
+  })
+
+  it('ConPTY 绘制批次冲刷时追加合成隐藏序列，输出静默后补写恢复光标', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const batch = `${'x'.repeat(100)}\x1b[?25h`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
+    expect(terminalInstances[0].write).not.toHaveBeenCalled()
+    flushTerminalOutput()
+    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].write).toHaveBeenCalledWith(`${batch}\x1b[?25l`)
+
+    cursorRestoreSettled()
+    expect(terminalInstances[0].write).toHaveBeenCalledTimes(2)
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith('\x1b[?25h')
+  })
+
+  it('批间继续输出时跳过光标恢复，直至输出真正停止', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const batchA = `${'a'.repeat(100)}\x1b[?25h`
+    const batchB = `${'b'.repeat(100)}\x1b[?25h`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchA})
+    flushTerminalOutput()
+    // 18ms 后下一绘制批次到达（恢复定时器 48ms 尚未到期）
+    vi.advanceTimersByTime(18)
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchB})
+    // 恢复定时器在冲刷后 48ms 触发：此刻缓冲非空，跳过恢复
+    vi.advanceTimersByTime(30)
+    expect(terminalInstances[0].write).toHaveBeenCalledTimes(1)
+    // 第二批的静默冲刷落地
+    flushTerminalOutput()
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(`${batchB}\x1b[?25l`)
+    // 流停止后恢复光标
+    cursorRestoreSettled()
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith('\x1b[?25h')
+  })
+
+  it('小于阈值的击键回显冲刷原样写入且不隐藏光标', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'a'})
+    flushTerminalOutput()
+    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].write).toHaveBeenCalledWith('a')
+
+    vi.runAllTimers()
+    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+  })
+
+  it('不含光标序列的流式长文本保持光标可见', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const logLine = `${'compiling module '.repeat(12)}\r\n`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: logLine})
+    flushTerminalOutput()
+    vi.runAllTimers()
+
+    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].write).toHaveBeenCalledWith(logLine)
+  })
+
+  it('连续输出超过截止时限时按截止冲刷已缓冲内容', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'c1'})
+    vi.advanceTimersByTime(30)
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'c2'})
+    vi.advanceTimersByTime(28)
+    expect(terminalInstances[0].write).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(6)
+    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].write).toHaveBeenCalledWith('c1c2')
+  })
+
+  it('静默期满定时器冲刷，缓冲超上限立即同步冲刷', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'fallback chunk'})
+    expect(terminalInstances[0].write).not.toHaveBeenCalled()
+    flushTerminalOutput()
+    expect(terminalInstances[0].write).toHaveBeenCalledWith('fallback chunk')
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'x'.repeat(1024 * 1024)})
+    expect(terminalInstances[0].write).toHaveBeenCalledTimes(2)
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith('x'.repeat(1024 * 1024))
+  })
+
+  it('会话销毁后取消未决冲刷与恢复回调且不再写入', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'plain doomed'})
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: `${'x'.repeat(100)}\x1b[?25h`})
+    registry.dispose('task-1', 'terminal-1')
+    vi.runAllTimers()
+
+    expect(terminalInstances[0].dispose).toHaveBeenCalledOnce()
+    expect(terminalInstances[0].write).not.toHaveBeenCalled()
+  })
+
+  it('同一合并批次内瞬时改写又还原不计为画面活动', () => {
+    vi.useFakeTimers()
+    const onVisualActivity = vi.fn()
+    const registry = new TerminalSessionRegistry(vi.fn(), undefined, undefined, undefined, onVisualActivity)
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'redraw'})
+    const session = terminalInstances[0]
+    // 批次中的瞬时状态：先改写再还原，批末画面与基线一致
+    session.setCell(0, 0, {chars: 'X'})
+    session.setCell(0, 0, {chars: ''})
+    flushTerminalOutput()
+    session.triggerWriteParsed()
+    expect(onVisualActivity).not.toHaveBeenCalled()
+
+    // 对照：批末画面确实变化则正常上报
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'visible change'})
+    session.setCell(0, 0, {chars: 'Y'})
+    flushTerminalOutput()
+    session.triggerWriteParsed()
+    expect(onVisualActivity).toHaveBeenCalledOnce()
   })
 })
