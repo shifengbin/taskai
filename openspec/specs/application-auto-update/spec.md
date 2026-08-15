@@ -154,7 +154,7 @@ TBD - created by archiving change add-automatic-update. Update Purpose after arc
 
 ### Requirement: 安装遵守平台启动和现有退出语义
 
-系统 SHALL 使用当前平台的安装方式打开已校验安装包：Windows 启动 NSIS 且不额外显示控制台窗口，macOS 通过系统 `open` 打开 DMG，Linux 通过 `xdg-open` 打开 DEB。系统 MUST 先成功启动安装程序，之后才能调用现有 `PrepareQuit` 关闭终端并退出 TaskAI；启动失败时 MUST 保持应用运行并提供重试安装和手动下载。
+系统 SHALL 使用当前平台的安装方式打开已校验安装包：Windows 通过 `ShellExecute` 的 `open` 动词启动 NSIS 安装程序（以触发 UAC 提升）且不额外显示控制台窗口，macOS 通过系统 `open` 打开 DMG，Linux 通过 `xdg-open` 打开 DEB。系统 MUST 先成功启动安装程序，之后才能调用现有 `PrepareQuit` 关闭终端并退出 TaskAI；启动失败时 MUST 保持应用运行并提供重试安装和手动下载。
 
 #### Scenario: 无执行中任务时安装
 
@@ -178,8 +178,8 @@ TBD - created by archiving change add-automatic-update. Update Purpose after arc
 
 #### Scenario: Windows 安装不弹出控制台窗口
 
-- **WHEN** Windows 用户确认启动已下载的 NSIS 安装程序
-- **THEN** 系统使用后台进程配置启动安装程序，不额外弹出控制台窗口
+- **WHEN** Windows 用户确认启动已下载的 NSIS 安装程序（其 UAC 清单要求管理员权限）
+- **THEN** 系统通过 `ShellExecute` 的 `open` 动词启动安装程序并触发系统 UAC 提升，不使用 `CreateProcess`，且不额外弹出控制台窗口
 
 ### Requirement: 更新状态通过 Wails 可靠同步
 
@@ -223,3 +223,4 @@ TBD - created by archiving change add-automatic-update. Update Purpose after arc
 
 - **WHEN** 测试服务器提供更高版本且第一次下载失败、第二次返回有效安装包
 - **THEN** 浏览器测试可依次观察 `new`、下载中、下载失败、重新下载、安装确认、稍后安装和已下载恢复状态
+
