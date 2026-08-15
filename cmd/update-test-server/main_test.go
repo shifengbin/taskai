@@ -32,7 +32,7 @@ func TestUpdateTestServerFailsFirstInstallerRequestThenServesVerifiedPayload(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate, ok := updater.SelectCandidate("v0.0.0-rc5", "linux-amd64", releases, map[string]updater.Manifest{integrationTargetTag: manifest})
+	candidate, ok := updater.SelectCandidate("v0.0.0-rc5", integrationPlatform, releases, map[string]updater.Manifest{integrationTargetTag: manifest})
 	if !ok {
 		t.Fatal("expected rc6 candidate for rc5 current version")
 	}
