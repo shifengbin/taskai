@@ -34,4 +34,4 @@
 
 ## 6. 收尾
 
-- [ ] 6.1 按开发流程合并 worktree 分支、编译验证、同步 `openspec/specs/` 与 `docs/plans/`、提交 git 变更、移除已合并的 worktree
+- [x] 6.1 按开发流程合并 worktree 分支、编译验证、同步 `openspec/specs/` 与 `docs/plans/`、提交 git 变更、移除已合并的 worktree
