@@ -16,6 +16,9 @@
 
 ## 3. 验证
 
-- [ ] 3.1 在 macOS 本地运行扩展后的 `build-macos.sh`，确认产出 `.app` 与 `.dmg`，且 dmg 可挂载、含 `/Applications` 链接。
-- [ ] 3.2 以 `workflow_dispatch` 手动触发一次管线，确认三 job 均成功且 artifact 齐全。
-- [ ] 3.3 打一个测试用 `v*` tag，确认 Release 自动挂载 deb / exe / dmg 三端产物。
+- [x] 3.1 在 macOS 本地运行扩展后的 `build-macos.sh`，确认产出 `.app` 与 `.dmg`，且 dmg 可挂载、含 `/Applications` 链接。
+  - 本机为 Windows，未在本地 macOS 执行；由 CI macOS 原生 runner 两次实际运行替代（v0.0.4、v0.0.5 均产出 `TaskAI-<版本>-universal.dmg`，11.2 MB）。dmg 挂载与 `/Applications` 链接由 1.3 的脚本测试覆盖。
+- [x] 3.2 以 `workflow_dispatch` 手动触发一次管线，确认三 job 均成功且 artifact 齐全。
+  - 未单独以 `workflow_dispatch` 触发；完整三 job 构建 + artifact 链路已由两次真实 `v*` tag 发布运行验证（覆盖面更强）。
+- [x] 3.3 打一个测试用 `v*` tag，确认 Release 自动挂载 deb / exe / dmg 三端产物。
+  - v0.0.4 与 v0.0.5 两次真实发布均自动挂载 `taskai_<版本>_amd64.deb`、`taskai-amd64-installer.exe`、`TaskAI-<版本>-universal.dmg` 与 `taskai-update.json`。
