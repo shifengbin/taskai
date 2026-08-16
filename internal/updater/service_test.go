@@ -52,6 +52,42 @@ func TestServiceChecksImmediatelyAndRetriesAfterFailure(t *testing.T) {
 	}
 }
 
+func TestServiceStateCarriesCurrentVersion(t *testing.T) {
+	source := &scriptedReleaseSource{
+		list: func(context.Context) ([]Release, error) {
+			return []Release{testRelease("v1.1.0", false, "taskai.deb")}, nil
+		},
+		manifest: func(_ context.Context, release Release) (Manifest, error) {
+			return testManifest(release.TagName, "linux-amd64", "taskai.deb"), nil
+		},
+	}
+	states := make(chan State, 4)
+	service, err := NewService(Options{
+		CurrentVersion: "1.0.0",
+		Platform:       "linux-amd64",
+		Source:         source,
+		CheckInterval:  10 * time.Millisecond,
+		CheckTimeout:   100 * time.Millisecond,
+		Publish:        func(state State) { states <- state },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state := service.State(); state.Status != StatusIdle || state.CurrentVersion != "v1.0.0" {
+		t.Fatalf("初始状态 = %#v，期望 idle 且 CurrentVersion 为规范化的 v1.0.0", state)
+	}
+	service.Start(context.Background())
+	defer service.Stop()
+
+	published := waitForState(t, states, StatusAvailable)
+	if published.CurrentVersion != "v1.0.0" {
+		t.Fatalf("发布状态 CurrentVersion = %q，期望 v1.0.0", published.CurrentVersion)
+	}
+	if published.Version != "v1.1.0" {
+		t.Fatalf("发布状态目标版本 = %q，期望 v1.1.0", published.Version)
+	}
+}
+
 func TestServiceCheckTimeoutRetriesAndChecksRemainSerial(t *testing.T) {
 	var calls atomic.Int32
 	var active atomic.Int32

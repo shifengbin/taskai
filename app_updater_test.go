@@ -67,6 +67,16 @@ func TestAppUpdateLaunchFailureKeepsApplicationRunning(t *testing.T) {
 	}
 }
 
+func TestGetUpdateStateWithoutUpdaterCarriesCurrentVersion(t *testing.T) {
+	app := newApp(t.TempDir())
+	app.updaterService = nil
+
+	state := app.GetUpdateState()
+	if state.Status != updater.StatusIdle || state.CurrentVersion != appVersion {
+		t.Fatalf("GetUpdateState() = %#v，期望 idle 且 CurrentVersion 为 %s", state, appVersion)
+	}
+}
+
 func TestAppUpdaterLifecycleAndStateEvent(t *testing.T) {
 	service := &fakeUpdateService{state: updater.State{Status: updater.StatusIdle}}
 	app := newApp(t.TempDir())

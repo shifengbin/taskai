@@ -188,7 +188,7 @@ func (app *App) shutdown(context.Context) {
 
 func (app *App) GetUpdateState() updater.State {
 	if app.updaterService == nil {
-		return updater.State{Status: updater.StatusIdle}
+		return updater.State{Status: updater.StatusIdle, CurrentVersion: appVersion}
 	}
 	return app.updaterService.State()
 }
