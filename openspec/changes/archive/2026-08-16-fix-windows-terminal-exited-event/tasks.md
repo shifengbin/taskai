@@ -8,8 +8,8 @@
 - [x] `go vet` 与 `go test -race`（terminal 包 20 次循环 + 全部包；settings 两个与拖放转义一个测试为与本变更无关的预存失败，已在 clean HEAD 验证）
 - [x] openspec 校验通过（`openspec validate fix-windows-terminal-exited-event`）
 - [x] `wails dev` + chrome-devtools 集成测试（见下，全部通过）
-- [ ] 编译可执行程序并打开程序，等待确认
-- [ ] 合并 worktree 分支、编译验证、文档同步、提交、发布新版本
+- [x] 编译可执行程序并打开程序，等待确认（用户已确认继续）
+- [x] 合并 worktree 分支、编译验证、文档同步、提交、发布新版本
 
 ## 集成测试细节（wails dev + chrome-devtools MCP）
 
