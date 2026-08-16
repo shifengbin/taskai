@@ -13,9 +13,9 @@
     - 多文件：两个路径空格分隔注入，`for` 输出两行精确路径
     - 控制台仅 favicon.ico 404（wails dev 固有，与本功能无关）
     - 测试后已恢复设置 ShellPath 为 PowerShell、删除测试任务与临时文件
-- [ ] 编译可执行程序并打开，等待确认
-- [ ] 合并 worktree 分支到工作区分支，冲突处理
-- [ ] 合并后编译验证
-- [ ] 同步 delta spec 到 `openspec/specs/terminal-file-drop/spec.md` 并归档变更
+- [x] 编译可执行程序并打开，等待确认（2026-08-16 用户确认通过）
+- [x] 合并 worktree 分支到工作区分支（fast-forward，无冲突）
+- [x] 合并后编译验证（go test ./internal/terminal/ ok + wails build 成功）
+- [x] 同步 delta spec 到 `openspec/specs/terminal-file-drop/spec.md` 并归档变更
 - [ ] 提交 git 变更、打 `v*` 标签发布新版本
 - [ ] 移除已合并的 worktree
