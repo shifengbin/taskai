@@ -4,10 +4,11 @@
 
 ## 预存失败（与本次改动无关，改动仅触及 internal/terminal 三个文件）
 
-- `taskai` 根包：`all:frontend/dist` embed 缺失（worktree 未构建前端）。
+- `taskai` 根包：`all:frontend/dist` embed 缺失（worktree 未构建前端）。集成测试阶段 wails dev 已构建前端后根包测试可运行，暴露 8 个 app 层用例失败（lifecycle 命令链等待最终状态超时、后置脚本未执行等）——2026-08-16 在不含本修复的 main 工作区复跑同样失败（如 `TestAppListsGitRepositoriesWithConfiguredScanDepth`、`TestExecuteTaskMenuCommandRunsAfterScriptWhenTerminalExits`），确认为本机环境固有，与本修复无关。
 - `internal/settings`：git-clone 目录参数与清单文件参数 3 个用例（历史已知失败）。
 - `internal/appdata`、`internal/lifecycle`：符号链接用例（本机无 symlink 特权）与 macOS 迁移路径用例。
 - `internal/appdata` 并发迁移用例偶发超时（5 分钟 timeout）。
+- `go vet ./...`：`internal/fonts/fonts_windows.go` unsafe.Pointer 告警（既有代码，本分支未触及；`go vet ./internal/terminal/` 干净）。
 
 ## 已完成验证
 
@@ -18,6 +19,6 @@
 
 ## 待完成验证（合入前）
 
-- wails dev + chrome-devtools 端到端（design.md 细节）：插入文本原样、`for %~A` 单参数精确还原、多文件空格连接、控制台无 error。
+- ~~wails dev + chrome-devtools 端到端（design.md 细节）：插入文本原样、`for %~A` 单参数精确还原、多文件空格连接、控制台无 error。~~ 已通过（2026-08-16，结果记录于 tasks.md）。
 - 可执行程序构建 + 人工确认拖放行为。
 - 合并后整包编译验证。
