@@ -44,8 +44,8 @@
 
 ## 8. 合并与收尾
 
-- [ ] 8.1 先将工作区主分支反向合并到 `update-control-version-display` 分支，出现冲突先解决
-- [ ] 8.2 确认无误后将 `update-control-version-display` 合并回工作区对应分支
-- [ ] 8.3 合并后重新编译项目验证合并无问题
-- [ ] 8.4 归档 openspec 变更并同步 `openspec/specs/application-auto-update/spec.md`；按流程要求同步 `docs/plans/` 实施记录
-- [ ] 8.5 提交 git 变更并移除已合并的 worktree
+- [x] 8.1 先将工作区主分支反向合并到 `update-control-version-display` 分支，出现冲突先解决：合并 8aad076（含 fix-windows-cmd-dropped-path-escaping 归档），ort 策略无冲突（5393aae）
+- [x] 8.2 确认无误后将 `update-control-version-display` 合并回工作区对应分支：`--no-ff` 合并进 main（306b82d），未触碰其他会话未提交文件
+- [x] 8.3 合并后重新编译项目验证合并无问题：主工作区 `scripts/build-windows.ps1` 构建成功（exit 0）
+- [x] 8.4 归档 openspec 变更并同步 `openspec/specs/application-auto-update/spec.md`；按流程要求同步 `docs/plans/` 实施记录：变更归档至 `openspec/changes/archive/2026-08-16-update-control-version-display/`，新增实施记录 `docs/plans/2026-08-16-update-control-version-display-implementation-plan.md`
+- [x] 8.5 提交 git 变更并移除已合并的 worktree
