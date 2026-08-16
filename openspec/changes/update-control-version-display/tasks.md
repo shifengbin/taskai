@@ -39,8 +39,8 @@
 
 ## 7. 构建与确认
 
-- [ ] 7.1 使用 `scripts/` 下当前平台正式构建脚本编译可执行程序并打开程序（确认未启用 `updater_integration`、版本注入有效）：已用 `scripts/build-windows.ps1 -Version v0.0.0-rc99` 构建出 `build\bin\taskai.exe`（2m0s，14.1MB）；二进制含 `v0.0.0-rc99`、不含 `TASKAI_UPDATE_TEST_URL`（未启用 updater_integration）。启动被单实例锁阻塞（机器上另有 `E:\taskai` 与并行 worktree `fix-cmd-dropped-path-escaping` 的 taskai 实例持有同 ID 锁），待用户处理后重启
-- [ ] 7.2 在编译产物中确认顶栏显示的版本号与注入版本一致；等待用户确认
+- [x] 7.1 使用 `scripts/` 下当前平台正式构建脚本编译可执行程序并打开程序（确认未启用 `updater_integration`、版本注入有效）：已用 `scripts/build-windows.ps1 -Version v0.0.0-rc99` 构建出 `build\bin\taskai.exe`（2m0s，14.1MB）；二进制含 `v0.0.0-rc99`、不含 `TASKAI_UPDATE_TEST_URL`（未启用 updater_integration）；用户关闭阻塞锁的并行实例后已成功启动（PID 32608，与 `E:\taskai` 实例共存）
+- [x] 7.2 在编译产物中确认顶栏显示的版本号与注入版本一致：用户确认顶栏「任务工作台」右侧显示 `v0.0.0-rc99` 静态文本，无误
 
 ## 8. 合并与收尾
 
