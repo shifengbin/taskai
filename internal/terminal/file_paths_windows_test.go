@@ -4,21 +4,22 @@ package terminal
 
 import (
 	"io"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
 )
 
+// 26200 构建起 cmd.exe 不再处理双引号内的 caret 转义，拖放路径改为整体加引号、
+// 内容保持原样。路径含空格、& | ^ ! 与单个 %（不成对，cmd 不会展开）。
+// 成对的 %VAR% 会被 cmd 展开，与 Windows Terminal 行为一致，属于已知限制。
 func TestCmdDroppedFilePathParsesAsOneLiteralArgument(t *testing.T) {
-	path := `C:\Work Files\a&b^f%HOME%!name!.txt`
+	path := `C:\Work Files\a&b^f 50% x!y.txt`
 	formatted, err := formatDroppedFilePaths(`C:\Windows\System32\cmd.exe`, []string{path})
 	if err != nil {
 		t.Fatalf("格式化 cmd.exe 路径: %v", err)
 	}
 
 	process := exec.Command("cmd.exe", "/D", "/V:OFF", "/Q")
-	process.Env = append(os.Environ(), "HOME=expanded", "name=expanded")
 	input, err := process.StdinPipe()
 	if err != nil {
 		t.Fatalf("创建 cmd.exe 标准输入: %v", err)
@@ -44,7 +45,8 @@ func TestCmdDroppedFilePathParsesAsOneLiteralArgument(t *testing.T) {
 	if waitErr != nil {
 		t.Fatalf("等待 cmd.exe: %v", waitErr)
 	}
-	if got, want := strings.TrimSpace(string(data)), "["+path+"]"; got != want {
-		t.Fatalf("cmd.exe 参数 = %q，期望 %q", got, want)
+	// /Q 模式下 cmd 的输出会和提示符同行，因此用子串断言整段输出。
+	if !strings.Contains(string(data), "["+path+"]") {
+		t.Fatalf("cmd.exe 输出未包含字面参数 [%s]，完整输出: %q", path, string(data))
 	}
 }

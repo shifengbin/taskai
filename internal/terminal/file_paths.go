@@ -40,15 +40,11 @@ func quoteDroppedFilePath(shellPath, path string) (string, error) {
 		if strings.Contains(path, `"`) {
 			return "", fmt.Errorf("cmd.exe 路径不能包含双引号")
 		}
-		return `"` + strings.NewReplacer(
-			"^", "^^",
-			"&", "^&",
-			"|", "^|",
-			"<", "^<",
-			">", "^>",
-			"%", "^%",
-			"!", "^!",
-		).Replace(path) + `"`, nil
+		// Windows 10.0.26200 起 cmd.exe 不再处理双引号内的 caret 转义（caret 一律
+		// 字面保留），而引号内的 & | < > ^ ! 与空格本身就是字面安全的，因此整体
+		// 加引号、内容保持原样。成对的 %VAR% 仍会被 cmd 展开，这与 Windows Terminal
+		// 等终端的拖放行为一致，属于 cmd.exe 的已知限制。
+		return `"` + path + `"`, nil
 	default:
 		return "", fmt.Errorf("不支持终端 Shell: %s", shellPath)
 	}
