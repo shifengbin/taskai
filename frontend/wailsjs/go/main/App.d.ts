@@ -5,7 +5,10 @@ import {settings} from '../models';
 import {terminal} from '../models';
 import {task} from '../models';
 import {application} from '../models';
+import {gitlab} from '../models';
 import {updater} from '../models';
+import {storage} from '../models';
+import {main} from '../models';
 import {quickinput} from '../models';
 import {fonts} from '../models';
 
@@ -55,6 +58,8 @@ export function ExecuteTaskMenuCommand(arg1:string,arg2:string,arg3:number,arg4:
 
 export function FinishTask(arg1:string):Promise<task.Task>;
 
+export function GetGitLabImportDefaults():Promise<gitlab.ConnectionDefaults>;
+
 export function GetLifecycleCommandInput(arg1:string):Promise<string>;
 
 export function GetSettings():Promise<settings.Settings>;
@@ -65,6 +70,8 @@ export function HasRunningTasks():Promise<boolean>;
 
 export function HasTaskGitWorkspace(arg1:string):Promise<boolean>;
 
+export function ImportGitLabProjects(arg1:Array<gitlab.Project>,arg2:string):Promise<storage.GitLabImportResult>;
+
 export function LaunchDownloadedUpdate():Promise<void>;
 
 export function ListExtraInfoCatalogues():Promise<Array<string>>;
@@ -72,6 +79,8 @@ export function ListExtraInfoCatalogues():Promise<Array<string>>;
 export function ListExtraInfoTemplates():Promise<Array<task.ExtraInfoTemplate>>;
 
 export function ListExtraInfos():Promise<Array<task.ExtraInfo>>;
+
+export function ListGitLabProjects(arg1:string,arg2:string,arg3:string):Promise<main.GitLabProjectListResult>;
 
 export function ListLifecycleCommandChains():Promise<Array<settings.LifecycleCommandChain>>;
 
@@ -116,6 +125,8 @@ export function SaveExtraInfo(arg1:task.ExtraInfo):Promise<task.ExtraInfo>;
 export function SaveExtraInfoCatalogue(arg1:string):Promise<string>;
 
 export function SaveExtraInfoTemplate(arg1:task.ExtraInfoTemplate):Promise<task.ExtraInfoTemplate>;
+
+export function SaveGitLabImportDefaults(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function SaveLifecycleCommand(arg1:settings.LifecycleCommand):Promise<settings.LifecycleCommand>;
 

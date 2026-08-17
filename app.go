@@ -20,6 +20,7 @@ import (
 	"taskai/internal/application"
 	"taskai/internal/backgroundprocess"
 	"taskai/internal/fonts"
+	"taskai/internal/gitlab"
 	"taskai/internal/lifecycle"
 	"taskai/internal/quickinput"
 	"taskai/internal/realtime"
@@ -70,6 +71,7 @@ type App struct {
 	updaterService         updateService
 	updateLauncher         updater.Launcher
 	updateStatePublisher   func(updater.State)
+	gitLabDefaultsSaver    func(gitlab.ConnectionDefaults) (gitlab.ConnectionDefaults, error)
 	endingTasks            map[string]bool
 }
 
@@ -90,6 +92,11 @@ type taskCommandScriptPayload struct {
 	Directory string   `json:"directory"`
 	Command   string   `json:"command"`
 	Arguments []string `json:"arguments"`
+}
+
+type GitLabProjectListResult struct {
+	Projects      []gitlab.Project `json:"projects"`
+	UsesPlainHTTP bool             `json:"usesPlainHttp"`
 }
 
 func NewApp() *App {
@@ -130,6 +137,7 @@ func newApp(dataDirectory string) *App {
 	app.scriptErrorPublisher = app.publishTaskScriptError
 	app.agentCommandDetector = settings.DetectInstalledAgentCommands
 	app.agentMenuSynchronizer = repository.MergeDetectedAgentTaskMenuItems
+	app.gitLabDefaultsSaver = repository.SaveGitLabImportDefaults
 	app.startupErrorPublisher = app.publishRealtimeStatusError
 	app.updateStatePublisher = app.emitUpdateStateEvent
 	app.updaterService, app.updateLauncher = newApplicationUpdater(dataDirectory, app.publishUpdateStateEvent)
@@ -490,6 +498,69 @@ func (app *App) SaveExtraInfo(info task.ExtraInfo) (task.ExtraInfo, error) {
 
 func (app *App) DeleteExtraInfo(infoID string) error {
 	return app.repository.DeleteExtraInfo(infoID)
+}
+
+func (app *App) ListGitLabProjects(address, username, token string) (GitLabProjectListResult, error) {
+	client, err := gitlab.NewClient(address, 30*time.Second)
+	if err != nil {
+		return GitLabProjectListResult{}, err
+	}
+	projects, err := client.ListAccessibleProjects(context.Background(), username, token)
+	if err != nil {
+		return GitLabProjectListResult{}, err
+	}
+	infos, err := app.repository.ListExtraInfos()
+	if err != nil {
+		return GitLabProjectListResult{}, fmt.Errorf("读取现有 Git 信息: %w", err)
+	}
+	existing := make(map[gitlab.RepositoryIdentity]struct{}, len(infos))
+	for _, information := range infos {
+		if information.Catalogue != "git" {
+			continue
+		}
+		identity, parseErr := gitlab.ParseRepositoryIdentity(extraInfoRepository(information))
+		if parseErr == nil {
+			existing[identity] = struct{}{}
+		}
+	}
+	for index := range projects {
+		identities, parseErr := gitlab.ProjectRepositoryIdentities(projects[index])
+		if parseErr != nil {
+			return GitLabProjectListResult{}, parseErr
+		}
+		for _, identity := range identities {
+			if _, imported := existing[identity]; imported {
+				projects[index].Imported = true
+				break
+			}
+		}
+	}
+	return GitLabProjectListResult{Projects: projects, UsesPlainHTTP: client.UsesPlainHTTP()}, nil
+}
+
+func (app *App) GetGitLabImportDefaults() (gitlab.ConnectionDefaults, error) {
+	return app.repository.GetGitLabImportDefaults()
+}
+
+func (app *App) SaveGitLabImportDefaults(address, username, token string) error {
+	_, err := app.gitLabDefaultsSaver(gitlab.ConnectionDefaults{Address: address, Username: username, Token: token})
+	if err != nil {
+		return fmt.Errorf("保存 GitLab 默认连接: %w", err)
+	}
+	return nil
+}
+
+func (app *App) ImportGitLabProjects(projects []gitlab.Project, mode string) (storage.GitLabImportResult, error) {
+	return app.repository.ImportGitLabProjects(projects, gitlab.CloneURLMode(strings.TrimSpace(mode)))
+}
+
+func extraInfoRepository(information task.ExtraInfo) string {
+	for _, field := range information.Fields {
+		if field.Key == "repository" {
+			return strings.TrimSpace(field.Value)
+		}
+	}
+	return ""
 }
 
 func (app *App) ListQuickInputs() ([]quickinput.QuickInput, error) {

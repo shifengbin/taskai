@@ -185,6 +185,36 @@ export interface ExtraInfo {
 	parameters: ExtraInfoParameter[]
 }
 
+export type GitLabCloneURLMode = 'ssh' | 'https'
+
+export interface GitLabConnectionDefaults {
+	address: string
+	username: string
+	token: string
+}
+
+export interface GitLabProject {
+	id: number
+	name: string
+	pathWithNamespace: string
+	sshUrl: string
+	httpUrl: string
+	archived: boolean
+	visibility: string
+	imported: boolean
+}
+
+export interface GitLabProjectListResult {
+	projects: GitLabProject[]
+	usesPlainHttp: boolean
+}
+
+export interface GitLabImportResult {
+	imported: number
+	skipped: number
+	infos: ExtraInfo[]
+}
+
 export interface QuickInput {
 	id: string
 	name: string

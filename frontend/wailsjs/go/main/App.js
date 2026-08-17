@@ -94,6 +94,10 @@ export function FinishTask(arg1) {
   return window['go']['main']['App']['FinishTask'](arg1);
 }
 
+export function GetGitLabImportDefaults() {
+  return window['go']['main']['App']['GetGitLabImportDefaults']();
+}
+
 export function GetLifecycleCommandInput(arg1) {
   return window['go']['main']['App']['GetLifecycleCommandInput'](arg1);
 }
@@ -114,6 +118,10 @@ export function HasTaskGitWorkspace(arg1) {
   return window['go']['main']['App']['HasTaskGitWorkspace'](arg1);
 }
 
+export function ImportGitLabProjects(arg1, arg2) {
+  return window['go']['main']['App']['ImportGitLabProjects'](arg1, arg2);
+}
+
 export function LaunchDownloadedUpdate() {
   return window['go']['main']['App']['LaunchDownloadedUpdate']();
 }
@@ -128,6 +136,10 @@ export function ListExtraInfoTemplates() {
 
 export function ListExtraInfos() {
   return window['go']['main']['App']['ListExtraInfos']();
+}
+
+export function ListGitLabProjects(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ListGitLabProjects'](arg1, arg2, arg3);
 }
 
 export function ListLifecycleCommandChains() {
@@ -216,6 +228,10 @@ export function SaveExtraInfoCatalogue(arg1) {
 
 export function SaveExtraInfoTemplate(arg1) {
   return window['go']['main']['App']['SaveExtraInfoTemplate'](arg1);
+}
+
+export function SaveGitLabImportDefaults(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveGitLabImportDefaults'](arg1, arg2, arg3);
 }
 
 export function SaveLifecycleCommand(arg1) {

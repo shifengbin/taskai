@@ -1,17 +1,17 @@
 export namespace application {
-	
+
 	export class TaskMenuCommandResult {
 	    terminal?: terminal.Info;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskMenuCommandResult(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.terminal = this.convertValues(source["terminal"], terminal.Info);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -34,15 +34,15 @@ export namespace application {
 }
 
 export namespace fonts {
-	
+
 	export class Candidate {
 	    family: string;
 	    spacing: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Candidate(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.family = source["family"];
@@ -52,17 +52,101 @@ export namespace fonts {
 
 }
 
+export namespace gitlab {
+
+	export class ConnectionDefaults {
+	    address: string;
+	    username: string;
+	    token: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ConnectionDefaults(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.address = source["address"];
+	        this.username = source["username"];
+	        this.token = source["token"];
+	    }
+	}
+	export class Project {
+	    id: number;
+	    name: string;
+	    pathWithNamespace: string;
+	    sshUrl: string;
+	    httpUrl: string;
+	    archived: boolean;
+	    visibility: string;
+	    imported: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new Project(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.pathWithNamespace = source["pathWithNamespace"];
+	        this.sshUrl = source["sshUrl"];
+	        this.httpUrl = source["httpUrl"];
+	        this.archived = source["archived"];
+	        this.visibility = source["visibility"];
+	        this.imported = source["imported"];
+	    }
+	}
+
+}
+
+export namespace main {
+
+	export class GitLabProjectListResult {
+	    projects: gitlab.Project[];
+	    usesPlainHttp: boolean;
+
+	    static createFrom(source: any = {}) {
+	        return new GitLabProjectListResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.projects = this.convertValues(source["projects"], gitlab.Project);
+	        this.usesPlainHttp = source["usesPlainHttp"];
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace quickinput {
-	
+
 	export class QuickInput {
 	    id: string;
 	    name: string;
 	    content: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new QuickInput(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -137,11 +221,11 @@ export namespace settings {
 	export class LifecycleCommandReference {
 	    commandId: string;
 	    arguments: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleCommandReference(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.commandId = source["commandId"];
@@ -154,11 +238,11 @@ export namespace settings {
 	    commands: LifecycleCommandReference[];
 	    commandIds?: string[];
 	    applicableHooks: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleCommandChain(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -167,7 +251,7 @@ export namespace settings {
 	        this.commandIds = source["commandIds"];
 	        this.applicableHooks = source["applicableHooks"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -186,16 +270,16 @@ export namespace settings {
 		    return a;
 		}
 	}
-	
+
 	export class LifecyclePreset {
 	    id: string;
 	    name: string;
 	    chains: Record<string, string>;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecyclePreset(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -206,11 +290,11 @@ export namespace settings {
 	export class TaskScript {
 	    script?: string;
 	    arguments?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskScript(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.script = source["script"];
@@ -227,11 +311,11 @@ export namespace settings {
 	    showTerminal: boolean;
 	    beforeScript?: TaskScript;
 	    afterScript?: TaskScript;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskMenuItem(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -244,7 +328,7 @@ export namespace settings {
 	        this.beforeScript = this.convertValues(source["beforeScript"], TaskScript);
 	        this.afterScript = this.convertValues(source["afterScript"], TaskScript);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -284,11 +368,11 @@ export namespace settings {
 	    text?: string;
 	    key?: string;
 	    modifiers?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TerminalShortcutStep(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
@@ -302,11 +386,11 @@ export namespace settings {
 	    shortcut: string;
 	    steps: TerminalShortcutStep[];
 	    includePrograms?: string[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TerminalShortcut(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -314,7 +398,7 @@ export namespace settings {
 	        this.steps = this.convertValues(source["steps"], TerminalShortcutStep);
 	        this.includePrograms = source["includePrograms"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -356,11 +440,11 @@ export namespace settings {
 	    brightMagenta: string;
 	    brightCyan: string;
 	    brightWhite: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TerminalTheme(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.background = source["background"];
@@ -412,11 +496,11 @@ export namespace settings {
 	    taskTemplates: task.TaskTemplate[];
 	    activeTaskTemplateId: string;
 	    presetVersion: number;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.workspaceRoot = source["workspaceRoot"];
@@ -444,7 +528,7 @@ export namespace settings {
 	        this.activeTaskTemplateId = source["activeTaskTemplateId"];
 	        this.presetVersion = source["presetVersion"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -463,26 +547,66 @@ export namespace settings {
 		    return a;
 		}
 	}
-	
-	
-	
-	
+
+
+
+
+
+
+}
+
+export namespace storage {
+
+	export class GitLabImportResult {
+	    imported: number;
+	    skipped: number;
+	    infos: task.ExtraInfo[];
+
+	    static createFrom(source: any = {}) {
+	        return new GitLabImportResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.imported = source["imported"];
+	        this.skipped = source["skipped"];
+	        this.infos = this.convertValues(source["infos"], task.ExtraInfo);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
 export namespace task {
-	
+
 	export class ExtraInfoParameter {
 	    key: string;
 	    displayName: string;
 	    required: boolean;
 	    inputType: string;
 	    value: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoParameter(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -497,11 +621,11 @@ export namespace task {
 	    displayName: string;
 	    value?: string;
 	    defaultValue?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoField(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -516,11 +640,11 @@ export namespace task {
 	    catalogue: string;
 	    fields: ExtraInfoField[];
 	    parameters: ExtraInfoParameter[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -529,7 +653,7 @@ export namespace task {
 	        this.fields = this.convertValues(source["fields"], ExtraInfoField);
 	        this.parameters = this.convertValues(source["parameters"], ExtraInfoParameter);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -548,18 +672,18 @@ export namespace task {
 		    return a;
 		}
 	}
-	
-	
+
+
 	export class ExtraInfoParameterDefinition {
 	    key: string;
 	    displayName: string;
 	    required: boolean;
 	    inputType: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoParameterDefinition(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -578,11 +702,11 @@ export namespace task {
 	    key?: string;
 	    keyDisplayName?: string;
 	    value?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new ExtraInfoTemplate(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -595,7 +719,7 @@ export namespace task {
 	        this.keyDisplayName = source["keyDisplayName"];
 	        this.value = source["value"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -629,11 +753,11 @@ export namespace task {
 	    workspacePath?: string;
 	    workspaceOwnership?: string;
 	    workspaceToken?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new LifecycleExecution(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -663,11 +787,11 @@ export namespace task {
 	    key?: string;
 	    keyDisplayName?: string;
 	    value?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskExtraInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -681,7 +805,7 @@ export namespace task {
 	        this.keyDisplayName = source["keyDisplayName"];
 	        this.value = source["value"];
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -718,11 +842,11 @@ export namespace task {
 	    templateFields: Record<string, any>;
 	    lifecycleChains: Record<string, string>;
 	    lifecycleExecution?: LifecycleExecution;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Task(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -741,7 +865,7 @@ export namespace task {
 	        this.lifecycleChains = source["lifecycleChains"];
 	        this.lifecycleExecution = this.convertValues(source["lifecycleExecution"], LifecycleExecution);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -760,7 +884,7 @@ export namespace task {
 		    return a;
 		}
 	}
-	
+
 	export class TaskTemplateField {
 	    key: string;
 	    displayName: string;
@@ -768,11 +892,11 @@ export namespace task {
 	    required: boolean;
 	    defaultValue: any;
 	    injectEnvironment: boolean;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskTemplateField(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.key = source["key"];
@@ -787,18 +911,18 @@ export namespace task {
 	    id: string;
 	    name: string;
 	    fields: TaskTemplateField[];
-	
+
 	    static createFrom(source: any = {}) {
 	        return new TaskTemplate(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.fields = this.convertValues(source["fields"], TaskTemplateField);
 	    }
-	
+
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -821,17 +945,17 @@ export namespace task {
 }
 
 export namespace terminal {
-	
+
 	export class Info {
 	    id: string;
 	    taskId: string;
 	    state: string;
 	    command?: string;
-	
+
 	    static createFrom(source: any = {}) {
 	        return new Info(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];

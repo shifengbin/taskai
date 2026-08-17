@@ -178,3 +178,61 @@ describe('api.deleteTasks', () => {
 		expect(deleteTasks).toHaveBeenCalledWith(['pending-1', 'completed-1'])
 	})
 })
+
+describe('api.gitLabProjects', () => {
+	const getGitLabImportDefaults = vi.fn()
+	const saveGitLabImportDefaults = vi.fn()
+	const listGitLabProjects = vi.fn()
+	const importGitLabProjects = vi.fn()
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		getGitLabImportDefaults.mockResolvedValue({address: 'https://gitlab.example.com', username: 'integration-user', token: 'saved-token'})
+		saveGitLabImportDefaults.mockResolvedValue(undefined)
+		listGitLabProjects.mockResolvedValue({projects: [], usesPlainHttp: true})
+		importGitLabProjects.mockResolvedValue({imported: 1, skipped: 0, infos: []})
+		Object.assign(window, {go: {main: {App: {
+			GetGitLabImportDefaults: getGitLabImportDefaults,
+			SaveGitLabImportDefaults: saveGitLabImportDefaults,
+			ListGitLabProjects: listGitLabProjects,
+			ImportGitLabProjects: importGitLabProjects,
+		}}}})
+	})
+
+	afterEach(() => {
+		delete (window as {go?: unknown}).go
+	})
+
+	it('转发临时连接参数并按统一地址模式导入完整项目模型', async () => {
+		const gitLabAPI = api as typeof api & {
+			getGitLabImportDefaults?: () => Promise<unknown>
+			saveGitLabImportDefaults?: (address: string, username: string, token: string) => Promise<unknown>
+			listGitLabProjects?: (address: string, username: string, token: string) => Promise<unknown>
+			importGitLabProjects?: (projects: Array<Record<string, unknown>>, mode: 'ssh' | 'https') => Promise<unknown>
+		}
+		const project = {
+			id: 7,
+			name: 'api',
+			pathWithNamespace: 'team/api',
+			sshUrl: 'git@gitlab.example.com:team/api.git',
+			httpUrl: 'https://gitlab.example.com/team/api.git',
+			archived: false,
+			visibility: 'private',
+			imported: false,
+		}
+
+		expect(gitLabAPI.getGitLabImportDefaults).toEqual(expect.any(Function))
+		expect(gitLabAPI.saveGitLabImportDefaults).toEqual(expect.any(Function))
+		expect(gitLabAPI.listGitLabProjects).toEqual(expect.any(Function))
+		expect(gitLabAPI.importGitLabProjects).toEqual(expect.any(Function))
+		await gitLabAPI.getGitLabImportDefaults?.()
+		await gitLabAPI.saveGitLabImportDefaults?.('http://gitlab.example.com', 'integration-user', 'temporary-token')
+		await gitLabAPI.listGitLabProjects?.('http://gitlab.example.com', 'integration-user', 'temporary-token')
+		await gitLabAPI.importGitLabProjects?.([project], 'ssh')
+
+		expect(getGitLabImportDefaults).toHaveBeenCalledOnce()
+		expect(saveGitLabImportDefaults).toHaveBeenCalledWith('http://gitlab.example.com', 'integration-user', 'temporary-token')
+		expect(listGitLabProjects).toHaveBeenCalledWith('http://gitlab.example.com', 'integration-user', 'temporary-token')
+		expect(importGitLabProjects).toHaveBeenCalledWith([expect.objectContaining(project)], 'ssh')
+	})
+})

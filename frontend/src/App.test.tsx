@@ -20,6 +20,10 @@ const bindings = vi.hoisted(() => ({
 	ListExtraInfoCatalogues: vi.fn(),
 	ListExtraInfoTemplates: vi.fn(),
 	ListExtraInfos: vi.fn(),
+	GetGitLabImportDefaults: vi.fn(),
+	SaveGitLabImportDefaults: vi.fn(),
+	ListGitLabProjects: vi.fn(),
+	ImportGitLabProjects: vi.fn(),
 	SaveExtraInfoCatalogue: vi.fn(),
 	SaveExtraInfoTemplate: vi.fn(),
 	SaveExtraInfo: vi.fn(),
@@ -166,6 +170,10 @@ describe('App confirmation flows', () => {
 		bindings.ListExtraInfoCatalogues.mockResolvedValue([])
 		bindings.ListExtraInfoTemplates.mockResolvedValue([])
 		bindings.ListExtraInfos.mockResolvedValue([])
+		bindings.GetGitLabImportDefaults.mockResolvedValue({address: '', username: '', token: ''})
+		bindings.SaveGitLabImportDefaults.mockResolvedValue(undefined)
+		bindings.ListGitLabProjects.mockResolvedValue({projects: [], usesPlainHttp: false})
+		bindings.ImportGitLabProjects.mockResolvedValue({imported: 0, skipped: 0, infos: []})
 		bindings.ListQuickInputs.mockResolvedValue([])
 		bindings.ListLifecycleCommands.mockResolvedValue([])
 		bindings.ListLifecycleCommandChains.mockResolvedValue([])
@@ -2159,6 +2167,384 @@ describe('App confirmation flows', () => {
 				expect.objectContaining({key: 'repository', value: 'git@example.com:team/api.git'}),
 			]),
 		})))
+	})
+
+	it('打开 GitLab 导入时回填明文默认连接，失败输入关闭后恢复已保存值', async () => {
+		const user = userEvent.setup()
+		const saved = {address: 'https://gitlab.example.com/private/gitlab', username: 'saved-user', token: 'saved-token'}
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.GetGitLabImportDefaults.mockResolvedValue(saved)
+		bindings.ListGitLabProjects.mockRejectedValue(new Error('GitLab 认证失败，请检查个人访问令牌'))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		let dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await waitFor(() => expect(within(dialog).getByLabelText('GitLab 地址')).toHaveValue(saved.address))
+		expect(within(dialog).getByLabelText('GitLab 用户名')).toHaveValue(saved.username)
+		expect(within(dialog).getByLabelText('个人访问令牌')).toHaveValue(saved.token)
+		expect(within(dialog).getByText('GitLab 地址、用户名和访问令牌将以未加密形式保存在本机。')).toBeInTheDocument()
+
+		await user.clear(within(dialog).getByLabelText('GitLab 用户名'))
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'failed-user')
+		await user.clear(within(dialog).getByLabelText('个人访问令牌'))
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'failed-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+		await waitFor(() => expect(within(dialog).getByText('GitLab 认证失败，请检查个人访问令牌')).toBeInTheDocument())
+		await user.click(within(dialog).getByRole('button', {name: '取消'}))
+
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await waitFor(() => expect(bindings.GetGitLabImportDefaults).toHaveBeenCalledTimes(2))
+		expect(within(dialog).getByLabelText('GitLab 地址')).toHaveValue(saved.address)
+		expect(within(dialog).getByLabelText('GitLab 用户名')).toHaveValue(saved.username)
+		expect(within(dialog).getByLabelText('个人访问令牌')).toHaveValue(saved.token)
+	})
+
+	it('从 GitLab 获取项目后按当前筛选结果选择并统一切换仓库地址', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.ListGitLabProjects.mockResolvedValue({
+			usesPlainHttp: true,
+			projects: [
+				{id: 1, name: 'api', pathWithNamespace: 'team-a/api', sshUrl: 'git@gitlab.example.com:team-a/api.git', httpUrl: 'http://gitlab.example.com/team-a/api.git', archived: false, visibility: 'private', imported: false},
+				{id: 2, name: 'api', pathWithNamespace: 'team-b/api', sshUrl: 'git@gitlab.example.com:team-b/api.git', httpUrl: 'http://gitlab.example.com/team-b/api.git', archived: false, visibility: 'internal', imported: false},
+				{id: 3, name: 'legacy', pathWithNamespace: 'archive/legacy', sshUrl: 'git@gitlab.example.com:archive/legacy.git', httpUrl: 'http://gitlab.example.com/archive/legacy.git', archived: true, visibility: 'private', imported: false},
+				{id: 4, name: 'docs', pathWithNamespace: 'public/docs', sshUrl: 'git@gitlab.example.com:public/docs.git', httpUrl: 'http://gitlab.example.com/public/docs.git', archived: false, visibility: 'public', imported: false},
+				{id: 5, name: 'existing', pathWithNamespace: 'team/existing', sshUrl: 'git@gitlab.example.com:team/existing.git', httpUrl: 'http://gitlab.example.com/team/existing.git', archived: false, visibility: 'private', imported: true},
+			],
+		})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		const dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		const address = within(dialog).getByLabelText('GitLab 地址')
+		await user.type(address, 'http://gitlab.example.com')
+		expect(within(dialog).getByText('访问令牌将通过未加密的 HTTP 连接发送。')).toBeInTheDocument()
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'temporary-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+
+		await waitFor(() => expect(bindings.ListGitLabProjects).toHaveBeenCalledWith('http://gitlab.example.com', 'integration-user', 'temporary-token'))
+		expect(within(dialog).getByText('已选择 0 项')).toBeInTheDocument()
+		expect(within(dialog).getByRole('button', {name: '导入 0 个项目'})).toBeDisabled()
+		expect(within(dialog).getByRole('checkbox', {name: 'existing team/existing'})).toBeDisabled()
+		expect(within(dialog).getByText('已归档')).toBeInTheDocument()
+		expect(within(dialog).getByLabelText('仓库地址格式')).toHaveValue('ssh')
+
+		const filter = within(dialog).getByLabelText('筛选 GitLab 项目')
+		await user.type(filter, 'TEAM-A')
+		expect(within(dialog).getByText('team-a/api')).toBeInTheDocument()
+		expect(within(dialog).queryByText('team-b/api')).not.toBeInTheDocument()
+		await user.click(within(dialog).getByRole('button', {name: '全选当前结果'}))
+		expect(within(dialog).getByText('已选择 1 项')).toBeInTheDocument()
+
+		await user.clear(filter)
+		await user.type(filter, 'team-b')
+		expect(within(dialog).getByText('已选择 1 项')).toBeInTheDocument()
+		await user.click(within(dialog).getByRole('button', {name: '全选当前结果'}))
+		expect(within(dialog).getByText('已选择 2 项')).toBeInTheDocument()
+		await user.click(within(dialog).getByRole('button', {name: '取消选择当前结果'}))
+		expect(within(dialog).getByText('已选择 1 项')).toBeInTheDocument()
+
+		await user.clear(filter)
+		await user.click(within(dialog).getByRole('button', {name: '全选当前结果'}))
+		expect(within(dialog).getByText('已选择 4 项')).toBeInTheDocument()
+		expect(within(dialog).getByRole('checkbox', {name: 'legacy archive/legacy'})).toBeChecked()
+		await user.selectOptions(within(dialog).getByLabelText('仓库地址格式'), 'https')
+		expect(within(dialog).getByText('http://gitlab.example.com/team-a/api.git')).toBeInTheDocument()
+		expect(within(dialog).getByText('已选择 4 项')).toBeInTheDocument()
+		expect(within(dialog).getByRole('button', {name: '导入 4 个项目'})).toBeEnabled()
+	})
+
+	it('GitLab 连接失败保留输入和重试能力，关闭后清空全部凭据', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.ListGitLabProjects.mockRejectedValue(new Error('GitLab 认证失败，请检查个人访问令牌'))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		let dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://gitlab.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'wrong-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+
+		await waitFor(() => expect(within(dialog).getByText('GitLab 认证失败，请检查个人访问令牌')).toBeInTheDocument())
+		expect(within(dialog).getByLabelText('GitLab 地址')).toHaveValue('https://gitlab.example.com')
+		expect(within(dialog).getByLabelText('GitLab 用户名')).toHaveValue('integration-user')
+		expect(within(dialog).getByLabelText('个人访问令牌')).toHaveValue('wrong-token')
+		expect(within(dialog).getByRole('button', {name: '获取项目'})).toBeEnabled()
+
+		await user.click(within(dialog).getByRole('button', {name: '取消'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		expect(within(dialog).getByLabelText('GitLab 地址')).toHaveValue('')
+		expect(within(dialog).getByLabelText('GitLab 用户名')).toHaveValue('')
+		expect(within(dialog).getByLabelText('个人访问令牌')).toHaveValue('')
+	})
+
+	it('关闭加载中的 GitLab 弹窗后忽略晚到结果，只有当前连接会保存', async () => {
+		const user = userEvent.setup()
+		let resolveProjects!: (value: {projects: Array<Record<string, unknown>>, usesPlainHttp: boolean}) => void
+		const currentProject = {id: 2, name: 'web', pathWithNamespace: 'current/web', sshUrl: 'git@gitlab.example.com:current/web.git', httpUrl: 'https://gitlab.example.com/current/web.git', archived: false, visibility: 'private', imported: false}
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.ListGitLabProjects
+			.mockImplementationOnce(() => new Promise((resolve) => { resolveProjects = resolve }))
+			.mockResolvedValueOnce({projects: [currentProject], usesPlainHttp: false})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		let dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://gitlab.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'temporary-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+		await waitFor(() => expect(bindings.ListGitLabProjects).toHaveBeenCalledTimes(1))
+		expect(within(dialog).getByLabelText('GitLab 地址')).toBeDisabled()
+		expect(within(dialog).getByLabelText('GitLab 用户名')).toBeDisabled()
+		expect(within(dialog).getByLabelText('个人访问令牌')).toBeDisabled()
+		fireEvent.change(within(dialog).getByLabelText('GitLab 用户名'), {target: {value: 'stale-user'}})
+		expect(within(dialog).getByLabelText('GitLab 用户名')).toHaveValue('integration-user')
+		await user.click(within(dialog).getByRole('button', {name: '取消'}))
+
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await act(async () => resolveProjects({
+			usesPlainHttp: false,
+			projects: [{id: 1, name: 'api', pathWithNamespace: 'team/api', sshUrl: 'git@gitlab.example.com:team/api.git', httpUrl: 'https://gitlab.example.com/team/api.git', archived: false, visibility: 'private', imported: false}],
+		}))
+
+		expect(within(dialog).getByLabelText('GitLab 地址')).toHaveValue('')
+		expect(within(dialog).queryByLabelText('筛选 GitLab 项目')).not.toBeInTheDocument()
+		expect(within(dialog).queryByText('team/api')).not.toBeInTheDocument()
+		expect(bindings.SaveGitLabImportDefaults).not.toHaveBeenCalled()
+
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://current.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'current-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'current-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+		await waitFor(() => expect(bindings.SaveGitLabImportDefaults).toHaveBeenCalledWith('https://current.example.com', 'current-user', 'current-token'))
+		expect(await within(dialog).findByText('current/web')).toBeInTheDocument()
+	})
+
+	it('保存当前 GitLab 默认连接期间禁止关闭弹窗', async () => {
+		const user = userEvent.setup()
+		const project = {id: 1, name: 'api', pathWithNamespace: 'team/api', sshUrl: 'git@gitlab.example.com:team/api.git', httpUrl: 'https://gitlab.example.com/team/api.git', archived: false, visibility: 'private', imported: false}
+		let resolveSave!: () => void
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.ListGitLabProjects.mockResolvedValue({projects: [project], usesPlainHttp: false})
+		bindings.SaveGitLabImportDefaults.mockImplementation(() => new Promise<void>((resolve) => { resolveSave = resolve }))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		const dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://gitlab.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'temporary-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+
+		await waitFor(() => expect(bindings.SaveGitLabImportDefaults).toHaveBeenCalledOnce())
+		expect(within(dialog).getByRole('button', {name: '取消'})).toBeDisabled()
+		fireEvent.keyDown(document, {key: 'Escape'})
+		expect(screen.getByRole('dialog', {name: '从 GitLab 导入'})).toBeInTheDocument()
+		await act(async () => resolveSave())
+		expect(await within(dialog).findByText('team/api')).toBeInTheDocument()
+	})
+
+	it('GitLab 导入进行中禁止关闭，完成后再清空并关闭', async () => {
+		const user = userEvent.setup()
+		const project = {id: 1, name: 'api', pathWithNamespace: 'team/api', sshUrl: 'git@gitlab.example.com:team/api.git', httpUrl: 'https://gitlab.example.com/team/api.git', archived: false, visibility: 'private', imported: false}
+		let resolveImport!: (value: {imported: number, skipped: number, infos: never[]}) => void
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.ListGitLabProjects.mockResolvedValue({projects: [project], usesPlainHttp: false})
+		bindings.ImportGitLabProjects.mockImplementation(() => new Promise((resolve) => { resolveImport = resolve }))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		const dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://gitlab.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'temporary-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+		await user.click(await within(dialog).findByRole('button', {name: '全选当前结果'}))
+		await user.click(within(dialog).getByRole('button', {name: '导入 1 个项目'}))
+
+		expect(within(dialog).getByRole('button', {name: '取消'})).toBeDisabled()
+		fireEvent.keyDown(document, {key: 'Escape'})
+		expect(screen.getByRole('dialog', {name: '从 GitLab 导入'})).toBeInTheDocument()
+		await act(async () => resolveImport({imported: 1, skipped: 0, infos: []}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '从 GitLab 导入'})).not.toBeInTheDocument())
+	})
+
+	it('GitLab 导入成功后刷新并展开 Git 信息，提示结果且重新打开时恢复凭据', async () => {
+		const user = userEvent.setup()
+		const template = {
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}
+		const projects = [
+			{id: 1, name: 'api', pathWithNamespace: 'team-a/api', sshUrl: 'git@gitlab.example.com:team-a/api.git', httpUrl: 'https://gitlab.example.com/team-a/api.git', archived: false, visibility: 'private', imported: false},
+			{id: 2, name: 'api', pathWithNamespace: 'team-b/api', sshUrl: 'git@gitlab.example.com:team-b/api.git', httpUrl: 'https://gitlab.example.com/team-b/api.git', archived: false, visibility: 'private', imported: false},
+		]
+		const importedInfos = projects.map((project) => ({
+			id: `info-${project.id}`, templateId: template.id, catalogue: 'git', parameters: [],
+			fields: [{key: 'name', displayName: '项目名称', value: project.name}, {key: 'repository', displayName: '仓库地址', value: project.sshUrl}],
+		}))
+		bindings.ListExtraInfoTemplates.mockResolvedValue([template])
+		bindings.ListExtraInfos.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValue(importedInfos)
+		bindings.GetGitLabImportDefaults
+			.mockResolvedValueOnce({address: '', username: '', token: ''})
+			.mockResolvedValue({address: 'https://gitlab.example.com', username: 'integration-user', token: 'temporary-token'})
+		bindings.ListGitLabProjects.mockResolvedValue({projects, usesPlainHttp: false})
+		bindings.ImportGitLabProjects.mockResolvedValue({imported: 2, skipped: 1, infos: importedInfos})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		const dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://gitlab.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'temporary-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+		await user.click(await within(dialog).findByRole('button', {name: '全选当前结果'}))
+		await user.click(within(dialog).getByRole('button', {name: '导入 2 个项目'}))
+
+		await waitFor(() => expect(bindings.ImportGitLabProjects).toHaveBeenCalledWith(projects, 'ssh'))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '从 GitLab 导入'})).not.toBeInTheDocument())
+		expect(screen.getByText('已导入 2 个项目，跳过 1 个重复项目')).toBeInTheDocument()
+		const gitGroup = screen.getByRole('button', {name: /Git.*git/})
+		expect(gitGroup).toHaveAttribute('aria-expanded', 'true')
+		expect(screen.getByText('team-a/api')).toBeInTheDocument()
+		expect(screen.getByText('team-b/api')).toBeInTheDocument()
+
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		const reopened = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await waitFor(() => expect(within(reopened).getByLabelText('GitLab 地址')).toHaveValue('https://gitlab.example.com'))
+		expect(within(reopened).getByLabelText('GitLab 用户名')).toHaveValue('integration-user')
+		expect(within(reopened).getByLabelText('个人访问令牌')).toHaveValue('temporary-token')
+	})
+
+	it('GitLab 导入成功但列表刷新失败时保留结果并提示刷新问题', async () => {
+		const user = userEvent.setup()
+		const template = {
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}
+		const project = {id: 1, name: 'api', pathWithNamespace: 'team/api', sshUrl: 'git@gitlab.example.com:team/api.git', httpUrl: 'https://gitlab.example.com/team/api.git', archived: false, visibility: 'private', imported: false}
+		const importedInfo = {id: 'info-1', templateId: template.id, catalogue: 'git', parameters: [], fields: [{key: 'name', value: 'api'}, {key: 'repository', value: project.sshUrl}]}
+		bindings.ListExtraInfoTemplates.mockResolvedValue([template])
+		bindings.ListExtraInfos.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('读取 Git 信息失败'))
+		bindings.ListGitLabProjects.mockResolvedValue({projects: [project], usesPlainHttp: false})
+		bindings.ImportGitLabProjects.mockResolvedValue({imported: 1, skipped: 0, infos: [importedInfo]})
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		const dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://gitlab.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'temporary-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+		await user.click(await within(dialog).findByRole('button', {name: '全选当前结果'}))
+		await user.click(within(dialog).getByRole('button', {name: '导入 1 个项目'}))
+
+		await waitFor(() => expect(screen.getByText('已导入 1 个项目，跳过 0 个重复项目，但刷新列表失败：读取 Git 信息失败')).toBeInTheDocument())
+		expect(screen.getByText('team/api')).toBeInTheDocument()
+	})
+
+	it('GitLab 批量保存期间锁定交互，失败后保留完整状态供重试', async () => {
+		const user = userEvent.setup()
+		const project = {id: 1, name: 'api', pathWithNamespace: 'team/api', sshUrl: 'git@gitlab.example.com:team/api.git', httpUrl: 'https://gitlab.example.com/team/api.git', archived: false, visibility: 'private', imported: false}
+		let rejectImport!: (error: Error) => void
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.ListGitLabProjects.mockResolvedValue({projects: [project], usesPlainHttp: false})
+		bindings.ImportGitLabProjects
+			.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectImport = reject }))
+			.mockRejectedValueOnce(new Error('批量保存 GitLab 项目失败'))
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		await user.click(screen.getByRole('button', {name: '从 GitLab 导入'}))
+		const dialog = screen.getByRole('dialog', {name: '从 GitLab 导入'})
+		await user.type(within(dialog).getByLabelText('GitLab 地址'), 'https://gitlab.example.com')
+		await user.type(within(dialog).getByLabelText('GitLab 用户名'), 'integration-user')
+		await user.type(within(dialog).getByLabelText('个人访问令牌'), 'temporary-token')
+		await user.click(within(dialog).getByRole('button', {name: '获取项目'}))
+		await user.type(await within(dialog).findByLabelText('筛选 GitLab 项目'), 'team')
+		await user.selectOptions(within(dialog).getByLabelText('仓库地址格式'), 'https')
+		await user.click(within(dialog).getByRole('button', {name: '全选当前结果'}))
+		await user.click(within(dialog).getByRole('button', {name: '导入 1 个项目'}))
+
+		expect(within(dialog).getByLabelText('GitLab 地址')).toBeDisabled()
+		expect(within(dialog).getByLabelText('GitLab 用户名')).toBeDisabled()
+		expect(within(dialog).getByLabelText('个人访问令牌')).toBeDisabled()
+		expect(within(dialog).getByRole('button', {name: '获取项目'})).toBeDisabled()
+		expect(within(dialog).getByLabelText('筛选 GitLab 项目')).toBeDisabled()
+		expect(within(dialog).getByLabelText('仓库地址格式')).toBeDisabled()
+		expect(within(dialog).getByRole('checkbox', {name: 'api team/api'})).toBeDisabled()
+		expect(within(dialog).getByRole('button', {name: '全选当前结果'})).toBeDisabled()
+		expect(within(dialog).getByRole('button', {name: '取消选择当前结果'})).toBeDisabled()
+		fireEvent.change(within(dialog).getByLabelText('筛选 GitLab 项目'), {target: {value: 'changed'}})
+		fireEvent.change(within(dialog).getByLabelText('仓库地址格式'), {target: {value: 'ssh'}})
+		fireEvent.click(within(dialog).getByRole('checkbox', {name: 'api team/api'}))
+		expect(within(dialog).getByLabelText('筛选 GitLab 项目')).toHaveValue('team')
+		expect(within(dialog).getByLabelText('仓库地址格式')).toHaveValue('https')
+		expect(within(dialog).getByRole('checkbox', {name: 'api team/api'})).toBeChecked()
+		await act(async () => rejectImport(new Error('批量保存 GitLab 项目失败')))
+		await waitFor(() => expect(within(dialog).getByText('批量保存 GitLab 项目失败')).toBeInTheDocument())
+		expect(within(dialog).getByLabelText('筛选 GitLab 项目')).toHaveValue('team')
+		expect(within(dialog).getByLabelText('仓库地址格式')).toHaveValue('https')
+		expect(within(dialog).getByRole('checkbox', {name: 'api team/api'})).toBeChecked()
+		await user.click(within(dialog).getByRole('button', {name: '导入 1 个项目'}))
+		expect(bindings.ImportGitLabProjects).toHaveBeenCalledTimes(2)
+	})
+
+	it('在信息管理和任务选择器中用完整仓库路径区分同名 Git 项目', async () => {
+		const user = userEvent.setup()
+		bindings.ListExtraInfoTemplates.mockResolvedValue([{
+			id: 'git-template', catalogue: 'git', displayName: 'Git', builtIn: true,
+			fields: [{key: 'name', displayName: '项目名称'}, {key: 'repository', displayName: '仓库地址'}], parameters: [],
+		}])
+		bindings.ListExtraInfos.mockResolvedValue([
+			{id: 'info-a', templateId: 'git-template', catalogue: 'git', parameters: [], fields: [{key: 'name', value: 'api'}, {key: 'repository', value: 'git@gitlab.example.com:team-a/api.git'}]},
+			{id: 'info-b', templateId: 'git-template', catalogue: 'git', parameters: [], fields: [{key: 'name', value: 'api'}, {key: 'repository', value: 'https://gitlab.example.com/team-b/api.git'}]},
+		])
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '信息管理'}))
+		expect(screen.getByText('team-a/api')).toBeInTheDocument()
+		expect(screen.getByText('team-b/api')).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '关闭'}))
+		await user.click(screen.getByRole('button', {name: '新建任务'}))
+		expect(screen.getByRole('checkbox', {name: 'api team-a/api'})).toBeInTheDocument()
+		expect(screen.getByRole('checkbox', {name: 'api team-b/api'})).toBeInTheDocument()
 	})
 
 	it('填写 Git 仓库地址时为未填写的项目名称自动提取仓库名', async () => {

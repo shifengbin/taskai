@@ -13,10 +13,12 @@ import {
 	DeleteTasks,
 	DetectShells,
 	ExecuteTaskMenuCommand,
-  FinishTask,
+	FinishTask,
+	GetGitLabImportDefaults,
 	GetSettings,
 	GetUpdateState,
 	GetLifecycleCommandInput,
+	ImportGitLabProjects,
 	DeleteExtraInfoCatalogue,
 	DeleteExtraInfo,
 	DeleteExtraInfoTemplate,
@@ -30,6 +32,7 @@ import {
 	ListExtraInfoCatalogues,
 	ListExtraInfos,
 	ListExtraInfoTemplates,
+	ListGitLabProjects,
 	ListLifecycleCommandChains,
 	ListLifecycleCommands,
 	ListLifecyclePresets,
@@ -51,6 +54,7 @@ import {
 	SaveExtraInfoCatalogue,
 	SaveExtraInfo,
 	SaveExtraInfoTemplate,
+	SaveGitLabImportDefaults,
 	SaveLifecycleCommand,
 	SaveLifecycleCommandChain,
 	SaveLifecyclePreset,
@@ -74,9 +78,10 @@ import {
 import {settings as settingsModel} from '../wailsjs/go/models'
 import {task as taskModel} from '../wailsjs/go/models'
 import {quickinput as quickInputModel} from '../wailsjs/go/models'
+import {gitlab as gitLabModel} from '../wailsjs/go/models'
 import {EventsOff, EventsOn, Quit} from '../wailsjs/runtime/runtime'
 
-import type {ExtraInfo, ExtraInfoTemplate, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskGitRepository, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord, UpdateState} from './types'
+import type {ExtraInfo, ExtraInfoTemplate, GitLabCloneURLMode, GitLabConnectionDefaults, GitLabImportResult, GitLabProject, GitLabProjectListResult, LifecycleCommand, LifecycleCommandChain, LifecycleHook, LifecyclePreset, QuickInput, RealtimeStatusEvent, SettingsRecord, TaskExtraInfo, TaskGitRepository, TaskMenuCommandResult, TaskRecord, TaskTemplateValues, TerminalEvent, TerminalFontCandidate, TerminalRecord, UpdateState} from './types'
 import {normalizeTerminalTheme} from './terminal-theme'
 
 export const api = {
@@ -110,6 +115,10 @@ export const api = {
 	},
 	saveExtraInfo: (info: ExtraInfo) => SaveExtraInfo(taskModel.ExtraInfo.createFrom(info)) as unknown as Promise<ExtraInfo>,
 	deleteExtraInfo: (infoID: string) => DeleteExtraInfo(infoID),
+	getGitLabImportDefaults: () => GetGitLabImportDefaults() as unknown as Promise<GitLabConnectionDefaults>,
+	saveGitLabImportDefaults: (address: string, username: string, token: string) => SaveGitLabImportDefaults(address, username, token),
+	listGitLabProjects: (address: string, username: string, token: string) => ListGitLabProjects(address, username, token) as unknown as Promise<GitLabProjectListResult>,
+	importGitLabProjects: (projects: GitLabProject[], mode: GitLabCloneURLMode) => ImportGitLabProjects(projects.map((project) => gitLabModel.Project.createFrom(project)), mode) as unknown as Promise<GitLabImportResult>,
 	listQuickInputs: async () => {
 		const inputs = await ListQuickInputs()
 		return Array.isArray(inputs) ? inputs as unknown as QuickInput[] : []

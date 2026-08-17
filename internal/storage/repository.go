@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"taskai/internal/gitlab"
 	"taskai/internal/quickinput"
 	"taskai/internal/settings"
 	"taskai/internal/task"
@@ -17,13 +18,14 @@ import (
 
 // Data is the complete persisted application state.
 type Data struct {
-	Tasks                         []task.Task              `json:"tasks"`
-	ExtraInfoTemplates            []task.ExtraInfoTemplate `json:"extraInfoTemplates"`
-	ExtraInfos                    []task.ExtraInfo         `json:"extraInfos"`
-	ExtraInfoCatalogues           []string                 `json:"extraInfoCatalogues,omitempty"`
-	QuickInputs                   []quickinput.QuickInput  `json:"quickInputs"`
-	Settings                      settings.Settings        `json:"settings"`
-	DismissedAgentTaskMenuItemIDs []string                 `json:"dismissedAgentTaskMenuItemIds,omitempty"`
+	Tasks                         []task.Task                `json:"tasks"`
+	ExtraInfoTemplates            []task.ExtraInfoTemplate   `json:"extraInfoTemplates"`
+	ExtraInfos                    []task.ExtraInfo           `json:"extraInfos"`
+	ExtraInfoCatalogues           []string                   `json:"extraInfoCatalogues,omitempty"`
+	QuickInputs                   []quickinput.QuickInput    `json:"quickInputs"`
+	Settings                      settings.Settings          `json:"settings"`
+	GitLabImportDefaults          *gitlab.ConnectionDefaults `json:"gitLabImportDefaults,omitempty"`
+	DismissedAgentTaskMenuItemIDs []string                   `json:"dismissedAgentTaskMenuItemIds,omitempty"`
 }
 
 // Repository persists all application state in one JSON document.
@@ -32,11 +34,14 @@ type Repository struct {
 	defaultSettings  settings.Settings
 	loadMu           sync.Mutex
 	mutationMu       sync.Mutex
+	persistData      func(Data) error
 	startupRecovered bool
 }
 
 func New(path string, defaultSettings settings.Settings) *Repository {
-	return &Repository{path: path, defaultSettings: defaultSettings}
+	repository := &Repository{path: path, defaultSettings: defaultSettings}
+	repository.persistData = repository.Save
+	return repository
 }
 
 func (repository *Repository) Load() (Data, error) {

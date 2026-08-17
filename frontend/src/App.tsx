@@ -48,6 +48,7 @@ import {
   ToastClose as SnapToastClose,
 } from './components/ui'
 import {TaskTree, type TaskStartFeedback} from './components/TaskTree'
+import {GitLabImportDialog} from './components/GitLabImportDialog'
 import {TerminalShortcutSettings} from './components/TerminalShortcutSettings'
 import {TerminalView} from './components/TerminalView'
 import {UpdateControl} from './components/UpdateControl'
@@ -66,6 +67,7 @@ import {
 	type TerminalNotesBySession,
 } from './terminal-notes'
 import {uniqueProgramNames} from './terminal-shortcuts'
+import {gitRepositoryPath} from './git-repository'
 import {resolveTerminalFontFamily} from './terminal-font'
 import {defaultTerminalFontSize, maximumTerminalFontSize, minimumTerminalFontSize, normalizeTerminalFontSize, terminalFontSizePercent} from './terminal-font-size'
 import {defaultTerminalTheme, normalizeTerminalTheme, type TerminalTheme} from './terminal-theme'
@@ -95,6 +97,7 @@ import {
 	type ExtraInfo,
 	type ExtraInfoField,
 	type ExtraInfoParameterInputType,
+	type GitLabImportResult,
 	type LifecycleCommand,
 	type LifecycleCommandChain,
 	type LifecycleHook,
@@ -182,6 +185,7 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<TaskRecord>()
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
 	const [extraInfoManagerOpen, setExtraInfoManagerOpen] = useState(false)
+	const [gitLabImportOpen, setGitLabImportOpen] = useState(false)
 	const [informationManagerTab, setInformationManagerTab] = useState<'extra-info' | 'quick-input'>('extra-info')
 	const [extraInfoTemplateDraft, setExtraInfoTemplateDraft] = useState<ExtraInfoTemplate>()
 	const [extraInfoDraft, setExtraInfoDraft] = useState<ExtraInfo>()
@@ -720,6 +724,24 @@ export default function App() {
 		} catch (error) {
 			showError(error, setMessage)
 		}
+	}
+
+	const completeGitLabImport = async (result: GitLabImportResult) => {
+		let refreshError: unknown
+		try {
+			setExtraInfos(await api.listExtraInfos())
+		} catch (error) {
+			setExtraInfos((current) => [...current, ...result.infos.filter((info) => !current.some((item) => item.id === info.id))])
+			refreshError = error
+		}
+		const gitTemplate = extraInfoTemplates.find((template) => template.builtIn && template.catalogue === 'git')
+		if (gitTemplate) {
+			setExpandedExtraInfoTemplateIDs((current) => [...new Set([...current, gitTemplate.id])])
+		}
+		const resultText = `已导入 ${result.imported} 个项目，跳过 ${result.skipped} 个重复项目`
+		setMessage(refreshError
+			? {text: `${resultText}，但刷新列表失败：${refreshError instanceof Error ? refreshError.message : String(refreshError)}`, severity: 'error'}
+			: {text: resultText, severity: 'success'})
 	}
 
 	const openQuickInputEditor = (input?: QuickInput) => {
@@ -1477,6 +1499,7 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				<div data-testid="extra-info-manager-scroll" className="max-h-[55vh] overflow-y-auto snap-no-scrollbar">
 					<div className="grid gap-4 px-1">
 						<div data-testid="extra-info-manager-actions" className="flex flex-wrap justify-end gap-2">
+							{extraInfoTemplates.some((template) => template.builtIn && template.catalogue === 'git') && <SnapButton variant="secondary" size="sm" onClick={() => setGitLabImportOpen(true)}>从 GitLab 导入</SnapButton>}
 							<SnapButton variant="secondary" size="sm" onClick={() => openExtraInfoTemplateEditor()}>新增模板</SnapButton>
 							<SnapButton variant="primary" size="sm" disabled={extraInfoTemplates.length === 0} onClick={() => openExtraInfoEditor()}>新增信息</SnapButton>
 						</div>
@@ -1537,8 +1560,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 											</SnapAccordionTrigger>
 											<SnapAccordionContent>
 												<div className="grid gap-0">
-													{infos.length === 0 ? <span className="block text-sm text-snap-muted px-1 pb-2">未找到匹配的信息。</span> : infos.map((info, index) => <div key={info.id} className={`flex items-center gap-2 px-1 py-2 ${index === 0 ? 'border-t-2' : ''} border-snap-outline`}>
-														<div className="min-w-0 flex-1"><span className="block text-sm font-bold text-snap-ink truncate">{extraInfoName(info)}</span></div>
+												{infos.length === 0 ? <span className="block text-sm text-snap-muted px-1 pb-2">未找到匹配的信息。</span> : infos.map((info, index) => <div key={info.id} className={`flex items-center gap-2 px-1 py-2 ${index === 0 ? 'border-t-2' : ''} border-snap-outline`}>
+													<div className="min-w-0 flex-1"><span className="block text-sm font-bold text-snap-ink truncate">{extraInfoName(info)}</span>{info.catalogue === 'git' && gitRepositoryPath(extraInfoFieldValue(info, 'repository')) && <span className="block truncate font-mono text-xs text-snap-muted">{gitRepositoryPath(extraInfoFieldValue(info, 'repository'))}</span>}</div>
 														<SnapButton variant="secondary" size="sm" onClick={() => openExtraInfoEditor(info)}>编辑</SnapButton>
 														<SnapIconButton title={`删除信息 ${extraInfoName(info)}`} aria-label={`删除信息 ${extraInfoName(info)}`} size="sm" onClick={() => void deleteExtraInfo(info.id)} className="text-snap-error hover:text-snap-error"><Trash2 className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
 													</div>)}
@@ -1589,6 +1612,8 @@ const closeTerminal = async (terminal: TerminalRecord) => {
 				</SnapDialogFooter>
 			</SnapDialogContent>
 		</SnapDialog>
+
+		<GitLabImportDialog open={gitLabImportOpen} onOpenChange={setGitLabImportOpen} onImported={completeGitLabImport}/>
 
 		<SnapDialog open={Boolean(quickInputDraft)} onOpenChange={(open) => { if (!open) closeQuickInputEditor() }}>
 			<SnapDialogContent className="max-w-xl">
@@ -2953,6 +2978,13 @@ function TaskExtraInfoEditor({
 	const selectedByInformationID = new Map(extraInfo.filter((item) => item.informationId).map((item) => [item.informationId!, item]))
 	const visibleInfos = infos.filter((info) => info.catalogue === selectedCatalogue && extraInfoName(info).toLocaleLowerCase().includes(informationSearch.trim().toLocaleLowerCase()))
 	const templatesByID = new Map(templates.map((template) => [template.id, template]))
+	const gitInfoNameCounts = infos.reduce((counts, info) => {
+		if (info.catalogue === 'git') {
+			const name = extraInfoName(info)
+			counts.set(name, (counts.get(name) ?? 0) + 1)
+		}
+		return counts
+	}, new Map<string, number>())
 
 	const toggleInformation = (info: ExtraInfo, selected: boolean) => {
 		const template = templatesByID.get(info.templateId)
@@ -3006,11 +3038,14 @@ function TaskExtraInfoEditor({
 						<span className="text-sm text-snap-muted">该分类未找到可选信息。</span>
 					) : visibleInfos.map((info) => {
 						const selected = selectedByInformationID.get(info.id)
+						const name = extraInfoName(info)
+						const repositoryPath = info.catalogue === 'git' ? gitRepositoryPath(extraInfoFieldValue(info, 'repository')) : ''
+						const checkboxName = repositoryPath && (gitInfoNameCounts.get(name) ?? 0) > 1 ? `${name} ${repositoryPath}` : name
 						return (
 							<div key={info.id} className="grid gap-2">
 								<label className="flex items-center gap-2 text-sm text-snap-ink">
-									<SnapCheckbox checked={Boolean(selected)} onCheckedChange={(checked) => toggleInformation(info, checked === true)}/>
-									<span>{extraInfoName(info)}</span>
+									<SnapCheckbox aria-label={checkboxName} checked={Boolean(selected)} onCheckedChange={(checked) => toggleInformation(info, checked === true)}/>
+									<span className="grid min-w-0"><span>{name}</span>{repositoryPath && <span className="truncate font-mono text-xs text-snap-muted">{repositoryPath}</span>}</span>
 								</label>
 								{selected && <TaskExtraInfoSnapshotFields item={selected} onChange={updateParameter}/>}
 							</div>
@@ -3344,6 +3379,10 @@ function cloneExtraInfo(info: ExtraInfo): ExtraInfo {
 
 function extraInfoName(info: ExtraInfo): string {
 	return info.fields.find((field) => field.key === 'name')?.value ?? ''
+}
+
+function extraInfoFieldValue(info: ExtraInfo, key: string): string {
+	return info.fields.find((field) => field.key === key)?.value ?? ''
 }
 
 function quickInputContentPreview(content: string): string {
