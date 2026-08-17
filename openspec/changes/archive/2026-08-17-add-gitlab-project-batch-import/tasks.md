@@ -72,6 +72,6 @@
 - [x] 8.3 再次运行 `wails generate module` 并检查生成绑定无遗漏或非预期差异。
 - [x] 8.4 将当前工作区对应分支合并到功能 worktree 分支，解决冲突后重复聚焦测试、全量测试和前端构建。
 - [x] 8.5 执行 `./scripts/build-linux.sh amd64` 编译可执行程序，启动 `build/bin/taskai` 且不自动退出，等待用户确认功能与界面。
-- [ ] 8.6 用户确认后，将功能 worktree 分支合并回当前工作区对应分支，并再次执行全量测试、前端构建和 `./scripts/build-linux.sh amd64` 验证合并结果。
-- [ ] 8.7 同步相关项目文档和 OpenSpec 实施记录，严格校验后归档 `add-gitlab-project-batch-import` 变更。
+- [x] 8.6 用户确认后，将功能 worktree 分支合并回当前工作区对应分支，并再次执行全量测试、前端构建和 `./scripts/build-linux.sh amd64` 验证合并结果。
+- [x] 8.7 同步相关项目文档和 OpenSpec 实施记录，严格校验后归档 `add-gitlab-project-batch-import` 变更。
 - [ ] 8.8 提交全部已确认的 Git 变更，确认工作区干净后移除已合并的 worktree 和功能分支。

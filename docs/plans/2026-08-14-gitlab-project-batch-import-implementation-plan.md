@@ -119,3 +119,15 @@
 
 - 2026-08-17 使用 `./scripts/build-linux.sh amd64` 成功生成 `build/bin/taskai`，以隔离配置启动并保持运行。
 - 用户完成界面检查后确认功能没有问题，验收程序随后关闭，允许继续合并到 `main`。
+
+### 合并到 main 后的最终验证
+
+- 2026-08-17 将 `feature/add-gitlab-project-batch-import` 快进合入 `main`，没有产生冲突。
+- 在 `main` 执行 `go test -race ./...`，全部 Go 包通过；执行前端测试，18 个测试文件、362 个用例通过。
+- `npm run build` 成功完成 TypeScript 检查和 Vite 生产构建，仅保留仓库现有的 `use client` 与大分块提示。
+- `./scripts/build-linux.sh amd64` 成功生成 `build/bin/taskai`，确认合并后的主分支可以完成生产编译和打包。
+
+### OpenSpec 同步与归档
+
+- 2026-08-17 将 GitLab 批量导入要求同步到主规格 `openspec/specs/gitlab-project-import/spec.md`，并把 Git 信息完整路径辅助展示要求同步到 `openspec/specs/task-extra-info/spec.md`。
+- `openspec validate add-gitlab-project-batch-import --strict --no-interactive` 通过后，将变更归档到 `openspec/changes/archive/2026-08-17-add-gitlab-project-batch-import/`。
