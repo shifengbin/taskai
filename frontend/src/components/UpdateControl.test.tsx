@@ -63,6 +63,41 @@ describe('UpdateControl state synchronization', () => {
 	})
 })
 
+describe('UpdateControl version display', () => {
+	it('shows the current version as static text while idle', async () => {
+		const client = updateClient({
+			getUpdateState: vi.fn(async () => updateState({status: 'idle', currentVersion: 'v1.2.3'})),
+		})
+		renderUpdateControl(client)
+
+		const version = await screen.findByTestId('app-version')
+		expect(version).toHaveTextContent('v1.2.3')
+		expect(version.tagName).not.toBe('BUTTON')
+		expect(screen.queryByTestId('update-control')).not.toBeInTheDocument()
+	})
+
+	it('renders nothing at the control position when idle state lacks a version', async () => {
+		const client = updateClient({
+			getUpdateState: vi.fn(async () => updateState({status: 'idle'})),
+		})
+		renderUpdateControl(client)
+
+		await waitFor(() => expect(client.onUpdateState).toHaveBeenCalledOnce())
+		expect(screen.queryByTestId('app-version')).not.toBeInTheDocument()
+		expect(screen.queryByTestId('update-control')).not.toBeInTheDocument()
+	})
+
+	it('replaces the version text with the update entry once an update appears', async () => {
+		const client = updateClient({
+			getUpdateState: vi.fn(async () => updateState({status: 'available', version: 'v1.3.0', currentVersion: 'v1.2.3'})),
+		})
+		renderUpdateControl(client)
+
+		expect(await screen.findByRole('button', {name: '下载新版本 v1.3.0'})).toBeInTheDocument()
+		expect(screen.queryByTestId('app-version')).not.toBeInTheDocument()
+	})
+})
+
 describe('UpdateControl download interactions', () => {
 	it('keeps the failed state while offering cancel, retry, and manual download', async () => {
 		const user = userEvent.setup()

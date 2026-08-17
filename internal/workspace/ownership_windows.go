@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -57,101 +56,6 @@ func directoryOwnershipToken(path string) (string, bool, error) {
 	return string(contents[:read]), true, nil
 }
 
-func secureAndValidatePrivateDirectory(path string, _ os.FileInfo) error {
-	currentToken, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		return err
-	}
-	defer currentToken.Close()
-	currentUser, err := currentToken.GetTokenUser()
-	if err != nil {
-		return err
-	}
-	access := []windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.GENERIC_ALL,
-		AccessMode:        windows.SET_ACCESS,
-		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
-		Trustee: windows.TRUSTEE{
-			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_USER,
-			TrusteeValue: windows.TrusteeValueFromSID(currentUser.User.Sid),
-		},
-	}}
-	acl, err := windows.ACLFromEntries(access, nil)
-	if err != nil {
-		return err
-	}
-	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
-		return err
-	}
-	updated, err := os.Lstat(path)
-	if err != nil {
-		return err
-	}
-	return validatePrivateDirectory(path, updated)
-}
-
-func createPrivateDirectory(path string) error {
-	currentToken, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		return err
-	}
-	defer currentToken.Close()
-	currentUser, err := currentToken.GetTokenUser()
-	if err != nil {
-		return err
-	}
-	descriptor, err := windows.SecurityDescriptorFromString(fmt.Sprintf("O:%sD:P(A;OICI;GA;;;%s)", currentUser.User.Sid.String(), currentUser.User.Sid.String()))
-	if err != nil {
-		return err
-	}
-	pathPointer, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return err
-	}
-	attributes := windows.SecurityAttributes{
-		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		SecurityDescriptor: descriptor,
-	}
-	return windows.CreateDirectory(pathPointer, &attributes)
-}
-
-func validatePrivateDirectory(path string, _ os.FileInfo) error {
-	descriptor, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		return err
-	}
-	owner, _, err := descriptor.Owner()
-	if err != nil {
-		return err
-	}
-	currentToken, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		return err
-	}
-	defer currentToken.Close()
-	currentUser, err := currentToken.GetTokenUser()
-	if err != nil {
-		return err
-	}
-	if !owner.Equals(currentUser.User.Sid) {
-		return fmt.Errorf("目录所有者不是当前用户")
-	}
-	dacl, _, err := descriptor.DACL()
-	if err != nil || dacl == nil || dacl.AceCount != 1 {
-		return fmt.Errorf("目录访问控制列表不安全")
-	}
-	var entry *windows.ACCESS_ALLOWED_ACE
-	if err := windows.GetAce(dacl, 0, &entry); err != nil {
-		return err
-	}
-	entrySID := (*windows.SID)(unsafe.Pointer(&entry.SidStart))
-	if entry.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || !entrySID.Equals(currentUser.User.Sid) {
-		return fmt.Errorf("目录访问控制列表允许其他用户访问")
-	}
-	return nil
-}
-
 func validateOwnershipRoot(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -160,45 +64,9 @@ func validateOwnershipRoot(path string) error {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("路径不是普通目录")
 	}
-	descriptor, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		return err
-	}
-	owner, _, err := descriptor.Owner()
-	if err != nil {
-		return err
-	}
-	currentToken, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		return err
-	}
-	defer currentToken.Close()
-	currentUser, err := currentToken.GetTokenUser()
-	if err != nil {
-		return err
-	}
-	if !owner.Equals(currentUser.User.Sid) {
-		return fmt.Errorf("目录所有者不是当前用户")
-	}
-	dacl, _, err := descriptor.DACL()
-	if err != nil || dacl == nil {
-		return fmt.Errorf("目录访问控制列表不安全")
-	}
-	for index := uint32(0); index < uint32(dacl.AceCount); index++ {
-		var entry *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, index, &entry); err != nil {
-			return err
-		}
-		if entry.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-			continue
-		}
-		entrySID := (*windows.SID)(unsafe.Pointer(&entry.SidStart))
-		if entrySID.Equals(currentUser.User.Sid) || entrySID.IsWellKnown(windows.WinBuiltinAdministratorsSid) || entrySID.IsWellKnown(windows.WinLocalSystemSid) {
-			continue
-		}
-		if entry.Mask&(windows.GENERIC_ALL|windows.GENERIC_WRITE|windows.WRITE_DAC|windows.WRITE_OWNER|windows.DELETE|windows.ACCESS_MASK(windows.FILE_WRITE_DATA)|windows.ACCESS_MASK(windows.FILE_APPEND_DATA)) != 0 {
-			return fmt.Errorf("目录允许其他用户写入")
-		}
-	}
 	return nil
+}
+
+func createPrivateDirectory(path string) error {
+	return os.Mkdir(path, 0o755)
 }

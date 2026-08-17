@@ -972,6 +972,7 @@ export namespace updater {
 	export class State {
 	    status: string;
 	    version?: string;
+	    currentVersion?: string;
 	    releaseUrl?: string;
 	    assetName?: string;
 	    error?: string;
@@ -985,6 +986,7 @@ export namespace updater {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.status = source["status"];
 	        this.version = source["version"];
+	        this.currentVersion = source["currentVersion"];
 	        this.releaseUrl = source["releaseUrl"];
 	        this.assetName = source["assetName"];
 	        this.error = source["error"];

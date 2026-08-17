@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os/signal"
+	"runtime"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -23,9 +24,27 @@ const (
 	integrationTargetVersion = "0.0.0-rc6"
 	integrationTargetTag     = "v" + integrationTargetVersion
 	manifestPath             = "/releases/download/" + integrationTargetTag + "/taskai-update.json"
-	installerPath            = "/releases/download/" + integrationTargetTag + "/taskai_" + integrationTargetVersion + "_amd64.deb"
 	requestCountPath         = "/requests"
 )
+
+// 测试服务器按运行平台提供资产，使 wails dev 集成验证可以在
+// Windows / macOS 上走完发现与下载流程（安装启动在集成模式中被替换）。
+var (
+	integrationPlatform = updater.PlatformKey(runtime.GOOS, runtime.GOARCH)
+	integrationAsset    = integrationAssetName(integrationPlatform)
+	installerPath       = "/releases/download/" + integrationTargetTag + "/" + integrationAsset
+)
+
+func integrationAssetName(platform string) string {
+	switch platform {
+	case "windows-amd64":
+		return "taskai-amd64-installer.exe"
+	case "darwin-universal":
+		return "TaskAI-0.0.0-universal.dmg"
+	default:
+		return "taskai_" + integrationTargetVersion + "_amd64.deb"
+	}
+}
 
 var integrationInstallerPayload = []byte("TaskAI automatic update integration payload\n")
 
@@ -124,7 +143,7 @@ func (handler *updateTestHandler) writeManifest(writer http.ResponseWriter) {
 		Tag:           integrationTargetTag,
 		ReleaseURL:    updater.OfficialReleasePrefix + integrationTargetTag,
 		Assets: map[string]updater.ManifestAsset{
-			"linux-amd64": {
+			integrationPlatform: {
 				Name:   installerName(),
 				Size:   int64(len(integrationInstallerPayload)),
 				SHA256: hex.EncodeToString(digest[:]),
@@ -134,7 +153,7 @@ func (handler *updateTestHandler) writeManifest(writer http.ResponseWriter) {
 }
 
 func installerName() string {
-	return installerPath[len("/releases/download/"+integrationTargetTag+"/"):]
+	return integrationAsset
 }
 
 func writeJSON(writer http.ResponseWriter, value any) {

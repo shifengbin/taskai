@@ -27,12 +27,13 @@ const (
 )
 
 type State struct {
-	Status      Status `json:"status"`
-	Version     string `json:"version,omitempty"`
-	ReleaseURL  string `json:"releaseUrl,omitempty"`
-	AssetName   string `json:"assetName,omitempty"`
-	Error       string `json:"error,omitempty"`
-	InstallPath string `json:"installPath,omitempty"`
+	Status         Status `json:"status"`
+	Version        string `json:"version,omitempty"`
+	CurrentVersion string `json:"currentVersion,omitempty"`
+	ReleaseURL     string `json:"releaseUrl,omitempty"`
+	AssetName      string `json:"assetName,omitempty"`
+	Error          string `json:"error,omitempty"`
+	InstallPath    string `json:"installPath,omitempty"`
 }
 
 type ReleaseSource interface {
@@ -219,7 +220,9 @@ func (service *Service) Stop() {
 func (service *Service) State() State {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
-	return service.state
+	state := service.state
+	state.CurrentVersion = service.currentVersion
+	return state
 }
 
 func (service *Service) Check(ctx context.Context) error {
@@ -358,6 +361,7 @@ func (service *Service) setDownloadFailed(candidate Candidate, downloadErr error
 }
 
 func (service *Service) publishState(state State) {
+	state.CurrentVersion = service.currentVersion
 	if service.publish != nil {
 		service.publish(state)
 	}

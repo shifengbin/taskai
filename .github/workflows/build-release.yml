@@ -89,14 +89,27 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          choco install nsis --no-progress --yes
-          $NSISPath = Join-Path ${env:ProgramFiles(x86)} 'NSIS'
-          $MakeNSIS = Join-Path $NSISPath 'makensis.exe'
-          if (-not (Test-Path -LiteralPath $MakeNSIS -PathType Leaf)) {
-            throw "NSIS 安装完成但未找到 $MakeNSIS"
+          $Candidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'),
+            (Join-Path $env:ProgramFiles 'NSIS\makensis.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\NSIS\makensis.exe')
+          )
+          function Find-MakeNSIS {
+            $Candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
           }
+          $MakeNSIS = Find-MakeNSIS
+          if (-not $MakeNSIS) {
+            choco install nsis --no-progress --yes
+            $MakeNSIS = Find-MakeNSIS
+          }
+          if (-not $MakeNSIS) {
+            Write-Host "choco 安装 NSIS 失败，改用 winget"
+            winget install --id NSIS.NSIS -e --silent --disable-interactivity --accept-source-agreements --accept-package-agreements
+            $MakeNSIS = Find-MakeNSIS
+          }
+          if (-not $MakeNSIS) { throw "NSIS 安装失败：choco 与 winget 均未找到 makensis.exe" }
           & $MakeNSIS -VERSION
-          $NSISPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          (Split-Path -Parent $MakeNSIS) | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Test Windows build script
         if: matrix.os == 'windows-latest'

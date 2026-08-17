@@ -30,7 +30,7 @@ func TestWindowsBackendStartsCommandProcessorInRequestedDirectory(t *testing.T) 
 	}
 	completed := make(chan result, 1)
 	go func() {
-		if _, err := session.Write([]byte("cd\r\nexit\r\n")); err != nil {
+		if _, err := session.Write([]byte("cd\r\necho TERMINAL_EXIT_SENTINEL\r\nexit\r\n")); err != nil {
 			completed <- result{readErr: err}
 			return
 		}
@@ -45,17 +45,24 @@ func TestWindowsBackendStartsCommandProcessorInRequestedDirectory(t *testing.T) 
 		_ = session.Close()
 		t.Fatal("ConPTY 未在预期时间内退出")
 	}
-	if completedResult.readErr != nil && !strings.Contains(strings.ToLower(completedResult.readErr.Error()), "pipe") {
+	if completedResult.readErr != nil && !isExpectedTerminalReadError(completedResult.readErr) {
 		t.Fatalf("读取 ConPTY 输出: %v", completedResult.readErr)
 	}
 	if completedResult.waitErr != nil {
 		t.Fatalf("等待 cmd 退出: %v", completedResult.waitErr)
 	}
 	if completedResult.exitResult.ExitCode == nil || *completedResult.exitResult.ExitCode != 0 {
-		t.Fatalf("cmd 退出码 = %v，期望 0", completedResult.exitResult.ExitCode)
+		code := -99999
+		if completedResult.exitResult.ExitCode != nil {
+			code = *completedResult.exitResult.ExitCode
+		}
+		t.Fatalf("cmd 退出码 = %d (0x%x)，期望 0；readErr=%v output=%q", code, uint32(code), completedResult.readErr, completedResult.output)
 	}
 	if !strings.Contains(strings.ToLower(string(completedResult.output)), strings.ToLower(filepath.Base(directory))) {
 		t.Fatalf("ConPTY 启动目录错误，输出: %q", completedResult.output)
+	}
+	if !strings.Contains(string(completedResult.output), "TERMINAL_EXIT_SENTINEL") {
+		t.Fatalf("退出前的最终输出丢失，输出: %q", completedResult.output)
 	}
 }
 
@@ -113,7 +120,7 @@ func TestWindowsBackendStartsCmdAgentWrapperThroughConPTY(t *testing.T) {
 		_ = session.Close()
 		t.Fatal("codex.cmd ConPTY 未在预期时间内退出")
 	}
-	if completedResult.readErr != nil && !strings.Contains(strings.ToLower(completedResult.readErr.Error()), "pipe") {
+	if completedResult.readErr != nil && !isExpectedTerminalReadError(completedResult.readErr) {
 		t.Fatalf("读取 codex.cmd ConPTY 输出: %v", completedResult.readErr)
 	}
 	if completedResult.waitErr != nil || completedResult.exitResult.ExitCode == nil || *completedResult.exitResult.ExitCode != 0 {

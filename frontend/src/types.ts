@@ -21,6 +21,7 @@ export type TerminalShortcutStep = {kind: 'text', text: string} | {kind: 'key', 
 export interface UpdateState {
 	status: UpdateStatus
 	version?: string
+	currentVersion?: string
 	releaseUrl?: string
 	assetName?: string
 	error?: string

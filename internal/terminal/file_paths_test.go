@@ -33,10 +33,12 @@ func TestFormatDroppedFilePathsForSupportedShells(t *testing.T) {
 			want:      `'C:\\Work Files\\O''Brien & $value.txt'`,
 		},
 		{
+			// 26200 构建起 cmd.exe 引号内 caret 转义失效（caret 字面保留），
+			// 因此引号内内容保持原样；% 不再转义（成对 %VAR% 展开是 cmd 已知限制）。
 			name:      "cmd",
 			shellPath: `C:\\Windows\\System32\\cmd.exe`,
-			paths:     []string{`C:\\Work Files\\a&b|c<d>e^f%HOME%!name!.txt`},
-			want:      `"C:\\Work Files\\a^&b^|c^<d^>e^^f^%HOME^%^!name^!.txt"`,
+			paths:     []string{`C:\\Work Files\\a&b|c<d>e^f 50% x!y.txt`},
+			want:      `"C:\\Work Files\\a&b|c<d>e^f 50% x!y.txt"`,
 		},
 	}
 

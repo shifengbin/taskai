@@ -21,12 +21,13 @@ type Launcher interface {
 }
 
 type SystemLauncher struct {
-	platform string
-	start    func(Invocation) error
+	platform       string
+	start          func(Invocation) error
+	startInstaller func(Invocation) error
 }
 
 func NewSystemLauncher(platform string) *SystemLauncher {
-	return &SystemLauncher{platform: platform, start: startDetached}
+	return &SystemLauncher{platform: platform, start: startDetached, startInstaller: startInstallerDetached}
 }
 
 func DefaultSystemLauncher() *SystemLauncher {
@@ -38,7 +39,7 @@ func (launcher *SystemLauncher) LaunchInstaller(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := launcher.start(invocation); err != nil {
+	if err := launcher.startInstaller(invocation); err != nil {
 		return fmt.Errorf("启动安装程序: %w", err)
 	}
 	return nil

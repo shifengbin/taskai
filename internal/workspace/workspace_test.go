@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -348,16 +349,50 @@ func TestCreateOwnedConcurrentFirstCreationRecoversSameWorkspace(t *testing.T) {
 	}
 }
 
-func TestCreateOwnedRejectsPreexistingInsecureOwnershipMetadataDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows 通过 ACL 验证私有目录")
-	}
+func TestCreateOwnedAcceptsPreexistingPermissiveOwnershipMetadataDirectory(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "workspaces")
 	metadataPath := filepath.Join(root, ownershipMetadataDirectory)
 	if err := os.MkdirAll(metadataPath, 0o777); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.Chmod(metadataPath, 0o777); err != nil {
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(metadataPath, 0o777); err != nil {
+			t.Fatalf("Chmod() error = %v", err)
+		}
+	}
+	token, err := NewOwnershipToken()
+	if err != nil {
+		t.Fatalf("NewOwnershipToken() error = %v", err)
+	}
+
+	result, err := CreateOwned(root, "task-1", token)
+
+	if err != nil {
+		t.Fatalf("CreateOwned() error = %v", err)
+	}
+	if !result.Created {
+		t.Fatalf("CreateOwned() result = %#v", result)
+	}
+	if runtime.GOOS != "windows" {
+		info, statErr := os.Stat(metadataPath)
+		if statErr != nil {
+			t.Fatalf("Stat() error = %v", statErr)
+		}
+		if info.Mode().Perm() != 0o777 {
+			t.Fatalf("宽松权限元数据目录被修改: mode=%v", info.Mode().Perm())
+		}
+	}
+}
+
+func TestCreateOwnedAllowsWorldWritableWorkspaceRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 通过访问控制条目测试宽松根目录")
+	}
+	root := filepath.Join(t.TempDir(), "workspaces")
+	if err := os.MkdirAll(root, 0o777); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.Chmod(root, 0o777); err != nil {
 		t.Fatalf("Chmod() error = %v", err)
 	}
 	token, err := NewOwnershipToken()
@@ -367,31 +402,24 @@ func TestCreateOwnedRejectsPreexistingInsecureOwnershipMetadataDirectory(t *test
 
 	result, err := CreateOwned(root, "task-1", token)
 
-	if err == nil {
-		t.Fatalf("CreateOwned() result = %#v, error = nil", result)
+	if err != nil {
+		t.Fatalf("CreateOwned() error = %v", err)
 	}
-	info, statErr := os.Stat(metadataPath)
-	if statErr != nil {
-		t.Fatalf("Stat() error = %v", statErr)
-	}
-	if info.Mode().Perm() != 0o777 {
-		t.Fatalf("不安全元数据目录被修改: mode=%v", info.Mode().Perm())
-	}
-	if _, statErr := os.Stat(filepath.Join(root, "task-1")); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("拒绝后仍创建任务目录: %v", statErr)
+	if !result.Created {
+		t.Fatalf("CreateOwned() result = %#v", result)
 	}
 }
 
-func TestCreateOwnedAllowsStickyWritableWorkspaceRoot(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows 通过 ACL 验证工作区根目录")
+func TestCreateOwnedAllowsWorkspaceRootWithPermissiveInheritedACE(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Unix 通过权限位测试宽松根目录")
 	}
 	root := filepath.Join(t.TempDir(), "workspaces")
-	if err := os.MkdirAll(root, 0o777); err != nil {
+	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.Chmod(root, os.ModeSticky|0o777); err != nil {
-		t.Fatalf("Chmod() error = %v", err)
+	if output, err := exec.Command("icacls", root, "/grant", "Users:(OI)(CI)M").CombinedOutput(); err != nil {
+		t.Fatalf("icacls() error = %v, output = %s", err, output)
 	}
 	token, err := NewOwnershipToken()
 	if err != nil {

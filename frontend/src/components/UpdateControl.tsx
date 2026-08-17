@@ -152,6 +152,11 @@ export function UpdateControl({client = api, onError}: UpdateControlProps) {
 
 	return (
 		<>
+			{state.status === 'idle' && state.currentVersion && (
+				<span className="text-xs font-medium text-snap-ink/60" data-testid="app-version">
+					{state.currentVersion}
+				</span>
+			)}
 			{state.status !== 'idle' && (
 				<Tooltip>
 					<TooltipTrigger asChild>

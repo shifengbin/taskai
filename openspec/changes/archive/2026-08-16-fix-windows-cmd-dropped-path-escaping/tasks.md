@@ -1,0 +1,21 @@
+# 任务：修复 cmd 拖放路径转义在 Windows 26200 构建上的回归
+
+- [x] 在真实 ConPTY cmd 会话中完成转义证据矩阵（caret 残留、引号内裸放、% 各候选方案、.exe CRT 接收方）
+- [x] `internal/terminal/file_paths.go` cmd 分支移除 caret 转义，改为整体加引号、内容原样，保留双引号拒绝
+- [x] 更新 `internal/terminal/file_paths_test.go` cmd 表驱动期望
+- [x] 重写 `internal/terminal/file_paths_windows_test.go`：路径改单个 `%`，断言改子串匹配，注释记录已知限制
+- [x] `go test ./internal/terminal/` 与 `go vet ./internal/terminal/` 通过
+- [x] openspec 变更文档（proposal/design/tasks/delta spec/verification-baseline）
+- [x] wails dev + chrome-devtools 端到端集成测试（按 design.md 细节：插入文本、for 解析单参数、多文件、控制台无错误）
+  - 2026-08-16 实测（构建 10.0.26200.9168，wails dev + chrome-devtools，终端 cmd.exe）：
+    - 插入文本原样：`for %A in ("C:\taskai-drop-test\a&b^c 50% x!y.txt"` — 引号包裹、无 caret、元字符原样
+    - 单文件解析：`for %A in (...) do @echo [%~A]` 输出 `[C:\taskai-drop-test\a&b^c 50% x!y.txt]` 精确还原
+    - 多文件：两个路径空格分隔注入，`for` 输出两行精确路径
+    - 控制台仅 favicon.ico 404（wails dev 固有，与本功能无关）
+    - 测试后已恢复设置 ShellPath 为 PowerShell、删除测试任务与临时文件
+- [x] 编译可执行程序并打开，等待确认（2026-08-16 用户确认通过）
+- [x] 合并 worktree 分支到工作区分支（fast-forward，无冲突）
+- [x] 合并后编译验证（go test ./internal/terminal/ ok + wails build 成功）
+- [x] 同步 delta spec 到 `openspec/specs/terminal-file-drop/spec.md` 并归档变更
+- [ ] 提交 git 变更、打 `v*` 标签发布新版本
+- [ ] 移除已合并的 worktree
