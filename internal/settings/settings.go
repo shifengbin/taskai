@@ -1186,7 +1186,7 @@ func fixedLifecycleCommand(id string) LifecycleCommand {
 	case LifecycleCommandUpdateDefaultBranchID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindUpdateDefaultBranch, Name: "更新默认分支", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；templateField=<字段键>（可选）指定从任务模板读取默认分支的字段，省略时使用 branch。仅在当前命令链执行期间，将空的内置 Git 项目 branch 参数更新为该字段值。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
 	case LifecycleCommandSyncDirectoryLinksID:
-		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindSyncDirectoryLinks, Name: "同步任务目录链接", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindSyncDirectoryLinks, Name: "同步任务目录链接", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, Documentation: "不接受参数。同步任务绑定模板中所有类型为 directories 的字段；字段键无需固定，可自定义（例如 sources）。multiple 控制单目录或多目录选择；所选目录会在任务工作目录中创建或更新受管理链接。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
 	default:
 		return LifecycleCommand{}
 	}

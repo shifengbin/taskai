@@ -4,7 +4,7 @@
 TBD - created by archiving change add-task-lifecycle-command-chains. Update Purpose after archive.
 ## Requirements
 ### Requirement: 全局生命周期命令管理
-系统 SHALL 提供全局生命周期命令库。每个自定义命令 MUST 包含稳定 ID、非空名称、非空可执行命令、逐行参数和至少一个钩子适用范围；名称用于用户识别，ID 用于链引用。系统 SHALL 始终提供“创建任务工作目录”“删除任务工作目录”和“同步任务目录链接”三个内置目录命令，且用户不得编辑或删除它们；创建命令仅适用于 `beforeStart`，删除命令仅适用于 `postEnd`，同步命令适用于 `beforeStart`、`postStart` 与 `updateTask` 且不接受链级参数。
+系统 SHALL 提供全局生命周期命令库。每个自定义命令 MUST 包含稳定 ID、非空名称、非空可执行命令、逐行参数和至少一个钩子适用范围；名称用于用户识别，ID 用于链引用。系统 SHALL 始终提供“创建任务工作目录”“删除任务工作目录”和“同步任务目录链接”三个内置目录命令，且用户不得编辑或删除它们；创建命令仅适用于 `beforeStart`，删除命令仅适用于 `postEnd`，同步命令适用于 `beforeStart`、`postStart` 与 `updateTask` 且不接受链级参数。同步命令的使用说明 MUST 明确其处理任务绑定模板中所有 `directories` 类型字段、字段键无需固定且可由用户自定义。
 
 #### Scenario: 创建并管理自定义命令
 - **WHEN** 用户保存名称、可执行命令和参数均有效的自定义命令
@@ -21,6 +21,10 @@ TBD - created by archiving change add-task-lifecycle-command-chains. Update Purp
 #### Scenario: 同步命令不接受参数
 - **WHEN** 用户尝试在命令链中为“同步任务目录链接”增加链级参数
 - **THEN** 系统拒绝保存参数并说明该系统命令不支持参数
+
+#### Scenario: 同步命令说明目录字段要求
+- **WHEN** 用户在命令库或命令链中查看“同步任务目录链接”
+- **THEN** 系统说明只需把模板字段类型设为 `directories`，字段键无需固定且可使用 `sources` 等自定义值，模板中的多个目录字段均会生效
 
 ### Requirement: 命令链管理和生命周期预设
 系统 SHALL 允许用户创建、重命名、复制和删除带有非空名称与至少一个钩子适用范围的命令链。每条链 MUST 保存有序命令引用，且每个引用命令 MUST 覆盖该链的全部适用范围；用户 SHALL 能调整其中命令顺序。系统 MUST 拒绝删除仍被任一生命周期预设引用的链，也 MUST 拒绝将链的适用范围缩小到不能覆盖任一预设引用钩子的修改。
@@ -302,4 +306,3 @@ TBD - created by archiving change add-task-lifecycle-command-chains. Update Purp
 #### Scenario: 保留自定义任务选择
 - **WHEN** 既有任务的任一钩子选择不完整匹配旧系统默认映射
 - **THEN** 升级保留该任务全部链选择，不自动增加 `updateTask` 同步链
-

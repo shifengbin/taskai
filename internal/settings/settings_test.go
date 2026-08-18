@@ -323,6 +323,9 @@ func TestDefaultIncludesFixedSyncDirectoryLinksCommand(t *testing.T) {
 	if want := []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}; !reflect.DeepEqual(command.ApplicableHooks, want) {
 		t.Fatalf("同步目录链接命令适用范围 = %#v，期望 %#v", command.ApplicableHooks, want)
 	}
+	if !strings.Contains(command.Documentation, "directories") || !strings.Contains(command.Documentation, "字段键无需固定") || !strings.Contains(command.Documentation, "sources") {
+		t.Fatalf("同步目录链接命令文档未说明模板字段要求: %q", command.Documentation)
+	}
 }
 
 func TestDefaultIncludesLifecyclePreset(t *testing.T) {

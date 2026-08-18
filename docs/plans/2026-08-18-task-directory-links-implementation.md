@@ -35,7 +35,7 @@
 
 ## 生命周期接入
 
-- 新增固定系统命令 `system.lifecycle.sync-directory-links`，名称为“同步任务目录链接”。
+- 新增固定系统命令 `system.lifecycle.sync-directory-links`，名称为“同步任务目录链接”；命令说明明确同步所有 `directories` 类型字段，字段键无需固定，可使用 `sources` 等自定义值。
 - 命令适用于 `beforeStart`、`postStart` 和 `updateTask`，不接受参数，成功时原样传递标准输入。
 - 默认创建工作目录链在创建后同步目录链接；`iterations-ai` 和仓库更新系统链也自动包含同步命令。
 - 默认预设的 `updateTask` 使用同步专用链，公司框架预设继续使用首条命令为目录同步的仓库更新链。
