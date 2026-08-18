@@ -29,11 +29,19 @@ TBD - created by archiving change add-task-templates. Update Purpose after archi
 
 ### Requirement: 校验模板字段定义与默认值
 
-系统 MUST 要求每个模板字段保存非空键、非空显示名称、`string` 或 `bool` 输入类型、类型匹配的默认值、必填标记和环境变量注入标记。字段键 MUST 以 ASCII 字母开头，且只包含 ASCII 字母、数字和下划线；同一模板中的键在大小写不敏感比较下 MUST 唯一。将键转为大写并添加 `TASKAI_` 前缀后，系统 MUST 拒绝与 `TASKAI_TASK_ID`、`TASKAI_TERMINAL_ID`、`TASKAI_STATUS_API`、`TASKAI_EXEC_COMMAND` 或 `TASKAI_EXEC_ARGUMENTS` 冲突的键。系统 MUST 拒绝修改已经被任一任务保存的字段键的输入类型。
+系统 MUST 要求每个模板字段保存非空键、非空显示名称、`string`、`bool` 或 `directories` 输入类型、必填标记和创建后可更新标记。`string` 与 `bool` 字段 MUST 保存类型匹配的默认值和环境变量注入标记；`directories` 字段 MUST 保存是否允许多个目录的标记，MUST NOT 保存默认值或启用环境变量注入。旧模板字段缺失创建后可更新标记时 MUST 归一化为可更新，目录字段缺失多目录标记时 MUST 归一化为单目录。字段键 MUST 以 ASCII 字母开头，且只包含 ASCII 字母、数字和下划线；同一模板中的键在大小写不敏感比较下 MUST 唯一。将键转为大写并添加 `TASKAI_` 前缀后，系统 MUST 拒绝与 `TASKAI_TASK_ID`、`TASKAI_TERMINAL_ID`、`TASKAI_STATUS_API`、`TASKAI_EXEC_COMMAND` 或 `TASKAI_EXEC_ARGUMENTS` 冲突的键。系统 MUST 拒绝修改已经被任一任务保存的字段键的输入类型；已有任务保存多个目录时 MUST 拒绝把对应字段改为单目录；模板变更会让已有任务形成必填、空值且不可更新的字段时 MUST 拒绝保存。
 
 #### Scenario: 保存包含字符串和布尔默认值的字段
 - **WHEN** 用户新增键为 `environment`、默认值为字符串 `production` 的字段，以及键为 `deploy`、默认值为布尔值 `false` 的字段
 - **THEN** 系统保存两个字段及其原生类型默认值
+
+#### Scenario: 保存单目录和多目录字段
+- **WHEN** 用户新增两个 `directories` 字段并分别关闭和启用多目录标记
+- **THEN** 系统保存统一输入类型及各自的多目录和创建后可更新标记，且两个字段均没有默认值和环境变量注入
+
+#### Scenario: 兼容缺失更新标记的旧字段
+- **WHEN** 应用加载只包含既有字符串或布尔字段且没有创建后可更新标记的模板
+- **THEN** 系统将这些字段归一化为创建后可更新，并保留默认值和环境变量注入设置
 
 #### Scenario: 拒绝无效或冲突的字段键
 - **WHEN** 用户保存键为 `deploy-env`、与已有字段仅大小写不同的键，或键为 `task_id` 且要求环境变量注入的字段
@@ -43,53 +51,81 @@ TBD - created by archiving change add-task-templates. Update Purpose after archi
 - **WHEN** 至少一个任务已保存键为 `deploy` 的值，用户将该字段从 `bool` 修改为 `string`
 - **THEN** 系统拒绝保存模板，并保留原字段定义和任务值
 
+#### Scenario: 拒绝把已有多值字段改为单目录
+- **WHEN** 至少一个任务在目录字段中保存两个目录，用户关闭该字段的多目录标记
+- **THEN** 系统拒绝保存模板，且不截断任何任务值
+
+#### Scenario: 拒绝产生不可填写的必填字段
+- **WHEN** 模板已有任务缺少某目录字段，用户新增或修改该字段使其同时为必填且创建后不可更新
+- **THEN** 系统拒绝保存模板，并说明已有任务无法满足该字段
+
 ### Requirement: 任务表单按当前模板编辑模板字段
 
-系统 SHALL 在新建和编辑任务对话框中，将当前使用模板的字段按定义顺序渲染在任务描述之后、任务颜色之前。字符串字段 MUST 使用文本输入，布尔字段 MUST 使用复选框。新建任务 MUST 使用字段默认值；编辑任务中不存在当前字段键时 MUST 显示默认值，已保存的值（包括空字符串）MUST 优先于默认值。保存任务时，系统 MUST 校验必填字符串的去除首尾空白后的值非空，并校验必填布尔字段为 `true`。
+系统 SHALL 在新建任务对话框中使用全局当前模板，在编辑任务对话框中使用任务创建时绑定的模板，并将字段按定义顺序渲染在任务描述之后、任务颜色之前。字符串字段 MUST 使用文本输入，布尔字段 MUST 使用复选框，目录字段 MUST 使用原生目录选择器和不可编辑的完整路径列表，不得提供手工输入路径的控件。单目录字段 MUST 最多显示一项并允许重新选择或移除；多目录字段 MUST 允许逐次添加独立目录，并允许重新选择或移除每一项。新建任务 MUST 使用字符串和布尔字段默认值，并以空数组初始化目录字段；编辑任务中不存在绑定模板字符串或布尔字段键时 MUST 显示默认值，不存在绑定模板目录字段键时 MUST 显示空列表，已保存的值（包括空字符串和空数组）MUST 优先。保存任务时，系统 MUST 校验必填字符串的去除首尾空白后的值非空、必填布尔字段为 `true`、必填目录字段至少有一项，并校验目录值是互不重复、存在、可访问的绝对目录路径以及单目录字段不超过一项。
 
 #### Scenario: 新建任务应用模板默认值
-- **WHEN** 当前模板定义 `environment` 的默认值为 `production`、`deploy` 的默认值为 `false`
+- **WHEN** 全局当前模板定义 `environment` 的默认值为 `production`、`deploy` 的默认值为 `false`
 - **THEN** 新建任务对话框在任务描述和颜色之间分别显示这两个默认值，保存后任务记录字符串和布尔值
 
 #### Scenario: 编辑旧任务补齐新增字段
-- **WHEN** 当前模板新增默认值为 `staging` 的 `environment` 字段，用户编辑一个尚未保存该键的旧任务
+- **WHEN** 任务绑定模板新增默认值为 `staging` 的 `environment` 字段，用户编辑一个尚未保存该键的旧任务
 - **THEN** 表单显示 `staging`，且用户保存后任务记录该值
 
 #### Scenario: 必填布尔字段必须勾选
-- **WHEN** 当前模板的 `deploy` 布尔字段标记为必填，用户未勾选该字段而尝试保存任务
+- **WHEN** 新建任务的全局当前模板或既有任务的绑定模板将 `deploy` 布尔字段标记为必填，用户未勾选该字段而尝试保存任务
 - **THEN** 系统拒绝保存并提示该字段必须为 `true`
+
+#### Scenario: 使用原生选择器添加多个独立目录
+- **WHEN** 用户在启用多目录的字段中连续选择 `/project-a/src` 与 `/project-b/src`
+- **THEN** 表单以两个不可编辑的独立路径项显示选择结果，保存后任务记录对应字符串数组
+
+#### Scenario: 单目录字段拒绝多个值
+- **WHEN** 客户端绕过表单向关闭多目录标记的字段提交两个目录
+- **THEN** 后端拒绝整个任务保存并说明该字段只允许一个目录
+
+#### Scenario: 拒绝重复或无效目录
+- **WHEN** 任务的当前目录字段重复指向同一规范目录，或包含相对路径、不存在路径、不可访问路径或非目录路径
+- **THEN** 后端拒绝整个任务保存并指出对应字段和路径
 
 ### Requirement: 保留历史模板字段值并仅使用当前可见字段
 
-系统 MUST 在任务中以键值对象保存模板字段值，且值仅能是字符串或布尔值。当前模板被切换、删除字段或修改字段键时，系统 MUST 保留不再属于当前模板的历史键和值。历史字段 MUST 不在任务表单中显示，且 MUST 不出现在任务 HTTP 响应、生命周期命令链标准输入或环境变量中；字段以后以相同键重新加入当前模板时，系统 MUST 再次使用保留值。
+系统 MUST 在任务中保存绑定模板 ID，并以键值对象保存模板字段值，且值仅能是字符串、布尔值或字符串数组。绑定模板删除字段或修改字段键时，系统 MUST 保留不再属于绑定模板的历史键和值。历史字段 MUST 不在任务表单中显示，且 MUST 不出现在任务 HTTP 响应、生命周期命令链标准输入、环境变量或目录链接期望状态中；字段以后以相同键和兼容类型重新加入绑定模板时，系统 MUST 再次使用保留值。切换全局当前模板 MUST NOT 改变既有任务的绑定模板、可见字段或历史字段判定。
 
 #### Scenario: 删除字段后保留历史值
-- **WHEN** 任务保存 `environment=production`，随后当前模板删除 `environment` 字段
+- **WHEN** 任务保存 `environment=production`，随后任务绑定模板删除 `environment` 字段
 - **THEN** 任务继续保存该历史值，但编辑表单、HTTP 响应和命令链输入均不包含 `environment`
 
 #### Scenario: 恢复同键字段
-- **WHEN** 当前模板重新添加键为 `environment` 的字符串字段
+- **WHEN** 任务绑定模板重新添加键为 `environment` 的字符串字段
 - **THEN** 编辑包含历史 `environment=production` 的任务时，系统显示 `production` 而非新字段默认值
+
+#### Scenario: 删除目录字段后不再生成期望链接
+- **WHEN** 任务保存目录字段值后，任务绑定模板删除该字段
+- **THEN** 任务保留历史字符串数组，但表单、HTTP、命令链输入和下一次目录链接同步均不再使用该字段
 
 ### Requirement: 通过 HTTP 和命令链输出当前模板字段
 
-系统 SHALL 在 `GET /api/v1/tasks` 与 `GET /api/v1/tasks/{taskId}` 的每个任务对象中返回 `templateFields` 对象。系统 MUST 仅输出当前模板定义的字段，并以字符串或 JSON 布尔值表示字段值；无当前模板或没有可见字段值时 MUST 返回空对象。系统 MUST 使用相同语义在生命周期命令链的标准输入 JSON 中输出 `templateFields`。
+系统 SHALL 在 `GET /api/v1/tasks` 与 `GET /api/v1/tasks/{taskId}` 的每个任务对象中返回 `templateFields` 对象。系统 MUST 仅输出该任务绑定模板定义的字段，并以字符串、JSON 布尔值或字符串数组表示字段值；无绑定模板或没有可见字段值时 MUST 返回空对象。系统 MUST 使用相同语义在生命周期命令链的标准输入 JSON 中输出 `templateFields`。
 
 #### Scenario: HTTP 列表和详情返回模板字段
-- **WHEN** 当前模板包含 `environment=production` 和 `deploy=true`，外部扩展请求任务列表和该任务详情
+- **WHEN** 任务绑定模板包含 `environment=production` 和 `deploy=true`，外部扩展请求任务列表和该任务详情
 - **THEN** 两个响应中的任务对象均包含 `"templateFields":{"environment":"production","deploy":true}`
 
+#### Scenario: HTTP 和命令链返回目录数组
+- **WHEN** 任务绑定模板包含 `sources=["/project-a/src","/project-b/src"]`
+- **THEN** HTTP 列表、HTTP 详情和生命周期首命令输入中的 `templateFields.sources` 均为包含两个独立字符串的 JSON 数组
+
 #### Scenario: 命令链标准输入返回模板字段
-- **WHEN** 生命周期命令链开始执行一个当前模板字段为 `environment=production` 的任务
+- **WHEN** 生命周期命令链开始执行一个绑定模板字段为 `environment=production` 的任务
 - **THEN** 每个自定义命令收到的初始标准输入 JSON 包含 `"templateFields":{"environment":"production"}`
 
 #### Scenario: 无模板时返回空对象
-- **WHEN** 设置没有当前使用模板
+- **WHEN** 任务没有可解析的绑定模板
 - **THEN** 任务 HTTP 响应和生命周期命令链标准输入均包含 `"templateFields":{}`
 
 ### Requirement: 向自定义生命周期命令注入选定字段环境变量
 
-系统 MUST 只向自定义生命周期 Shell 命令注入当前模板中已标记环境变量注入的字段。环境变量名 MUST 为 `TASKAI_` 加字段键的大写形式；字符串字段使用原字符串值，布尔字段使用 `true` 或 `false`。可选字符串值为空时，系统 MUST 仍注入值为空的变量。系统 MUST 不向内置创建工作目录、删除工作目录或 Git 克隆命令注入这些变量。
+系统 MUST 只向自定义生命周期 Shell 命令注入任务绑定模板中已标记环境变量注入的字符串或布尔字段。环境变量名 MUST 为 `TASKAI_` 加字段键的大写形式；字符串字段使用原字符串值，布尔字段使用 `true` 或 `false`。可选字符串值为空时，系统 MUST 仍注入值为空的变量。目录字段 MUST NOT 支持或产生环境变量。系统 MUST 不向内置创建工作目录、删除工作目录、同步目录链接或 Git 克隆命令注入这些变量。
 
 #### Scenario: 注入字符串和布尔环境变量
 - **WHEN** `environment` 与 `deploy` 均标记环境变量注入，任务值分别为 `production` 与 `true`
@@ -99,9 +135,13 @@ TBD - created by archiving change add-task-templates. Update Purpose after archi
 - **WHEN** 可选的 `release_note` 字符串字段标记环境变量注入且任务值为空字符串
 - **THEN** 自定义生命周期命令收到值为空的 `TASKAI_RELEASE_NOTE` 环境变量
 
+#### Scenario: 目录字段不注入环境变量
+- **WHEN** 任务绑定模板包含一个值为多个绝对路径的目录字段
+- **THEN** 自定义命令环境中不存在由该字段生成的变量，目录数组仅通过标准输入 JSON 提供
+
 #### Scenario: 内置命令保持既有执行方式
-- **WHEN** 命令链包含创建工作目录或 Git 克隆等内置命令
-- **THEN** 系统继续按既有 Go 或 Git 执行路径运行，且不要求这些命令接收模板环境变量
+- **WHEN** 命令链包含创建工作目录、同步目录链接或 Git 克隆等内置命令
+- **THEN** 系统继续按既有 Go、文件系统或 Git 执行路径运行，且不要求这些命令接收模板环境变量
 
 ### Requirement: 兼容没有任务模板的既有数据
 
@@ -110,3 +150,23 @@ TBD - created by archiving change add-task-templates. Update Purpose after archi
 #### Scenario: 加载旧数据文件
 - **WHEN** 应用加载不含任务模板相关字段的既有数据文件
 - **THEN** 应用正常启动，现有任务保持可用，且 HTTP 响应中的每个任务提供空 `templateFields` 对象
+
+### Requirement: 创建后按任务绑定模板限制字段更新
+
+系统 SHALL 允许用户在创建任务时填写全部全局当前模板字段，并在创建成功后立即按任务绑定模板的创建后可更新标记限制修改。编辑表单 MUST 将不可更新字段显示为只读，后端 MUST 比较归一化后的新旧值并拒绝任何不可更新字段变化，且该限制 MUST 适用于 pending、running 和 completed 任务。可更新策略 MUST 始终通过任务保存的模板 ID 读取绑定模板的最新定义，不得保存字段策略快照；绑定模板将字段改为可更新后任务立即可以修改，改为不可更新后立即锁定。切换全局当前模板 MUST NOT 绕过既有任务的锁定。
+
+#### Scenario: 创建任务后立即锁定目录字段
+- **WHEN** 用户创建任务时选择一个创建后不可更新的目录字段值，随后在任务仍为 pending 时重新编辑
+- **THEN** 表单只读显示已保存路径，后端拒绝替换或移除该值
+
+#### Scenario: running 任务不能绕过锁定
+- **WHEN** 客户端为 running 任务提交与已保存值不同的不可更新字段
+- **THEN** 后端拒绝整个更新，不保存其他字段变化，也不调度 `updateTask`
+
+#### Scenario: 绑定模板重新允许更新
+- **WHEN** 用户将同一模板字段从不可更新改为可更新后再次编辑任务
+- **THEN** 表单允许修改该字段，后端按新模板策略接受有效的新值
+
+#### Scenario: 切换全局当前模板不能绕过锁定
+- **WHEN** 任务绑定模板的目录字段不可更新，用户把全局当前模板切换为另一个可更新模板后编辑或启动该任务
+- **THEN** 表单、后端校验、HTTP、命令链输入和目录链接同步仍使用原绑定模板
