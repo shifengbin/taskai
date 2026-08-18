@@ -75,11 +75,11 @@ func (service *Service) createTask(title, description, color string, extraInfo [
 		}
 		created.LifecycleChains = selected
 	}
-	currentTemplate := activeTaskTemplate(data.Settings)
+	currentTemplate := data.Settings.ActiveTaskTemplate()
 	if !includeTemplateFields {
 		currentTemplate = nil
 	}
-	created, err = created.UpdateTemplateFields(currentTemplate, templateFields)
+	created, err = created.InitializeTemplateFields(currentTemplate, templateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -352,7 +352,7 @@ func (service *Service) UpdateTaskWithExtraInfoAndTemplateFields(taskID, title, 
 	if err != nil {
 		return task.Task{}, err
 	}
-	updated, err = updated.UpdateTemplateFields(activeTaskTemplate(data.Settings), templateFields)
+	updated, err = updated.UpdateTemplateFields(data.Settings.TaskTemplateForTask(data.Tasks[index]), templateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -387,7 +387,7 @@ func (service *Service) UpdateTaskWithTemplateFields(taskID, title, description,
 	if err != nil {
 		return task.Task{}, err
 	}
-	updated, err = updated.UpdateTemplateFields(activeTaskTemplate(data.Settings), templateFields)
+	updated, err = updated.UpdateTemplateFields(data.Settings.TaskTemplateForTask(data.Tasks[index]), templateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -468,7 +468,7 @@ func (service *Service) UpdateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(
 	if err != nil {
 		return task.Task{}, err
 	}
-	updated, err = updated.UpdateTemplateFields(activeTaskTemplate(data.Settings), templateFields)
+	updated, err = updated.UpdateTemplateFields(data.Settings.TaskTemplateForTask(current), templateFields)
 	if err != nil {
 		return task.Task{}, err
 	}
@@ -602,10 +602,6 @@ func lifecycleChainSupportsHook(chain settings.LifecycleCommandChain, hook task.
 		}
 	}
 	return false
-}
-
-func activeTaskTemplate(current settings.Settings) *task.TaskTemplate {
-	return current.ActiveTaskTemplate()
 }
 
 func buildTaskExtraInfoSnapshots(data storage.Data, existing, requested []task.TaskExtraInfo) ([]task.TaskExtraInfo, error) {

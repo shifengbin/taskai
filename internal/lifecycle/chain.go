@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"taskai/internal/directorylinks"
 	"taskai/internal/settings"
 	"taskai/internal/task"
 	"taskai/internal/workspace"
@@ -37,6 +38,7 @@ func (function CommandExecutorFunc) Run(invocation CommandInvocation) (CommandRe
 
 type CommandChainRequest struct {
 	Task               task.Task
+	TaskTemplate       *task.TaskTemplate
 	TemplateFields     map[string]any
 	Directory          string
 	WorkspaceRoot      string
@@ -56,12 +58,14 @@ type CommandChainRunner struct {
 	gitExecutor     GitExecutor
 	createWorkspace func(root, taskID, token string) (workspace.CreateResult, error)
 	removeWorkspace func(root, path, taskID string) error
+	directoryLinks  *directorylinks.Synchronizer
 }
 
 func NewCommandChainRunner(executor CommandExecutor) *CommandChainRunner {
 	return &CommandChainRunner{
-		executor:    executor,
-		gitExecutor: NewDirectGitExecutor(),
+		executor:       executor,
+		gitExecutor:    NewDirectGitExecutor(),
+		directoryLinks: directorylinks.NewSynchronizer(directorylinks.NativeDirectoryLinkFS()),
 		createWorkspace: func(root, taskID, token string) (workspace.CreateResult, error) {
 			if token == "" {
 				return workspace.Create(root, taskID)
@@ -129,11 +133,44 @@ func (runner *CommandChainRunner) Run(request CommandChainRequest) ([]byte, erro
 			if err := runner.updateDefaultBranch(&request, command.Arguments); err != nil {
 				return nil, commandError(command.Name, nil, err)
 			}
+		case settings.LifecycleCommandKindSyncDirectoryLinks:
+			if err := runner.syncDirectoryLinks(request, command.Arguments); err != nil {
+				return nil, commandError(command.Name, nil, err)
+			}
 		default:
 			return nil, fmt.Errorf("不支持的生命周期命令类型: %q", command.Kind)
 		}
 	}
 	return output, nil
+}
+
+func (runner *CommandChainRunner) syncDirectoryLinks(request CommandChainRequest, arguments []string) error {
+	if len(arguments) > 0 {
+		return fmt.Errorf("同步任务目录链接命令不接受参数")
+	}
+	if runner.directoryLinks == nil {
+		return fmt.Errorf("目录链接同步器不可用")
+	}
+	token := strings.TrimSpace(request.WorkspaceToken)
+	if token == "" {
+		foundToken, found, err := workspace.FindOwnershipToken(request.WorkspaceRoot, request.Task.ID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("找不到任务工作目录所有权令牌")
+		}
+		token = foundToken
+	}
+	desired := []directorylinks.Link{}
+	if request.TaskTemplate != nil {
+		planned, err := directorylinks.Plan(*request.TaskTemplate, request.Task.TemplateFields)
+		if err != nil {
+			return err
+		}
+		desired = planned
+	}
+	return runner.directoryLinks.Sync(request.WorkspaceRoot, request.WorkspacePath, request.Task.ID, token, desired)
 }
 
 func removeCreatedWorkspace(root, path, taskID, token string) error {

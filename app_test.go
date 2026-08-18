@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -716,6 +717,7 @@ func TestAppUsesHookSpecificDirectoryAndHTTPCommandInput(t *testing.T) {
 
 func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	source := t.TempDir()
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -726,6 +728,7 @@ func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
 		Fields: []task.TaskTemplateField{
 			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, Required: true, DefaultValue: "development"},
 			{Key: "dryRun", DisplayName: "演练", InputType: task.TaskTemplateFieldInputBool, DefaultValue: true},
+			{Key: "sources", DisplayName: "来源目录", InputType: task.TaskTemplateFieldInputDirectories, Multiple: true},
 		},
 	}}
 	current.ActiveTaskTemplateID = "release"
@@ -747,7 +750,7 @@ func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
 		payloads <- payload
 		return lifecycle.CommandResult{Output: []byte("ok")}, nil
 	}))
-	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "production"})
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "production", "sources": []string{source}})
 	if err != nil {
 		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
 	}
@@ -755,7 +758,7 @@ func TestAppPassesCurrentTemplateFieldsToLifecycleCommandInput(t *testing.T) {
 
 	select {
 	case payload := <-payloads:
-		if got, want := payload["templateFields"], map[string]any{"environment": "production", "dryRun": true}; !reflect.DeepEqual(got, want) {
+		if got, want := payload["templateFields"], map[string]any{"environment": "production", "dryRun": true, "sources": []any{source}}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("生命周期命令输入模板字段 = %#v，期望 %#v", got, want)
 		}
 	case <-time.After(time.Second):
@@ -934,6 +937,16 @@ func newManifestLifecycleApp(t *testing.T, hook task.LifecycleHook, includeCreat
 		}},
 	}}
 	current.ActiveTaskTemplateID = "release"
+	if hook == task.LifecycleHookPostStart {
+		const prepareChainID = "test.lifecycle-chain.create-workspace-only"
+		current.LifecycleChains = append(current.LifecycleChains, settings.LifecycleCommandChain{
+			ID:              prepareChainID,
+			Name:            "测试准备工作目录",
+			ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart},
+			Commands:        []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandCreateWorkspaceID}},
+		})
+		current.LifecyclePresets[0].Chains[settings.LifecycleHookBeforeStart] = prepareChainID
+	}
 	chainID := "manifest-" + string(hook)
 	commands := []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandUpdateDefaultBranchID}}
 	if includeCreateWorkspace {
@@ -1092,6 +1105,7 @@ func TestAppSpecifiedRepositoryClonePreservesLifecycleFailureSemantics(t *testin
 func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
 	t.Cleanup(func() { _ = app.statusHTTP.Close() })
+	source := t.TempDir()
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -1103,6 +1117,7 @@ func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
 			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, DefaultValue: "", InjectEnvironment: true},
 			{Key: "deploy", DisplayName: "立即部署", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false, InjectEnvironment: true},
 			{Key: "privateNote", DisplayName: "内部备注", InputType: task.TaskTemplateFieldInputString, DefaultValue: "hidden"},
+			{Key: "sources", DisplayName: "来源目录", InputType: task.TaskTemplateFieldInputDirectories, Multiple: true},
 		},
 	}}
 	current.ActiveTaskTemplateID = "release"
@@ -1131,7 +1146,7 @@ func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
 		environments <- append([]string(nil), invocation.Environment...)
 		return lifecycle.CommandResult{Output: []byte("ok")}, nil
 	}))
-	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "", "deploy": true})
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "", "deploy": true, "sources": []string{source}})
 	if err != nil {
 		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
 	}
@@ -1145,6 +1160,9 @@ func TestAppInjectsTemplateFieldsOnlyIntoCustomLifecycleCommands(t *testing.T) {
 		}
 		if containsEnvironmentValue(environment, "TASKAI_PRIVATE_NOTE=hidden") {
 			t.Fatalf("未标记字段不应注入环境变量: %#v", environment)
+		}
+		if containsEnvironmentValue(environment, "TASKAI_SOURCES=") {
+			t.Fatalf("目录字段不应注入环境变量: %#v", environment)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("自定义生命周期命令未收到环境变量")
@@ -1184,6 +1202,7 @@ func TestLifecyclePresetChainsResolveWithConfiguredParameters(t *testing.T) {
 	}{
 		{ID: settings.LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+		{ID: settings.LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + settings.IterationsAIRepository}},
 		{ID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
@@ -1202,6 +1221,7 @@ func TestLifecyclePresetChainsResolveWithConfiguredParameters(t *testing.T) {
 		ID        string
 		Arguments []string
 	}{
+		{ID: settings.LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandManifestFileID, Arguments: []string{}},
 		{ID: settings.LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
@@ -1635,7 +1655,7 @@ func waitForTask(t *testing.T, app *App, taskID string, matches func(task.Task) 
 		time.Sleep(5 * time.Millisecond)
 	}
 	current, err := app.tasks.GetTask(taskID)
-	t.Fatalf("等待任务最终状态超时: task=%#v, err=%v", current, err)
+	t.Fatalf("等待任务最终状态超时: task=%#v, execution=%+v, err=%v", current, current.LifecycleExecution, err)
 	return task.Task{}
 }
 
@@ -1934,8 +1954,9 @@ func TestAppGetsCurrentLifecycleCommandInput(t *testing.T) {
 	}
 }
 
-func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
+func TestAppHTTPTaskResourcesExposeOnlyTaskBoundTemplateFields(t *testing.T) {
 	app := newAppWithoutActiveTaskTemplate(t, t.TempDir())
+	source := t.TempDir()
 	current, err := app.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings() error = %v", err)
@@ -1946,11 +1967,12 @@ func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 		Fields: []task.TaskTemplateField{
 			{Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, Required: true, DefaultValue: "development"},
 			{Key: "dryRun", DisplayName: "演练", InputType: task.TaskTemplateFieldInputBool, DefaultValue: false},
+			{Key: "sources", DisplayName: "来源目录", InputType: task.TaskTemplateFieldInputDirectories, Multiple: true},
 		},
 	}}
 	current.ActiveTaskTemplateID = "release"
 	saveSettingsWithLifecycleConfiguration(t, app, current)
-	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "staging"})
+	created, err := app.CreateTaskWithExtraInfoAndTemplateFields("发布", "", task.DefaultColor, nil, map[string]any{"environment": "staging", "sources": []string{source}})
 	if err != nil {
 		t.Fatalf("CreateTaskWithExtraInfoAndTemplateFields() error = %v", err)
 	}
@@ -1967,7 +1989,7 @@ func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("httpTask() = (%#v, %t, %v)", detail, found, err)
 	}
-	want := map[string]any{"environment": "staging", "dryRun": false}
+	want := map[string]any{"environment": "staging", "dryRun": false, "sources": []string{source}}
 	if got := detail.TemplateFields; !reflect.DeepEqual(got, want) {
 		t.Fatalf("HTTP 任务详情模板字段 = %#v，期望 %#v", got, want)
 	}
@@ -1985,8 +2007,8 @@ func TestAppHTTPTaskResourcesExposeOnlyCurrentTemplateFields(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("停用模板后的 httpTask() = (%#v, %t, %v)", detail, found, err)
 	}
-	if got := detail.TemplateFields; !reflect.DeepEqual(got, map[string]any{}) {
-		t.Fatalf("未启用模板时 HTTP 模板字段 = %#v，期望空对象", got)
+	if got := detail.TemplateFields; !reflect.DeepEqual(got, want) {
+		t.Fatalf("停用全局当前模板后的 HTTP 模板字段 = %#v，期望仍按任务绑定模板输出 %#v", got, want)
 	}
 }
 
@@ -3121,6 +3143,27 @@ func TestOpenTaskFolderUsesRunningTaskWorkspace(t *testing.T) {
 	}
 	if openedPath != started.WorkspacePath {
 		t.Fatalf("打开目录 = %q，期望 %q", openedPath, started.WorkspacePath)
+	}
+}
+
+func TestSelectDirectoryUsesNativeSelectorAndPreservesCancellation(t *testing.T) {
+	app := newApp(t.TempDir())
+	selected := t.TempDir()
+	app.directorySelector = func(ctx context.Context) (string, error) {
+		if ctx == nil {
+			t.Fatal("目录选择上下文 = nil")
+		}
+		return selected, nil
+	}
+
+	got, err := app.SelectDirectory()
+	if err != nil || got != selected {
+		t.Fatalf("SelectDirectory() = %q, %v，期望 %q", got, err, selected)
+	}
+	app.directorySelector = func(context.Context) (string, error) { return "", nil }
+	got, err = app.SelectDirectory()
+	if err != nil || got != "" {
+		t.Fatalf("取消 SelectDirectory() = %q, %v，期望空路径", got, err)
 	}
 }
 

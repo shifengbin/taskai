@@ -124,6 +124,7 @@ func normalizeQuickInputs(inputs []quickinput.QuickInput) ([]quickinput.QuickInp
 
 func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, error) {
 	changed := false
+	migrateDirectoryLinkTaskSelections := data.Settings.PresetVersion < settings.DirectoryLinkPresetVersion
 	dismissedAgentTaskMenuItemIDs := normalizeDismissedAgentTaskMenuItemIDs(data.DismissedAgentTaskMenuItemIDs)
 	if !sameJSON(data.DismissedAgentTaskMenuItemIDs, dismissedAgentTaskMenuItemIDs) {
 		data.DismissedAgentTaskMenuItemIDs = dismissedAgentTaskMenuItemIDs
@@ -190,6 +191,9 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 	data.Settings = validatedLifecycleSettings
 	if data.Tasks == nil {
 		data.Tasks = []task.Task{}
+		changed = true
+	}
+	if migrateDirectoryLinkTaskSelections && migrateTaskDirectoryLinkSelections(data.Tasks) {
 		changed = true
 	}
 	if data.ExtraInfoTemplates == nil {
@@ -351,8 +355,44 @@ func defaultLifecycleChainsForTask(status task.Status, defaults map[task.Lifecyc
 		if chainID := defaults[task.LifecycleHookPostEnd]; chainID != "" {
 			chains[task.LifecycleHookPostEnd] = chainID
 		}
+		if chainID := defaults[task.LifecycleHookUpdateTask]; chainID != "" {
+			chains[task.LifecycleHookUpdateTask] = chainID
+		}
 	}
 	return chains
+}
+
+func migrateTaskDirectoryLinkSelections(tasks []task.Task) bool {
+	legacyDefault := map[task.LifecycleHook]string{
+		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
+		task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+	}
+	changed := false
+	for index := range tasks {
+		if !sameLifecycleChainSelections(tasks[index].LifecycleChains, legacyDefault) {
+			continue
+		}
+		updated := make(map[task.LifecycleHook]string, len(legacyDefault)+1)
+		for hook, chainID := range legacyDefault {
+			updated[hook] = chainID
+		}
+		updated[task.LifecycleHookUpdateTask] = settings.LifecycleChainSyncDirectoryLinksID
+		tasks[index].LifecycleChains = updated
+		changed = true
+	}
+	return changed
+}
+
+func sameLifecycleChainSelections(left, right map[task.LifecycleHook]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for hook, chainID := range left {
+		if right[hook] != chainID {
+			return false
+		}
+	}
+	return true
 }
 
 func ensureBuiltInGitTemplate(templates *[]task.ExtraInfoTemplate) bool {

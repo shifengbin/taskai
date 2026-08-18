@@ -183,6 +183,92 @@ func TestServiceCreatesAndUpdatesCurrentTaskTemplateFields(t *testing.T) {
 	}
 }
 
+func TestServiceCreatesLockedDirectoryFieldAndRejectsAtomicUpdate(t *testing.T) {
+	service, repository, _ := newService(t)
+	locked := false
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{{
+		ID: "directories", Name: "目录", Fields: []task.TaskTemplateField{{
+			Key: "source", DisplayName: "来源目录", InputType: task.TaskTemplateFieldInputDirectories, Required: true, Updatable: &locked,
+		}},
+	}}
+	data.Settings.ActiveTaskTemplateID = "directories"
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	projectA := t.TempDir()
+	projectB := t.TempDir()
+	created, err := service.CreateTaskWithTemplateFields("原始标题", "", task.DefaultColor, map[string]any{"source": []string{projectA}})
+	if err != nil {
+		t.Fatalf("CreateTaskWithTemplateFields() error = %v", err)
+	}
+	if _, err := service.UpdateTaskWithTemplateFields(created.ID, "不应保存的标题", "", task.DefaultColor, map[string]any{"source": []string{projectB}}); err == nil {
+		t.Fatal("UpdateTaskWithTemplateFields() error = nil，期望拒绝锁定字段变更")
+	}
+
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := persisted.Tasks[0].Title; got != "原始标题" {
+		t.Fatalf("校验失败后任务标题 = %q，期望原始标题", got)
+	}
+	if want := []string{projectA}; !reflect.DeepEqual(persisted.Tasks[0].TemplateFields["source"], want) {
+		t.Fatalf("校验失败后目录字段 = %#v，期望 %#v", persisted.Tasks[0].TemplateFields["source"], want)
+	}
+}
+
+func TestServiceUpdatesTaskWithItsOriginalTemplateAfterActiveTemplateChanges(t *testing.T) {
+	service, repository, _ := newService(t)
+	locked := false
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{
+		{ID: "directories", Name: "目录", Fields: []task.TaskTemplateField{{
+			Key: "source", DisplayName: "来源目录", InputType: task.TaskTemplateFieldInputDirectories, Required: true, Updatable: &locked,
+		}}},
+		{ID: "release", Name: "发布", Fields: []task.TaskTemplateField{{
+			Key: "environment", DisplayName: "环境", InputType: task.TaskTemplateFieldInputString, DefaultValue: "production",
+		}}},
+	}
+	data.Settings.ActiveTaskTemplateID = "directories"
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	projectA := t.TempDir()
+	projectB := t.TempDir()
+	created, err := service.CreateTaskWithTemplateFields("目录任务", "", task.DefaultColor, map[string]any{"source": []string{projectA}})
+	if err != nil {
+		t.Fatalf("CreateTaskWithTemplateFields() error = %v", err)
+	}
+	data, err = repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.ActiveTaskTemplateID = "release"
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	updated, err := service.UpdateTaskWithTemplateFields(created.ID, "更新标题", "", task.DefaultColor, map[string]any{"source": []string{projectA}})
+	if err != nil {
+		t.Fatalf("UpdateTaskWithTemplateFields() unchanged error = %v", err)
+	}
+	if updated.TaskTemplateID != "directories" || !reflect.DeepEqual(updated.TemplateFields["source"], []string{projectA}) {
+		t.Fatalf("更新后的模板绑定 = %q fields=%#v，期望保留 directories", updated.TaskTemplateID, updated.TemplateFields)
+	}
+	if _, err := service.UpdateTaskWithTemplateFields(created.ID, "不应保存", "", task.DefaultColor, map[string]any{"source": []string{projectB}}); err == nil {
+		t.Fatal("UpdateTaskWithTemplateFields() changed error = nil，期望按原模板拒绝锁定目录变更")
+	}
+}
+
 func TestServiceDoesNotCopyTaskTemplateBranchIntoGitExtraInfoSnapshots(t *testing.T) {
 	service, repository, _ := newService(t)
 	data, err := repository.Load()

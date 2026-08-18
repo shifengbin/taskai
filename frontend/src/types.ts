@@ -12,10 +12,12 @@ export type TaskMenuItemKind = 'edit-task' | 'create-terminal' | 'open-folder' |
 export type LifecycleHook = 'beforeStart' | 'postStart' | 'beforeEnd' | 'postEnd' | 'updateTask'
 export type LifecycleExecutionState = 'running' | 'failed'
 export type LifecycleWorkspaceOwnership = 'unknown' | 'not-created' | 'created'
-export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace' | 'git-clone' | 'git-clone-repository' | 'manifest-file' | 'update-default-branch'
+export type LifecycleCommandKind = 'custom' | 'create-workspace' | 'delete-workspace' | 'git-clone' | 'git-clone-repository' | 'manifest-file' | 'sync-directory-links' | 'update-default-branch'
 export type LifecycleCommandChainArgumentMode = 'enabled' | 'disabled'
-export type TaskTemplateFieldInputType = 'string' | 'bool'
-export type TaskTemplateValues = Record<string, string | boolean>
+export type TaskTemplateFieldInputType = 'string' | 'bool' | 'directories'
+export type TaskTemplateValue = string | boolean | string[]
+export type TaskTemplateValues = Record<string, TaskTemplateValue>
+export type TaskTemplateDefaultValue = string | boolean | null
 export type TerminalShortcutStep = {kind: 'text', text: string} | {kind: 'key', key: string, modifiers?: string[]} | {kind: 'enter'}
 
 export interface UpdateState {
@@ -143,8 +145,10 @@ export interface TaskTemplateField {
 	displayName: string
 	inputType: TaskTemplateFieldInputType
 	required: boolean
-	defaultValue: string | boolean
+	defaultValue: TaskTemplateDefaultValue
 	injectEnvironment: boolean
+	multiple?: boolean
+	updatable?: boolean
 }
 
 export interface TaskTemplate {

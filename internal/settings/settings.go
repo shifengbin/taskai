@@ -29,7 +29,8 @@ const (
 )
 
 const (
-	CurrentPresetVersion               = 6
+	CurrentPresetVersion               = 7
+	DirectoryLinkPresetVersion         = 7
 	DefaultBranchTaskTemplateID        = "preset.task-template.default-branch"
 	DefaultLifecyclePresetID           = "preset.lifecycle-preset.default"
 	CompanyFrameworkLifecyclePresetID  = "preset.lifecycle-preset.company-framework"
@@ -107,6 +108,7 @@ const (
 	LifecycleCommandKindGitCloneRepository  LifecycleCommandKind = "git-clone-repository"
 	LifecycleCommandKindManifestFile        LifecycleCommandKind = "manifest-file"
 	LifecycleCommandKindUpdateDefaultBranch LifecycleCommandKind = "update-default-branch"
+	LifecycleCommandKindSyncDirectoryLinks  LifecycleCommandKind = "sync-directory-links"
 
 	LifecycleCommandCreateWorkspaceID     = "system.lifecycle.create-workspace"
 	LifecycleCommandDeleteWorkspaceID     = "system.lifecycle.delete-workspace"
@@ -114,8 +116,10 @@ const (
 	LifecycleCommandGitCloneRepositoryID  = "system.lifecycle.git-clone-repository"
 	LifecycleCommandManifestFileID        = "system.lifecycle.manifest-file"
 	LifecycleCommandUpdateDefaultBranchID = "system.lifecycle.update-default-branch"
+	LifecycleCommandSyncDirectoryLinksID  = "system.lifecycle.sync-directory-links"
 	LifecycleChainCreateWorkspaceID       = "system.lifecycle-chain.create-workspace"
 	LifecycleChainDeleteWorkspaceID       = "system.lifecycle-chain.delete-workspace"
+	LifecycleChainSyncDirectoryLinksID    = "system.lifecycle-chain.sync-directory-links"
 )
 
 type LifecycleCommandChainArgumentMode string
@@ -281,17 +285,31 @@ func DefaultTerminalNoteTemplate() TerminalNoteTemplate {
 }
 
 func (current Settings) ActiveTaskTemplate() *task.TaskTemplate {
-	activeID := strings.TrimSpace(current.ActiveTaskTemplateID)
-	if activeID == "" {
+	return current.TaskTemplate(current.ActiveTaskTemplateID)
+}
+
+func (current Settings) TaskTemplate(templateID string) *task.TaskTemplate {
+	templateID = strings.TrimSpace(templateID)
+	if templateID == "" {
 		return nil
 	}
 	for _, candidate := range current.TaskTemplates {
-		if candidate.ID != activeID {
+		if candidate.ID != templateID {
 			continue
 		}
 		copy := candidate
 		copy.Fields = append([]task.TaskTemplateField(nil), candidate.Fields...)
 		return &copy
+	}
+	return nil
+}
+
+func (current Settings) TaskTemplateForTask(currentTask task.Task) *task.TaskTemplate {
+	if strings.TrimSpace(currentTask.TaskTemplateID) != "" {
+		return current.TaskTemplate(currentTask.TaskTemplateID)
+	}
+	if len(currentTask.TemplateFields) > 0 {
+		return current.ActiveTaskTemplate()
 	}
 	return nil
 }
@@ -313,11 +331,12 @@ func DefaultLifecycleCommands() []LifecycleCommand {
 		fixedLifecycleCommand(LifecycleCommandGitCloneRepositoryID),
 		fixedLifecycleCommand(LifecycleCommandManifestFileID),
 		fixedLifecycleCommand(LifecycleCommandUpdateDefaultBranchID),
+		fixedLifecycleCommand(LifecycleCommandSyncDirectoryLinksID),
 	}
 }
 
 func DefaultLifecycleChains() []LifecycleCommandChain {
-	return defaultLifecycleChainsVersionFour()
+	return defaultLifecycleChainsVersionFive()
 }
 
 func newInstallationLifecycleChains() []LifecycleCommandChain {
@@ -328,6 +347,33 @@ func newInstallationLifecycleChains() []LifecycleCommandChain {
 		}
 	}
 	return chains
+}
+
+func defaultLifecycleChainsVersionFive() []LifecycleCommandChain {
+	return []LifecycleCommandChain{
+		{ID: LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookPostEnd}},
+		{ID: LifecycleChainIterationsAIID, Name: "iterations-ai", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
+			{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+			{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=" + IterationsAIRepository}},
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart}},
+		{ID: LifecycleChainUpdateRepositoriesID, Name: "更新仓库", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
+			{CommandID: LifecycleCommandUpdateDefaultBranchID, Arguments: []string{}},
+			{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
+			{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookUpdateTask}},
+		{ID: LifecycleChainSyncDirectoryLinksID, Name: "同步任务目录链接", Commands: []LifecycleCommandReference{
+			{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
+		}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}},
+	}
 }
 
 func defaultLifecycleChainsVersionFour() []LifecycleCommandChain {
@@ -401,6 +447,7 @@ func defaultLifecycleChainsVersionOne() []LifecycleCommandChain {
 }
 
 func DefaultTaskTemplates() []task.TaskTemplate {
+	updatable := true
 	return []task.TaskTemplate{{
 		ID:   DefaultBranchTaskTemplateID,
 		Name: "默认分支",
@@ -410,6 +457,7 @@ func DefaultTaskTemplates() []task.TaskTemplate {
 			InputType:    task.TaskTemplateFieldInputString,
 			Required:     true,
 			DefaultValue: "",
+			Updatable:    &updatable,
 		}},
 	}}
 }
@@ -462,8 +510,76 @@ func ApplyPresetMigration(next Settings) (Settings, bool) {
 	if next.PresetVersion < 6 && next.GitScanDepth == 2 {
 		next.GitScanDepth = DefaultGitScanDepth
 	}
+	if next.PresetVersion < 7 {
+		migrateDirectoryLinkLifecycleConfiguration(&next)
+	}
 	next.PresetVersion = CurrentPresetVersion
 	return next, true
+}
+
+func migrateDirectoryLinkLifecycleConfiguration(next *Settings) {
+	previousByID := make(map[string]LifecycleCommandChain)
+	for _, chain := range defaultLifecycleChainsVersionFour() {
+		previousByID[chain.ID] = chain
+	}
+	currentByID := make(map[string]LifecycleCommandChain)
+	for _, chain := range defaultLifecycleChainsVersionFive() {
+		currentByID[chain.ID] = chain
+	}
+	seen := make(map[string]bool, len(next.LifecycleChains))
+	for index := range next.LifecycleChains {
+		chain := next.LifecycleChains[index]
+		seen[chain.ID] = true
+		previous, found := previousByID[chain.ID]
+		if !found {
+			continue
+		}
+		if chain.ID == LifecycleChainUpdateRepositoriesID && chain.Name == "更新框架仓库" {
+			previous.Name = "更新框架仓库"
+		}
+		if !sameLifecycleChain(chain, previous) {
+			continue
+		}
+		replacement := currentByID[chain.ID]
+		if chain.ID == LifecycleChainUpdateRepositoriesID && chain.Name == "更新框架仓库" {
+			replacement.Name = "更新框架仓库"
+		}
+		next.LifecycleChains[index] = replacement
+	}
+	if !seen[LifecycleChainSyncDirectoryLinksID] {
+		next.LifecycleChains = append(next.LifecycleChains, currentByID[LifecycleChainSyncDirectoryLinksID])
+	}
+
+	previousDefault := LifecyclePreset{
+		ID:   DefaultLifecyclePresetID,
+		Name: "默认预设",
+		Chains: map[LifecycleHook]string{
+			LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
+			LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
+		},
+	}
+	currentDefault := DefaultLifecyclePresets()[0]
+	for index := range next.LifecyclePresets {
+		if sameLifecyclePreset(next.LifecyclePresets[index], previousDefault) {
+			next.LifecyclePresets[index] = currentDefault
+		}
+	}
+}
+
+func sameLifecycleChain(left, right LifecycleCommandChain) bool {
+	return left.ID == right.ID && left.Name == right.Name && sameLifecycleHooks(left.ApplicableHooks, right.ApplicableHooks) && sameLifecycleCommandReferences(left.Commands, right.Commands)
+}
+
+func sameLifecyclePreset(left, right LifecyclePreset) bool {
+	if left.ID != right.ID || left.Name != right.Name || len(left.Chains) != len(right.Chains) {
+		return false
+	}
+	for hook, chainID := range left.Chains {
+		if right.Chains[hook] != chainID {
+			return false
+		}
+	}
+	return true
 }
 
 func ensureDefaultBranchTemplate(next *Settings) {
@@ -572,6 +688,7 @@ func DefaultLifecyclePresetChains() map[LifecycleHook]string {
 	return map[LifecycleHook]string{
 		LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
 		LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
+		LifecycleHookUpdateTask:  LifecycleChainSyncDirectoryLinksID,
 	}
 }
 
@@ -1068,6 +1185,8 @@ func fixedLifecycleCommand(id string) LifecycleCommand {
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindManifestFile, Name: "生成清单文件", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；dir=<相对目录>（可选）指定任务工作目录内的输出目录，name=<文件名>（可选）指定清单文件名。默认生成 <任务工作目录>/manifest.yaml。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
 	case LifecycleCommandUpdateDefaultBranchID:
 		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindUpdateDefaultBranch, Name: "更新默认分支", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeEnabled, Documentation: "参数可留空；templateField=<字段键>（可选）指定从任务模板读取默认分支的字段，省略时使用 branch。仅在当前命令链执行期间，将空的内置 Git 项目 branch 参数更新为该字段值。", ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
+	case LifecycleCommandSyncDirectoryLinksID:
+		return LifecycleCommand{ID: id, Kind: LifecycleCommandKindSyncDirectoryLinks, Name: "同步任务目录链接", Arguments: []string{}, ChainArgumentMode: LifecycleCommandChainArgumentModeDisabled, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}}
 	default:
 		return LifecycleCommand{}
 	}

@@ -254,6 +254,10 @@ export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
+export function SelectDirectory() {
+  return window['go']['main']['App']['SelectDirectory']();
+}
+
 export function SelectTerminal(arg1, arg2) {
   return window['go']['main']['App']['SelectTerminal'](arg1, arg2);
 }

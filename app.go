@@ -55,6 +55,7 @@ type App struct {
 	realtime               *realtime.Service
 	statusHTTP             *realtime.HTTPServer
 	directoryOpener        func(string) error
+	directorySelector      func(context.Context) (string, error)
 	homeDirectory          func() (string, error)
 	commandRunner          func(string, string, string, []string, []string) error
 	commandStarter         func(string, string, string, []string, []string) (commandWaiter, error)
@@ -109,8 +110,11 @@ func newApp(dataDirectory string) *App {
 	defaults := settings.Default(dataDirectory)
 	repository := storage.New(filepath.Join(dataDirectory, "tasks.json"), defaults)
 	app := &App{
-		repository:        repository,
-		directoryOpener:   openDirectory,
+		repository:      repository,
+		directoryOpener: openDirectory,
+		directorySelector: func(ctx context.Context) (string, error) {
+			return runtime.OpenDirectoryDialog(ctx, runtime.OpenDialogOptions{Title: "选择任务目录"})
+		},
 		homeDirectory:     os.UserHomeDir,
 		commandRunner:     runTaskCommand,
 		commandStarter:    startTaskCommand,
@@ -816,12 +820,12 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
-	activeTemplate := data.Settings.ActiveTaskTemplate()
-	templateFields, err := lifecycleTemplateFields(activeTemplate, inputTask.TemplateFields)
+	taskTemplate := data.Settings.TaskTemplateForTask(inputTask)
+	templateFields, err := lifecycleTemplateFields(taskTemplate, inputTask.TemplateFields)
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
-	templateEnvironment, err := task.TaskTemplateEnvironment(activeTemplate, templateFields)
+	templateEnvironment, err := task.TaskTemplateEnvironment(taskTemplate, templateFields)
 	if err != nil {
 		return app.failLifecycleRun(current.ID, execution, err)
 	}
@@ -839,6 +843,7 @@ func (app *App) scheduleLifecycleHookLocked(current task.Task, hook task.Lifecyc
 		execution: execution,
 		request: lifecycle.CommandChainRequest{
 			Task:           inputTask,
+			TaskTemplate:   taskTemplate,
 			TemplateFields: templateFields,
 			Directory:      directory,
 			WorkspaceRoot:  current.WorkspaceRoot,
@@ -1222,6 +1227,10 @@ func (app *App) OpenTaskFolder(taskID string) error {
 		return err
 	}
 	return app.directoryOpener(directory)
+}
+
+func (app *App) SelectDirectory() (string, error) {
+	return app.directorySelector(app.applicationContext())
 }
 
 func (app *App) ListTaskGitRepositories(taskID string) ([]repositorygit.Repository, error) {
@@ -1680,11 +1689,11 @@ func (app *App) lifecycleCommandInput(current task.Task, configured settings.Set
 }
 
 func taskTemplateFieldsForResource(current task.Task, configured settings.Settings) map[string]any {
-	activeTemplate := configured.ActiveTaskTemplate()
-	if activeTemplate == nil {
+	taskTemplate := configured.TaskTemplateForTask(current)
+	if taskTemplate == nil {
 		return map[string]any{}
 	}
-	resolved, err := task.ResolveTaskTemplateFields(*activeTemplate, current.TemplateFields)
+	resolved, err := task.ResolveTaskTemplateFields(*taskTemplate, current.TemplateFields)
 	if err != nil {
 		return map[string]any{}
 	}

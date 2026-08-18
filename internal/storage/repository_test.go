@@ -697,9 +697,9 @@ func TestRepositoryMigratesVersionThreeDefaultBranchPresetChains(t *testing.T) {
 			name: "精确匹配的预置链前置默认分支命令",
 			verify: func(t *testing.T, current settings.Settings) {
 				t.Helper()
-				for _, chainID := range []string{settings.LifecycleChainIterationsAIID, settings.LifecycleChainUpdateRepositoriesID} {
+				for chainID, position := range map[string]int{settings.LifecycleChainIterationsAIID: 0, settings.LifecycleChainUpdateRepositoriesID: 1} {
 					index := lifecycleCommandChainIndex(current.LifecycleChains, chainID)
-					if index < 0 || len(current.LifecycleChains[index].Commands) == 0 || current.LifecycleChains[index].Commands[0].CommandID != settings.LifecycleCommandUpdateDefaultBranchID {
+					if index < 0 || len(current.LifecycleChains[index].Commands) <= position || current.LifecycleChains[index].Commands[position].CommandID != settings.LifecycleCommandUpdateDefaultBranchID {
 						t.Fatalf("%s 迁移后的命令链 = %#v", chainID, current.LifecycleChains)
 					}
 				}
@@ -774,9 +774,14 @@ func TestRepositoryMigratesVersionThreeDefaultBranchPresetChains(t *testing.T) {
 
 func versionThreeRepositoryPresetSettings(workspaceRoot string) settings.Settings {
 	current := settings.Default(workspaceRoot)
-	current.LifecycleChains = settings.DefaultLifecycleChains()
-	current.LifecyclePresets = settings.DefaultLifecyclePresets()
-	current.DefaultLifecyclePresetID = settings.DefaultLifecyclePresetID
+	current.LifecycleChains = []settings.LifecycleCommandChain{
+		{ID: settings.LifecycleChainCreateWorkspaceID, Name: "创建任务工作目录", Commands: []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart}},
+		{ID: settings.LifecycleChainDeleteWorkspaceID, Name: "删除任务工作目录", Commands: []settings.LifecycleCommandReference{{CommandID: settings.LifecycleCommandDeleteWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookPostEnd}},
+		{ID: settings.LifecycleChainIterationsAIID, Name: "iterations-ai", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookBeforeStart}},
+		{ID: settings.LifecycleChainUpdateRepositoriesID, Name: "更新仓库", ApplicableHooks: []settings.LifecycleHook{settings.LifecycleHookUpdateTask}},
+	}
+	current.LifecyclePresets = nil
+	current.DefaultLifecyclePresetID = ""
 	current.PresetVersion = 3
 	for index := range current.LifecycleChains {
 		switch current.LifecycleChains[index].ID {
@@ -830,6 +835,40 @@ func TestRepositoryPresetMigrationKeepsExistingActiveTaskTemplate(t *testing.T) 
 	}
 }
 
+func TestMigrateTaskDirectoryLinkSelectionsOnlyUpdatesExactLegacyDefault(t *testing.T) {
+	legacyDefault := map[task.LifecycleHook]string{
+		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
+		task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+	}
+	custom := map[task.LifecycleHook]string{
+		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
+		task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+		task.LifecycleHookPostStart:   "custom-chain",
+	}
+	tasks := []task.Task{
+		{ID: "legacy-default", LifecycleChains: legacyDefault},
+		{ID: "custom", LifecycleChains: custom},
+		{ID: "company", LifecycleChains: map[task.LifecycleHook]string{
+			task.LifecycleHookBeforeStart: settings.LifecycleChainIterationsAIID,
+			task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+			task.LifecycleHookUpdateTask:  settings.LifecycleChainUpdateRepositoriesID,
+		}},
+	}
+
+	if !migrateTaskDirectoryLinkSelections(tasks) {
+		t.Fatal("migrateTaskDirectoryLinkSelections() changed = false")
+	}
+	if got := tasks[0].LifecycleChains[task.LifecycleHookUpdateTask]; got != settings.LifecycleChainSyncDirectoryLinksID {
+		t.Fatalf("旧默认任务 updateTask 链 = %q", got)
+	}
+	if !reflect.DeepEqual(tasks[1].LifecycleChains, custom) {
+		t.Fatalf("自定义任务选择被修改: %#v", tasks[1].LifecycleChains)
+	}
+	if got := tasks[2].LifecycleChains[task.LifecycleHookUpdateTask]; got != settings.LifecycleChainUpdateRepositoriesID {
+		t.Fatalf("公司框架任务选择被修改: %#v", tasks[2].LifecycleChains)
+	}
+}
+
 func TestRepositoryRejectsChangingTypeOfUsedTaskTemplateField(t *testing.T) {
 	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
 	data, err := repository.Load()
@@ -855,6 +894,53 @@ func TestRepositoryRejectsChangingTypeOfUsedTaskTemplateField(t *testing.T) {
 	next.TaskTemplates[0].Fields[0].DefaultValue = "false"
 	if _, err := repository.SaveSettings(next); err == nil {
 		t.Fatal("SaveSettings() error = nil，期望拒绝改变已使用字段类型")
+	}
+}
+
+func TestRepositoryRejectsInvalidDirectoryTemplateUpdateAtomically(t *testing.T) {
+	repository := New(filepath.Join(t.TempDir(), "state.json"), settings.Default(t.TempDir()))
+	updatable := true
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	data.Settings.TaskTemplates = []task.TaskTemplate{{
+		ID: "directories", Name: "目录", Fields: []task.TaskTemplateField{{
+			Key: "sources", DisplayName: "来源目录", InputType: task.TaskTemplateFieldInputDirectories, Multiple: true, Updatable: &updatable,
+		}},
+	}}
+	data.Settings.ActiveTaskTemplateID = "directories"
+	data.Tasks = append(data.Tasks, task.Task{
+		ID: "task-1", Title: "目录任务", Color: task.DefaultColor, Status: task.StatusPending,
+		ExtraInfo: []task.TaskExtraInfo{}, TaskTemplateID: "directories",
+		TemplateFields: map[string]any{"sources": []string{t.TempDir(), t.TempDir()}}, LifecycleChains: map[task.LifecycleHook]string{},
+	})
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	loaded, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	next := loaded.Settings
+	next.TaskTemplates = append([]task.TaskTemplate(nil), loaded.Settings.TaskTemplates...)
+	next.TaskTemplates[0].Fields = append([]task.TaskTemplateField(nil), loaded.Settings.TaskTemplates[0].Fields...)
+	next.TaskTemplates[0].Fields[0].Multiple = false
+	next.TaskTreeWidth++
+	if _, err := repository.SaveSettings(next); err == nil {
+		t.Fatal("SaveSettings() error = nil，期望拒绝把已有多值字段改为单目录")
+	}
+
+	persisted, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !persisted.Settings.TaskTemplates[0].Fields[0].Multiple {
+		t.Fatal("校验失败后目录模板被部分保存")
+	}
+	if persisted.Settings.TaskTreeWidth != loaded.Settings.TaskTreeWidth {
+		t.Fatalf("校验失败后任务树宽度 = %d，期望 %d", persisted.Settings.TaskTreeWidth, loaded.Settings.TaskTreeWidth)
 	}
 }
 
@@ -1273,7 +1359,7 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(data.Settings.LifecycleCommands) != 6 || len(data.Settings.LifecycleChains) != 4 {
+	if len(data.Settings.LifecycleCommands) != 7 || len(data.Settings.LifecycleChains) != 5 {
 		t.Fatalf("生命周期设置迁移 = %#v", data.Settings)
 	}
 	if got := data.Settings.LifecycleCommands[3].ID; got != settings.LifecycleCommandGitCloneRepositoryID {
@@ -1285,14 +1371,19 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	if got := data.Settings.LifecycleCommands[5].ID; got != settings.LifecycleCommandUpdateDefaultBranchID {
 		t.Fatalf("迁移后的默认分支命令 ID = %q，期望 %q", got, settings.LifecycleCommandUpdateDefaultBranchID)
 	}
+	if got := data.Settings.LifecycleCommands[6].ID; got != settings.LifecycleCommandSyncDirectoryLinksID {
+		t.Fatalf("迁移后的同步目录链接命令 ID = %q，期望 %q", got, settings.LifecycleCommandSyncDirectoryLinksID)
+	}
 	if got := data.Tasks[0].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
 		task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
 		task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+		task.LifecycleHookUpdateTask:  settings.LifecycleChainSyncDirectoryLinksID,
 	}) {
 		t.Fatalf("未执行任务链选择 = %#v", got)
 	}
 	if got := data.Tasks[1].LifecycleChains; !reflect.DeepEqual(got, map[task.LifecycleHook]string{
-		task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID,
+		task.LifecycleHookPostEnd:    settings.LifecycleChainDeleteWorkspaceID,
+		task.LifecycleHookUpdateTask: settings.LifecycleChainSyncDirectoryLinksID,
 	}) {
 		t.Fatalf("执行中任务链选择 = %#v", got)
 	}
@@ -1319,7 +1410,7 @@ func TestRepositoryMigratesLifecycleDefaultsForExistingTasks(t *testing.T) {
 	if err := json.Unmarshal(persistedSettings["lifecycleChains"], &persistedChains); err != nil {
 		t.Fatalf("Unmarshal persisted chains error = %v", err)
 	}
-	if len(persistedChains) != 4 || persistedChains[0]["commands"] == nil || persistedChains[0]["commandIds"] != nil {
+	if len(persistedChains) != 5 || persistedChains[0]["commands"] == nil || persistedChains[0]["commandIds"] != nil {
 		t.Fatalf("迁移后的命令链结构 = %#v", persistedChains)
 	}
 }
@@ -1341,12 +1432,17 @@ func TestRepositoryMigratesLifecycleDefaultChainsToPreset(t *testing.T) {
 			wantChains: map[task.LifecycleHook]string{
 				task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
 				task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+				task.LifecycleHookUpdateTask:  settings.LifecycleChainSyncDirectoryLinksID,
 			},
 			wantPending: map[task.LifecycleHook]string{
 				task.LifecycleHookBeforeStart: settings.LifecycleChainCreateWorkspaceID,
 				task.LifecycleHookPostEnd:     settings.LifecycleChainDeleteWorkspaceID,
+				task.LifecycleHookUpdateTask:  settings.LifecycleChainSyncDirectoryLinksID,
 			},
-			wantRunning: map[task.LifecycleHook]string{task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID},
+			wantRunning: map[task.LifecycleHook]string{
+				task.LifecycleHookPostEnd:    settings.LifecycleChainDeleteWorkspaceID,
+				task.LifecycleHookUpdateTask: settings.LifecycleChainSyncDirectoryLinksID,
+			},
 		},
 		{
 			name:        "保留显式空映射",
@@ -1523,7 +1619,7 @@ func TestRepositoryPreservesLegacyChainWithoutCommonApplicableHook(t *testing.T)
 	if err != nil {
 		t.Fatalf("第二次 Load() error = %v", err)
 	}
-	if len(data.Settings.LifecycleChains) != 3 || data.Settings.LifecycleChains[0].ID != "legacy-mixed" || len(data.Settings.LifecycleChains[0].ApplicableHooks) != 0 {
+	if len(data.Settings.LifecycleChains) != 4 || data.Settings.LifecycleChains[0].ID != "legacy-mixed" || len(data.Settings.LifecycleChains[0].ApplicableHooks) != 0 {
 		t.Fatalf("无共同范围的旧链 = %#v", data.Settings.LifecycleChains)
 	}
 }
@@ -2037,7 +2133,10 @@ func TestRepositoryAtomicallyPersistsTasksAndSettings(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	expectedTask := want.Tasks[0]
-	expectedTask.LifecycleChains = map[task.LifecycleHook]string{task.LifecycleHookPostEnd: settings.LifecycleChainDeleteWorkspaceID}
+	expectedTask.LifecycleChains = map[task.LifecycleHook]string{
+		task.LifecycleHookPostEnd:    settings.LifecycleChainDeleteWorkspaceID,
+		task.LifecycleHookUpdateTask: settings.LifecycleChainSyncDirectoryLinksID,
+	}
 	expectedTask.TemplateFields = map[string]any{}
 	if len(got.Tasks) != 1 || !reflect.DeepEqual(got.Tasks[0], expectedTask) {
 		t.Errorf("Load() Tasks = %#v, want %#v", got.Tasks, expectedTask)

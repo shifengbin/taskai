@@ -28,6 +28,63 @@ type CreateResult struct {
 	Created bool
 }
 
+type OwnedWorkspaceContext struct {
+	Root         string
+	Path         string
+	MetadataPath string
+	TaskID       string
+	Token        string
+}
+
+func WithOwnedWorkspace(root, workspacePath, taskID, token string, operation func(OwnedWorkspaceContext) error) error {
+	ownershipMutationMu.Lock()
+	defer ownershipMutationMu.Unlock()
+
+	absRoot, expectedWorkspacePath, err := TaskPath(root, taskID)
+	if err != nil {
+		return err
+	}
+	if err := validateOwnershipToken(token); err != nil {
+		return err
+	}
+	absWorkspacePath, err := filepath.Abs(workspacePath)
+	if err != nil {
+		return fmt.Errorf("解析任务工作目录失败: %w", err)
+	}
+	absWorkspacePath = filepath.Clean(absWorkspacePath)
+	if absWorkspacePath != expectedWorkspacePath {
+		return fmt.Errorf("拒绝操作非任务工作目录")
+	}
+	metadataPath, exists, err := validatedOwnershipMetadataDirectory(absRoot)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("找不到工作目录所有权数据目录")
+	}
+	claimPath, _, _, err := ownershipArtifactPaths(metadataPath, token)
+	if err != nil {
+		return err
+	}
+	claim, found, err := readOwnershipClaim(claimPath, taskID, token)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("找不到任务工作目录所有权凭据")
+	}
+	matches, err := directoryMatchesClaim(absWorkspacePath, claim)
+	if err != nil {
+		return fmt.Errorf("验证任务工作目录所有权失败: %w", err)
+	}
+	if !matches {
+		return fmt.Errorf("任务工作目录所有权凭据不匹配")
+	}
+	return operation(OwnedWorkspaceContext{
+		Root: absRoot, Path: absWorkspacePath, MetadataPath: metadataPath, TaskID: taskID, Token: token,
+	})
+}
+
 func Create(root, taskID string) (CreateResult, error) {
 	absRoot, workspacePath, err := TaskPath(root, taskID)
 	if err != nil {
@@ -57,6 +114,17 @@ func NewOwnershipToken() (string, error) {
 		return "", fmt.Errorf("生成工作目录所有权令牌失败: %w", err)
 	}
 	return hex.EncodeToString(contents), nil
+}
+
+func FindOwnershipToken(root, taskID string) (string, bool, error) {
+	ownershipMutationMu.Lock()
+	defer ownershipMutationMu.Unlock()
+
+	absRoot, _, err := TaskPath(root, taskID)
+	if err != nil {
+		return "", false, err
+	}
+	return findOwnershipClaimToken(absRoot, taskID)
 }
 
 func CreateOwned(root, taskID, token string) (CreateResult, error) {
@@ -283,7 +351,7 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 		return false, err
 	}
 	if cleanupRecovered {
-		return true, nil
+		return finishOwnedWorkspaceRemoval(metadataPath, token)
 	}
 	claim, found, err := readOwnershipClaim(claimPath, taskID, token)
 	if err != nil {
@@ -292,6 +360,19 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 	if !found {
 		if err := removeUnclaimedStaging(stagingPath); err != nil {
 			return false, err
+		}
+		workspaceExists, err := pathExistsChecked(expectedWorkspacePath)
+		if err != nil {
+			return false, fmt.Errorf("检查任务工作目录失败: %w", err)
+		}
+		if !workspaceExists {
+			cleaned, err := removeOwnedWorkspaceMetadata(metadataPath, token)
+			if err != nil {
+				return false, err
+			}
+			if cleaned {
+				return true, nil
+			}
 		}
 		return false, nil
 	}
@@ -312,7 +393,7 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 		if err := removeClaimedQuarantine(claimPath, quarantinePath, ""); err != nil {
 			return false, err
 		}
-		return true, nil
+		return finishOwnedWorkspaceRemoval(metadataPath, token)
 	}
 	quarantineExists, err := pathExistsChecked(quarantinePath)
 	if err != nil {
@@ -329,7 +410,7 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 		if err := cleanupClaimedStaging(claimPath, stagingPath, quarantinePath, claim); err != nil {
 			return false, err
 		}
-		return true, nil
+		return finishOwnedWorkspaceRemoval(metadataPath, token)
 	}
 	stagingExists, err := pathExistsChecked(stagingPath)
 	if err != nil {
@@ -347,7 +428,7 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 		if err := os.Remove(claimPath); err != nil && !os.IsNotExist(err) {
 			return false, fmt.Errorf("删除工作目录所有权凭据失败: %w", err)
 		}
-		return true, nil
+		return finishOwnedWorkspaceRemoval(metadataPath, token)
 	}
 	workspaceMatches, err := directoryMatchesClaim(absWorkspacePath, claim)
 	if err != nil {
@@ -372,6 +453,31 @@ func RemoveOwned(root, workspacePath, taskID, token string) (bool, error) {
 	}
 	if err := removeClaimedQuarantine(claimPath, quarantinePath, absWorkspacePath); err != nil {
 		return false, err
+	}
+	return finishOwnedWorkspaceRemoval(metadataPath, token)
+}
+
+func finishOwnedWorkspaceRemoval(metadataPath, token string) (bool, error) {
+	if _, err := removeOwnedWorkspaceMetadata(metadataPath, token); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func removeOwnedWorkspaceMetadata(metadataPath, token string) (bool, error) {
+	manifestPath := filepath.Join(metadataPath, token+".directory-links.json")
+	info, err := os.Lstat(manifestPath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("检查目录链接清单失败: %w", err)
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return false, fmt.Errorf("目录链接清单路径被普通目录占用")
+	}
+	if err := os.Remove(manifestPath); err != nil {
+		return false, fmt.Errorf("删除目录链接清单失败: %w", err)
 	}
 	return true, nil
 }

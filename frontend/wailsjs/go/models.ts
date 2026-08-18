@@ -892,6 +892,8 @@ export namespace task {
 	    required: boolean;
 	    defaultValue: any;
 	    injectEnvironment: boolean;
+	    multiple: boolean;
+	    updatable?: boolean;
 
 	    static createFrom(source: any = {}) {
 	        return new TaskTemplateField(source);
@@ -905,6 +907,8 @@ export namespace task {
 	        this.required = source["required"];
 	        this.defaultValue = source["defaultValue"];
 	        this.injectEnvironment = source["injectEnvironment"];
+	        this.multiple = source["multiple"];
+	        this.updatable = source["updatable"];
 	    }
 	}
 	export class TaskTemplate {

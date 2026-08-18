@@ -58,6 +58,20 @@ describe('clampTaskTreeWidth', () => {
 		expect(task.templateFields).toEqual({environment: 'production', deploy: true})
 	})
 
+	it('Wails 模型保留目录字段约束和独立目录数组', () => {
+		const settings = wailsSettings.Settings.createFrom({
+			taskTemplates: [{id: 'directories', name: '项目目录', fields: [{
+				key: 'sources', displayName: '源码目录', inputType: 'directories', required: true,
+				defaultValue: [], injectEnvironment: false, multiple: true, updatable: false,
+			}]}],
+		})
+		const task = wailsTask.Task.createFrom({id: 'task-1', templateFields: {sources: ['/tmp/project-a/src', '/tmp/project-b/src']}})
+
+		expect(settings.taskTemplates[0].fields[0].multiple).toBe(true)
+		expect(settings.taskTemplates[0].fields[0].updatable).toBe(false)
+		expect(task.templateFields.sources).toEqual(['/tmp/project-a/src', '/tmp/project-b/src'])
+	})
+
 	it('Wails 模型转换生命周期预设和默认预设标识', () => {
 		const settings = wailsSettings.Settings.createFrom({
 			lifecyclePresets: [{id: 'deploy', name: '部署', chains: {beforeStart: 'prepare'}}],

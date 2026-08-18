@@ -138,6 +138,8 @@ export function SaveQuickInput(arg1:quickinput.QuickInput):Promise<quickinput.Qu
 
 export function SaveSettings(arg1:settings.Settings):Promise<settings.Settings>;
 
+export function SelectDirectory():Promise<string>;
+
 export function SelectTerminal(arg1:string,arg2:string):Promise<void>;
 
 export function SetTaskShelved(arg1:string,arg2:boolean):Promise<Array<task.Task>>;

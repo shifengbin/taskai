@@ -68,6 +68,7 @@ import {
 } from './terminal-notes'
 import {uniqueProgramNames} from './terminal-shortcuts'
 import {gitRepositoryPath} from './git-repository'
+import {nativeDirectoryPicker, type DirectoryPicker} from './directory-picker'
 import {resolveTerminalFontFamily} from './terminal-font'
 import {defaultTerminalFontSize, maximumTerminalFontSize, minimumTerminalFontSize, normalizeTerminalFontSize, terminalFontSizePercent} from './terminal-font-size'
 import {defaultTerminalTheme, normalizeTerminalTheme, type TerminalTheme} from './terminal-theme'
@@ -160,7 +161,7 @@ const terminalBrightAnsiColorFields: Array<{key: keyof TerminalTheme, label: str
 	{key: 'brightWhite', label: '亮白'},
 ]
 
-export default function App() {
+export default function App({directoryPicker = nativeDirectoryPicker}: {directoryPicker?: DirectoryPicker} = {}) {
   const [tasks, setTasks] = useState<TaskRecord[]>([])
 	const [terminals, setTerminals] = useState<TerminalRecord[]>([])
 	const [terminalNotes, setTerminalNotes] = useState<TerminalNotesBySession>({})
@@ -435,6 +436,8 @@ export default function App() {
   const selectedTerminal = terminals.find((terminal) => terminal.id === selectedTerminalID)
 	const taskMenuItems = settings?.taskMenuItems?.length ? settings.taskMenuItems : defaultTaskMenuItems
 	const activeTaskTemplate = settings?.taskTemplates?.find((template) => template.id === settings.activeTaskTemplateId)
+	const selectedTaskTemplate = taskTemplateForRecord(settings, selectedTask, activeTaskTemplate)
+	const dialogTaskTemplate = editingTask ? taskTemplateForRecord(settings, editingTask, activeTaskTemplate) : activeTaskTemplate
 	const lifecyclePresets = settings?.lifecyclePresets ?? []
 	const activeTaskTemplateIDs = useMemo(() => new Set(tasks
 		.filter((task) => (task.status === 'pending' || task.status === 'running') && Boolean(task.taskTemplateId))
@@ -485,12 +488,13 @@ export default function App() {
   }
 
   const openTaskDialog = (task?: TaskRecord) => {
+	const template = task ? taskTemplateForRecord(settings, task, activeTaskTemplate) : activeTaskTemplate
     setEditingTask(task)
     setDraftTitle(task?.title ?? '')
     setDraftDescription(task?.description ?? '')
     setDraftColor(task ? task.color || defaultTaskColor : randomTaskColor())
 		setTaskExtraInfoDraft(task?.extraInfo ? cloneTaskExtraInfo(task.extraInfo) : [])
-		setTaskTemplateFieldsDraft(resolveTaskTemplateValues(activeTaskTemplate, task?.templateFields))
+		setTaskTemplateFieldsDraft(resolveTaskTemplateValues(template, task?.templateFields))
 		const defaultPresetID = settings?.defaultLifecyclePresetId ?? ''
 		const defaultPreset = lifecyclePresets.find((preset) => preset.id === defaultPresetID)
 		const lifecycleChains = {...task?.lifecycleChains ?? defaultPreset?.chains ?? {}}
@@ -531,12 +535,18 @@ export default function App() {
 			showErrorMessage(`信息“${duplicateParameter.displayName ?? duplicateParameter.catalogue}”包含重复的动态参数键`)
 			return
 		}
-		const missingTemplateField = activeTaskTemplate?.fields.find((field) => {
+		const missingTemplateField = dialogTaskTemplate?.fields.find((field) => {
 			if (!field.required) {
 				return false
 			}
 			const value = taskTemplateFieldsDraft[field.key]
-			return field.inputType === 'bool' ? value !== true : !String(value ?? '').trim()
+			if (field.inputType === 'bool') {
+				return value !== true
+			}
+			if (field.inputType === 'directories') {
+				return taskDirectoryValues(value).length === 0
+			}
+			return !String(value ?? '').trim()
 		})
 		if (missingTemplateField) {
 			showErrorMessage(missingTemplateField.inputType === 'bool'
@@ -548,10 +558,10 @@ export default function App() {
       if (editingTask) {
 			const hasExtraInfo = taskExtraInfoDraft.length > 0 || (editingTask.extraInfo?.length ?? 0) > 0
 			const updated = editingTask.status === 'pending'
-					? activeTaskTemplate
+					? dialogTaskTemplate
 						? await api.updateTaskWithExtraInfoTemplateFieldsAndLifecycleChains(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft, taskLifecycleChainsDraft)
 						: await api.updateTaskWithExtraInfoAndLifecycleChains(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
-					: activeTaskTemplate
+					: dialogTaskTemplate
 						? await api.updateTaskWithExtraInfoAndTemplateFields(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft)
 					: hasExtraInfo
 						? await api.updateTaskWithExtraInfo(editingTask.id, draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
@@ -559,10 +569,10 @@ export default function App() {
         setTasks((current) => mergeLifecycleTask(current, updated))
       } else {
 			const created = taskLifecycleSelectionExplicit
-				? activeTaskTemplate
+				? dialogTaskTemplate
 					? await api.createTaskWithExtraInfoTemplateFieldsAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft, taskLifecycleChainsDraft)
 					: await api.createTaskWithExtraInfoAndLifecycleChains(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskLifecycleChainsDraft)
-				: activeTaskTemplate
+				: dialogTaskTemplate
 					? await api.createTaskWithExtraInfoAndTemplateFields(draftTitle, draftDescription, draftColor, taskExtraInfoDraft, taskTemplateFieldsDraft)
 				: taskExtraInfoDraft.length > 0
 					? await api.createTaskWithExtraInfo(draftTitle, draftDescription, draftColor, taskExtraInfoDraft)
@@ -1422,9 +1432,9 @@ const closeTerminal = async (terminal: TerminalRecord) => {
                 onAliasChange={(alias) => renameTerminal(selectedTerminal, alias)}
               />
             ) : (
-              <TaskDetail
+			  <TaskDetail
 				task={selectedTask}
-				template={activeTaskTemplate}
+				template={selectedTaskTemplate}
 				onCopyLifecycleCommandInput={(taskID) => void copyLifecycleCommandInput(taskID).catch((error) => showError(error, setMessage))}
 			/>
             )}
@@ -1441,7 +1451,14 @@ const closeTerminal = async (terminal: TerminalRecord) => {
             <div data-testid="task-dialog-content" className="grid gap-4 px-1" style={{overflowY: 'auto', minHeight: 0}}>
                 <Field label="标题"><Input autoFocus required value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)}/></Field>
                 <Field label="任务描述"><Textarea rows={3} value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)}/></Field>
-			<TaskTemplateFieldsEditor template={activeTaskTemplate} values={taskTemplateFieldsDraft} onChange={setTaskTemplateFieldsDraft}/>
+			<TaskTemplateFieldsEditor
+				template={dialogTaskTemplate}
+				values={taskTemplateFieldsDraft}
+				editing={Boolean(editingTask)}
+				directoryPicker={directoryPicker}
+				onChange={setTaskTemplateFieldsDraft}
+				onError={(error) => showError(error, setMessage)}
+			/>
                 <div className="flex items-center gap-3">
                   <label htmlFor="task-color-picker" className="text-sm text-snap-ink">任务颜色</label>
                   <input
@@ -2807,7 +2824,10 @@ function TaskTemplateManagement({
 				...field,
 				key: field.key.trim(),
 				displayName: field.displayName.trim(),
-				defaultValue: field.inputType === 'bool' ? field.defaultValue === true : typeof field.defaultValue === 'string' ? field.defaultValue : '',
+				defaultValue: field.inputType === 'directories' ? null : field.inputType === 'bool' ? field.defaultValue === true : typeof field.defaultValue === 'string' ? field.defaultValue : '',
+				injectEnvironment: field.inputType === 'directories' ? false : field.injectEnvironment,
+				multiple: field.inputType === 'directories' && field.multiple === true,
+				updatable: field.updatable !== false,
 			})),
 		}
 		if (!normalized.name) {
@@ -2902,11 +2922,17 @@ function TaskTemplateManagement({
 								<Field label={`字段 ${index + 1} 显示名称`}><Input required value={field.displayName} onChange={(event) => updateField(index, {displayName: event.target.value})}/></Field>
 								<Field label={`字段 ${index + 1} 类型`}>
 									<select className={selectClass} value={field.inputType} onChange={(event) => {
-										const inputType: TaskTemplateField['inputType'] = event.target.value === 'bool' ? 'bool' : 'string'
-										updateField(index, {inputType, defaultValue: inputType === 'bool' ? false : ''})
+										const inputType: TaskTemplateField['inputType'] = event.target.value === 'bool' ? 'bool' : event.target.value === 'directories' ? 'directories' : 'string'
+										updateField(index, {
+											inputType,
+											defaultValue: inputType === 'directories' ? null : inputType === 'bool' ? false : '',
+											injectEnvironment: inputType === 'directories' ? false : field.injectEnvironment,
+											multiple: inputType === 'directories' && field.multiple === true,
+										})
 									}}>
 										<option value="string">字符串</option>
 										<option value="bool">布尔值</option>
+										<option value="directories">目录</option>
 									</select>
 								</Field>
 								<div className="flex items-center gap-0.5">
@@ -2915,11 +2941,14 @@ function TaskTemplateManagement({
 									<SnapIconButton title="删除字段" aria-label={`删除模板字段 ${index + 1}`} size="sm" disabled={(draft?.fields.length ?? 0) === 1} onClick={() => setDraft((current) => current ? {...current, fields: current.fields.filter((_, fieldIndex) => fieldIndex !== index)} : current)} className="text-snap-error hover:text-snap-error"><Trash2 className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
 								</div>
 								<div className="flex flex-wrap items-center gap-2" style={{gridColumn: '1 / -1'}}>
-									{field.inputType === 'bool'
+									{field.inputType === 'directories'
+										? <label className="flex items-center gap-2 text-sm text-snap-ink"><SnapCheckbox checked={field.multiple === true} onCheckedChange={(checked) => updateField(index, {multiple: checked === true})}/><span>支持多个目录</span></label>
+										: field.inputType === 'bool'
 										? <label className="flex items-center gap-2 text-sm text-snap-ink"><SnapCheckbox checked={field.defaultValue === true} onCheckedChange={(checked) => updateField(index, {defaultValue: checked})}/><span>默认选中</span></label>
 										: <Field label={`字段 ${index + 1} 默认值`} className="min-w-[220px] flex-1"><Input value={typeof field.defaultValue === 'string' ? field.defaultValue : ''} onChange={(event) => updateField(index, {defaultValue: event.target.value})}/></Field>}
 									<label className="flex items-center gap-2 text-sm text-snap-ink"><SnapCheckbox checked={field.required} onCheckedChange={(checked) => updateField(index, {required: checked === true})}/><span>{field.inputType === 'bool' ? '必填（必须勾选）' : '必填'}</span></label>
-									<label className="flex items-center gap-2 text-sm text-snap-ink"><SnapCheckbox checked={field.injectEnvironment} onCheckedChange={(checked) => updateField(index, {injectEnvironment: checked === true})}/><span>注入生命周期环境变量</span></label>
+									<label className="flex items-center gap-2 text-sm text-snap-ink"><SnapCheckbox checked={field.updatable !== false} onCheckedChange={(checked) => updateField(index, {updatable: checked === true})}/><span>创建后允许更新</span></label>
+									{field.inputType !== 'directories' && <label className="flex items-center gap-2 text-sm text-snap-ink"><SnapCheckbox checked={field.injectEnvironment} onCheckedChange={(checked) => updateField(index, {injectEnvironment: checked === true})}/><span>注入生命周期环境变量</span></label>}
 								</div>
 							</div>)}
 						</div>
@@ -2934,11 +2963,17 @@ function TaskTemplateManagement({
 function TaskTemplateFieldsEditor({
 	template,
 	values,
+	editing,
+	directoryPicker,
 	onChange,
+	onError,
 }: {
 	template?: TaskTemplate
 	values: TaskTemplateValues
+	editing: boolean
+	directoryPicker: DirectoryPicker
 	onChange: Dispatch<SetStateAction<TaskTemplateValues>>
+	onError(error: unknown): void
 }) {
 	if (!template) {
 		return null
@@ -2946,12 +2981,71 @@ function TaskTemplateFieldsEditor({
 	return <section data-testid="task-template-fields" className="grid gap-2 border-t-2 border-snap-outline pt-3">
 		<span className="font-display text-sm font-bold text-snap-ink">{template.name}</span>
 		<div className="grid gap-2 sm:grid-cols-2">
-			{template.fields.map((field) => field.inputType === 'bool'
-				? <label key={field.key} className="flex items-center gap-2 text-sm text-snap-ink min-w-0"><SnapCheckbox checked={values[field.key] === true} onCheckedChange={(checked) => onChange((current) => ({...current, [field.key]: checked}))}/><span>{field.displayName}</span></label>
-				: <Field key={field.key} label={field.displayName}><Input required={field.required} value={typeof values[field.key] === 'string' ? (values[field.key] as string) : ''} onChange={(event) => onChange((current) => ({...current, [field.key]: event.target.value}))}/></Field>,
+			{template.fields.map((field) => field.inputType === 'directories'
+				? <TaskDirectoryFieldEditor
+					key={field.key}
+					field={field}
+					value={values[field.key]}
+					locked={editing && field.updatable === false}
+					directoryPicker={directoryPicker}
+					onChange={(directories) => onChange((current) => ({...current, [field.key]: directories}))}
+					onError={onError}
+				/>
+				: field.inputType === 'bool'
+				? <label key={field.key} className="flex items-center gap-2 text-sm text-snap-ink min-w-0"><SnapCheckbox disabled={editing && field.updatable === false} checked={values[field.key] === true} onCheckedChange={(checked) => onChange((current) => ({...current, [field.key]: checked}))}/><span>{field.displayName}{editing && field.updatable === false ? '（创建后不可更新）' : ''}</span></label>
+				: <Field key={field.key} label={field.displayName} hint={editing && field.updatable === false ? '创建后不可更新' : undefined}><Input required={field.required} disabled={editing && field.updatable === false} value={typeof values[field.key] === 'string' ? (values[field.key] as string) : ''} onChange={(event) => onChange((current) => ({...current, [field.key]: event.target.value}))}/></Field>,
 			)}
 		</div>
 	</section>
+}
+
+function TaskDirectoryFieldEditor({field, value, locked, directoryPicker, onChange, onError}: {
+	field: TaskTemplateField
+	value: TaskTemplateValues[string] | undefined
+	locked: boolean
+	directoryPicker: DirectoryPicker
+	onChange(directories: string[]): void
+	onError(error: unknown): void
+}) {
+	const directories = taskDirectoryValues(value)
+	const choose = async (replaceIndex?: number) => {
+		try {
+			const selected = await directoryPicker()
+			if (!selected) {
+				return
+			}
+			if (directories.some((directory, index) => directory === selected && index !== replaceIndex)) {
+				onError(new Error(`目录“${selected}”已选择`))
+				return
+			}
+			if (replaceIndex !== undefined) {
+				onChange(directories.map((directory, index) => index === replaceIndex ? selected : directory))
+				return
+			}
+			onChange(field.multiple ? [...directories, selected] : [selected])
+		} catch (error) {
+			onError(error)
+		}
+	}
+
+	return <div className="grid gap-1.5 sm:col-span-2">
+		<div className="flex items-center justify-between gap-3">
+			<span className="text-sm font-bold text-snap-ink">{field.displayName}</span>
+			{locked && <span className="text-xs font-bold text-snap-muted">创建后不可更新</span>}
+		</div>
+		<div className="grid gap-1.5">
+			{directories.length === 0 && <div className="rounded-snap border-2 border-dashed border-snap-outline/40 bg-snap-surface/60 px-3 py-2 text-xs text-snap-muted">尚未选择目录</div>}
+			{directories.map((directory, index) => <div key={`${directory}-${index}`} className="flex min-w-0 items-center gap-2 rounded-snap border border-snap-outline bg-snap-surface px-2.5 py-2 shadow-snap-sm">
+				<FolderOpen className="h-4 w-4 shrink-0 text-snap-cobalt" strokeWidth={2.25}/>
+				<code className="min-w-0 flex-1 break-all text-xs text-snap-ink" title={directory}>{directory}</code>
+				{!locked && <>
+					<SnapButton variant="secondary" size="sm" aria-label={`重新选择${field.displayName} ${index + 1}`} onClick={() => void choose(index)}>重新选择</SnapButton>
+					<SnapIconButton size="sm" aria-label={`移除${field.displayName} ${index + 1}`} title="移除目录" className="text-snap-error hover:text-snap-error" onClick={() => onChange(directories.filter((_, directoryIndex) => directoryIndex !== index))}><Trash2 className="h-4 w-4" strokeWidth={2.25}/></SnapIconButton>
+				</>}
+			</div>)}
+		</div>
+		{!locked && (field.multiple || directories.length === 0) && <SnapButton variant="secondary" size="sm" className="justify-self-start" aria-label={field.multiple ? `添加目录到${field.displayName}` : `选择目录 ${field.displayName}`} onClick={() => void choose()}><FolderOpen className="h-4 w-4" strokeWidth={2.25}/>{field.multiple ? '添加目录' : '选择目录'}</SnapButton>}
+	</div>
 }
 
 function TaskExtraInfoEditor({
@@ -3152,7 +3246,7 @@ function TaskDetail({
 				<span className="font-display text-sm font-bold text-snap-ink">{template.name}</span>
 				{template.fields.map((field) => {
 					const value = taskTemplateFieldDisplayValue(templateValues[field.key])
-					const environment = field.injectEnvironment ? `TASKAI_${field.key.toUpperCase()}=${value}` : undefined
+					const environment = field.inputType !== 'directories' && field.injectEnvironment ? `TASKAI_${field.key.toUpperCase()}=${value}` : undefined
 					return <div key={field.key} className="grid gap-1 border-t-2 border-snap-outline/15 pt-2">
 						<TaskDetailValue label={field.displayName || field.key} value={value}/>
 						<span className="text-xs text-snap-muted">字段键：<code>{field.key}</code></span>
@@ -3323,9 +3417,22 @@ function TaskDetailValue({label, value}: {label: string, value: string}) {
 	</div>
 }
 
-function taskTemplateFieldDisplayValue(value: string | boolean | undefined): string {
+function taskTemplateForRecord(settings: SettingsRecord | undefined, current: TaskRecord | undefined, legacyTemplate: TaskTemplate | undefined): TaskTemplate | undefined {
+	if (!current) {
+		return undefined
+	}
+	if (current.taskTemplateId) {
+		return settings?.taskTemplates?.find((template) => template.id === current.taskTemplateId)
+	}
+	return Object.keys(current.templateFields ?? {}).length > 0 ? legacyTemplate : undefined
+}
+
+function taskTemplateFieldDisplayValue(value: string | boolean | string[] | undefined): string {
 	if (typeof value === 'boolean') {
 		return `${value}`
+	}
+	if (Array.isArray(value)) {
+		return value.length ? value.join('\n') : '—'
 	}
 	return value || '—'
 }
@@ -3339,7 +3446,7 @@ function createTaskTemplateDraft(): TaskTemplate {
 }
 
 function createTaskTemplateField(): TaskTemplateField {
-	return {key: '', displayName: '', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false}
+	return {key: '', displayName: '', inputType: 'string', required: false, defaultValue: '', injectEnvironment: false, multiple: false, updatable: true}
 }
 
 function cloneTaskTemplate(template: TaskTemplate): TaskTemplate {
@@ -3352,11 +3459,21 @@ function resolveTaskTemplateValues(template?: TaskTemplate, existing?: TaskTempl
 	}
 	return Object.fromEntries(template.fields.map((field) => {
 		const saved = existing?.[field.key]
+		if (field.inputType === 'directories') {
+			return [field.key, taskDirectoryValues(saved)]
+		}
 		if (field.inputType === 'bool') {
 			return [field.key, typeof saved === 'boolean' ? saved : field.defaultValue === true]
 		}
 		return [field.key, typeof saved === 'string' ? saved : typeof field.defaultValue === 'string' ? field.defaultValue : '']
 	}))
+}
+
+function taskDirectoryValues(value: TaskTemplateValues[string] | undefined): string[] {
+	if (Array.isArray(value)) {
+		return value.filter((directory): directory is string => typeof directory === 'string' && directory.length > 0)
+	}
+	return typeof value === 'string' && value.length > 0 ? [value] : []
 }
 
 function cloneExtraInfoTemplate(template: ExtraInfoTemplate): ExtraInfoTemplate {

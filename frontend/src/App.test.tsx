@@ -77,7 +77,8 @@ const bindings = vi.hoisted(() => ({
   HasRunningTasks: vi.fn(),
   PrepareQuit: vi.fn(),
   LaunchDownloadedUpdate: vi.fn(),
-  StartUpdateDownload: vi.fn(),
+	StartUpdateDownload: vi.fn(),
+	SelectDirectory: vi.fn(),
 }))
 const runtime = vi.hoisted(() => ({ClipboardSetText: vi.fn(), EventsOn: vi.fn(), EventsOff: vi.fn(), Quit: vi.fn()}))
 const terminalSessionRegistry = vi.hoisted(() => ({
@@ -1384,11 +1385,41 @@ describe('App confirmation flows', () => {
 		expect(saved.taskTemplates).toEqual([expect.objectContaining({
 			name: '发布任务',
 			fields: [
-				{key: 'environment', displayName: '环境', inputType: 'string', required: true, defaultValue: 'production', injectEnvironment: true},
-				{key: 'deploy', displayName: '立即部署', inputType: 'bool', required: true, defaultValue: true, injectEnvironment: true},
+				{key: 'environment', displayName: '环境', inputType: 'string', required: true, defaultValue: 'production', injectEnvironment: true, multiple: false, updatable: true},
+				{key: 'deploy', displayName: '立即部署', inputType: 'bool', required: true, defaultValue: true, injectEnvironment: true, multiple: false, updatable: true},
 			],
 		})])
 		expect(saved.activeTaskTemplateId).toBe(saved.taskTemplates[0].id)
+	})
+
+	it('模板目录字段支持多目录并可在创建后锁定', async () => {
+		const user = userEvent.setup()
+		render(<App/>)
+
+		await user.click(await screen.findByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '任务模板'}))
+		await user.click(screen.getByRole('button', {name: '新增模板'}))
+		const editor = screen.getByRole('dialog', {name: '新增任务模板'})
+		await user.type(within(editor).getByRole('textbox', {name: /模板名称/}), '项目目录')
+		await user.type(within(editor).getByRole('textbox', {name: /字段 1 键/}), 'sources')
+		await user.type(within(editor).getByRole('textbox', {name: /字段 1 显示名称/}), '源码目录')
+		await user.selectOptions(within(editor).getByRole('combobox', {name: '字段 1 类型'}), '目录')
+
+		expect(within(editor).queryByRole('textbox', {name: '字段 1 默认值'})).not.toBeInTheDocument()
+		expect(within(editor).queryByLabelText('注入生命周期环境变量')).not.toBeInTheDocument()
+		await user.click(within(editor).getByLabelText('支持多个目录'))
+		await user.click(within(editor).getByLabelText('创建后允许更新'))
+		await user.click(within(editor).getByLabelText('必填'))
+		await user.click(within(editor).getByRole('button', {name: '保存模板'}))
+		await user.selectOptions(screen.getByRole('combobox', {name: '当前任务模板'}), '项目目录')
+		await user.click(screen.getByRole('button', {name: '保存'}))
+
+		await waitFor(() => expect(bindings.SaveSettings).toHaveBeenCalledOnce())
+		const saved = bindings.SaveSettings.mock.calls[0][0]
+		expect(saved.taskTemplates[0].fields[0]).toEqual({
+			key: 'sources', displayName: '源码目录', inputType: 'directories', required: true,
+			defaultValue: null, injectEnvironment: false, multiple: true, updatable: false,
+		})
 	})
 
 	it('保存非模板设置后重新打开设置仍显示已保存模板', async () => {
@@ -1558,6 +1589,138 @@ describe('App confirmation flows', () => {
 		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).toHaveBeenCalledWith(
 			'发布 API', '', expect.any(String), [], {environment: 'production', deploy: false},
 		))
+	})
+
+	it('多目录字段通过选择器逐项添加，取消不改变值且拒绝重复目录', async () => {
+		const user = userEvent.setup()
+		const directoryPicker = vi.fn()
+			.mockResolvedValueOnce('/tmp/project-a/src')
+			.mockResolvedValueOnce('')
+			.mockResolvedValueOnce('/tmp/project-b/src')
+			.mockResolvedValueOnce('/tmp/project-b/src')
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{id: 'directories', name: '项目目录', fields: [
+				{key: 'sources', displayName: '源码目录', inputType: 'directories', required: true, defaultValue: [], injectEnvironment: false, multiple: true, updatable: true},
+			]}], activeTaskTemplateId: 'directories',
+		})
+		bindings.CreateTaskWithExtraInfoAndTemplateFields.mockResolvedValue({
+			id: 'directory-task', title: '目录任务', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			templateFields: {sources: ['/tmp/project-b/src']},
+		})
+		render(<App directoryPicker={directoryPicker}/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		expect(screen.queryByRole('textbox', {name: /源码目录/})).not.toBeInTheDocument()
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '目录任务')
+		await user.click(screen.getByRole('button', {name: '创建'}))
+		await screen.findByText('字段“源码目录”不能为空')
+		expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).not.toHaveBeenCalled()
+		await user.click(screen.getByRole('button', {name: '添加目录到源码目录'}))
+		expect(screen.getByText('/tmp/project-a/src')).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '重新选择源码目录 1'}))
+		expect(screen.getByText('/tmp/project-a/src')).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '添加目录到源码目录'}))
+		expect(screen.getByText('/tmp/project-b/src')).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '添加目录到源码目录'}))
+		await screen.findByText('目录“/tmp/project-b/src”已选择')
+		await user.click(screen.getByRole('button', {name: '移除源码目录 1'}))
+		expect(screen.queryByText('/tmp/project-a/src')).not.toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '创建'}))
+
+		await waitFor(() => expect(bindings.CreateTaskWithExtraInfoAndTemplateFields).toHaveBeenCalledWith(
+			'目录任务', '', expect.any(String), [], {sources: ['/tmp/project-b/src']},
+		))
+	})
+
+	it('单目录字段只能选择且已有任务按模板创建后锁定', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'locked-directory', title: '锁定目录', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			taskTemplateId: 'directories', templateFields: {source: ['/tmp/project-a/src']},
+		}])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{id: 'directories', name: '项目目录', fields: [
+				{key: 'source', displayName: '源码目录', inputType: 'directories', required: true, defaultValue: [], injectEnvironment: false, multiple: false, updatable: false},
+			]}], activeTaskTemplateId: 'directories',
+		})
+		render(<App directoryPicker={vi.fn()}/>)
+
+		await screen.findByText('锁定目录')
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByText('/tmp/project-a/src')).toBeInTheDocument()
+		expect(screen.getByText('创建后不可更新')).toBeInTheDocument()
+		expect(screen.queryByRole('textbox', {name: /源码目录/})).not.toBeInTheDocument()
+		expect(screen.queryByRole('button', {name: /重新选择源码目录/})).not.toBeInTheDocument()
+		expect(screen.queryByRole('button', {name: /移除源码目录/})).not.toBeInTheDocument()
+
+		await user.click(screen.getByRole('button', {name: '取消'}))
+		await user.click(screen.getByRole('button', {name: '设置'}))
+		await user.click(screen.getByRole('tab', {name: '任务模板'}))
+		await user.click(screen.getByRole('button', {name: '编辑'}))
+		const templateEditor = screen.getByRole('dialog', {name: '编辑任务模板'})
+		await user.click(within(templateEditor).getByLabelText('创建后允许更新'))
+		await user.click(within(templateEditor).getByRole('button', {name: '保存模板'}))
+		await user.click(screen.getByRole('button', {name: '保存'}))
+		await waitFor(() => expect(screen.queryByRole('dialog', {name: '设置'})).not.toBeInTheDocument())
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		expect(screen.getByRole('button', {name: '重新选择源码目录 1'})).toBeInTheDocument()
+	})
+
+	it('切换当前模板后仍按任务原模板展示并锁定目录字段', async () => {
+		const user = userEvent.setup()
+		bindings.ListTasks.mockResolvedValue([{
+			id: 'locked-directory', title: '锁定目录', description: '', status: 'pending', color: '#4f46e5', createdAt: '2026-07-22T00:00:00Z',
+			taskTemplateId: 'directories', templateFields: {source: ['/tmp/project-a/src']},
+		}])
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [
+				{id: 'directories', name: '项目目录', fields: [
+					{key: 'source', displayName: '源码目录', inputType: 'directories', required: true, defaultValue: [], injectEnvironment: false, multiple: false, updatable: false},
+				]},
+				{id: 'release', name: '发布任务', fields: [
+					{key: 'environment', displayName: '环境', inputType: 'string', required: false, defaultValue: 'production', injectEnvironment: false, updatable: true},
+				]},
+			], activeTaskTemplateId: 'release',
+		})
+		render(<App directoryPicker={vi.fn()}/>)
+
+		await screen.findByText('锁定目录')
+		await user.click(screen.getByText('锁定目录'))
+		expect(screen.getByText('项目目录')).toBeInTheDocument()
+		expect(screen.getByText('/tmp/project-a/src')).toBeInTheDocument()
+		expect(screen.queryByText('发布任务')).not.toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '任务操作'}))
+		await user.click(screen.getByRole('menuitem', {name: '编辑任务'}))
+		const taskDialog = screen.getByRole('dialog', {name: '编辑任务'})
+		expect(within(taskDialog).getByText('创建后不可更新')).toBeInTheDocument()
+		expect(within(taskDialog).getByText('/tmp/project-a/src')).toBeInTheDocument()
+		expect(within(taskDialog).queryByRole('textbox', {name: /环境/})).not.toBeInTheDocument()
+	})
+
+	it('单目录选择后透传后端拒绝信息并保留任务表单', async () => {
+		const user = userEvent.setup()
+		bindings.GetSettings.mockResolvedValue({
+			workspaceRoot: '/tmp/workspaces', taskTreeWidth: 360, colorScheme: 'light', shellPath: '/bin/sh', taskMenuItems: fixedTaskMenuItems,
+			taskTemplates: [{id: 'directories', name: '项目目录', fields: [
+				{key: 'source', displayName: '源码目录', inputType: 'directories', required: true, defaultValue: [], injectEnvironment: false, multiple: false, updatable: true},
+			]}], activeTaskTemplateId: 'directories',
+		})
+		bindings.CreateTaskWithExtraInfoAndTemplateFields.mockRejectedValue(new Error('任务模板字段“源码目录”的目录不存在: /tmp/missing'))
+		render(<App directoryPicker={async () => '/tmp/missing'}/>)
+
+		await user.click(await screen.findByRole('button', {name: '新建任务'}))
+		await user.type(screen.getByRole('textbox', {name: '标题'}), '无效目录')
+		await user.click(screen.getByRole('button', {name: '选择目录 源码目录'}))
+		expect(screen.getByText('/tmp/missing')).toBeInTheDocument()
+		await user.click(screen.getByRole('button', {name: '创建'}))
+
+		await screen.findByText('任务模板字段“源码目录”的目录不存在: /tmp/missing')
+		expect(screen.getByRole('dialog', {name: '新建任务'})).toBeInTheDocument()
 	})
 
 	it('默认分支模板要求输入分支', async () => {

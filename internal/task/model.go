@@ -5,7 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -83,8 +87,9 @@ const (
 type TaskTemplateFieldInputType string
 
 const (
-	TaskTemplateFieldInputString TaskTemplateFieldInputType = "string"
-	TaskTemplateFieldInputBool   TaskTemplateFieldInputType = "bool"
+	TaskTemplateFieldInputString      TaskTemplateFieldInputType = "string"
+	TaskTemplateFieldInputBool        TaskTemplateFieldInputType = "bool"
+	TaskTemplateFieldInputDirectories TaskTemplateFieldInputType = "directories"
 )
 
 type TaskTemplateField struct {
@@ -94,6 +99,8 @@ type TaskTemplateField struct {
 	Required          bool                       `json:"required"`
 	DefaultValue      any                        `json:"defaultValue"`
 	InjectEnvironment bool                       `json:"injectEnvironment"`
+	Multiple          bool                       `json:"multiple"`
+	Updatable         *bool                      `json:"updatable"`
 }
 
 type TaskTemplate struct {
@@ -303,6 +310,14 @@ func (current Task) UpdateExtraInfo(extraInfo []TaskExtraInfo) (Task, error) {
 }
 
 func (current Task) UpdateTemplateFields(template *TaskTemplate, submitted map[string]any) (Task, error) {
+	return current.updateTemplateFields(template, submitted, true)
+}
+
+func (current Task) InitializeTemplateFields(template *TaskTemplate, submitted map[string]any) (Task, error) {
+	return current.updateTemplateFields(template, submitted, false)
+}
+
+func (current Task) updateTemplateFields(template *TaskTemplate, submitted map[string]any, enforceLocks bool) (Task, error) {
 	existing, err := NormalizeTaskTemplateValues(current.TemplateFields)
 	if err != nil {
 		return Task{}, err
@@ -314,12 +329,42 @@ func (current Task) UpdateTemplateFields(template *TaskTemplate, submitted map[s
 		current.TemplateFields = existing
 		return current, nil
 	}
-	merged, err := MergeTaskTemplateFields(*template, existing, submitted)
+	normalizedTemplate, err := NormalizeTaskTemplate(*template)
+	if err != nil {
+		return Task{}, err
+	}
+	if enforceLocks {
+		normalizedSubmitted, err := NormalizeTaskTemplateValues(submitted)
+		if err != nil {
+			return Task{}, err
+		}
+		resolvedExisting, err := ResolveTaskTemplateFields(normalizedTemplate, existing)
+		if err != nil {
+			return Task{}, err
+		}
+		for _, field := range normalizedTemplate.Fields {
+			if taskTemplateFieldIsUpdatable(field) {
+				continue
+			}
+			submittedValue, found := normalizedSubmitted[field.Key]
+			if !found {
+				continue
+			}
+			normalizedValue, err := normalizeTaskTemplateFieldValue(field.InputType, submittedValue)
+			if err != nil {
+				return Task{}, fmt.Errorf("任务模板字段 %q 的值无效: %w", field.DisplayName, err)
+			}
+			if !reflect.DeepEqual(resolvedExisting[field.Key], normalizedValue) {
+				return Task{}, fmt.Errorf("任务模板字段不可更新: %s", field.DisplayName)
+			}
+		}
+	}
+	merged, err := MergeTaskTemplateFields(normalizedTemplate, existing, submitted)
 	if err != nil {
 		return Task{}, err
 	}
 	current.TemplateFields = merged
-	current.TaskTemplateID = template.ID
+	current.TaskTemplateID = normalizedTemplate.ID
 	return current, nil
 }
 
@@ -356,12 +401,28 @@ func NormalizeTaskTemplate(current TaskTemplate) (TaskTemplate, error) {
 		if err != nil {
 			return TaskTemplate{}, err
 		}
-		defaultValue, err := normalizeTaskTemplateFieldValue(inputType, field.DefaultValue)
-		if err != nil {
-			return TaskTemplate{}, fmt.Errorf("任务模板字段 %q 的默认值无效: %w", field.DisplayName, err)
+		if field.Updatable == nil {
+			updatable := true
+			field.Updatable = &updatable
+		}
+		if inputType == TaskTemplateFieldInputDirectories {
+			if field.DefaultValue != nil {
+				return TaskTemplate{}, fmt.Errorf("目录字段不能设置默认值: %s", field.DisplayName)
+			}
+			if field.InjectEnvironment {
+				return TaskTemplate{}, fmt.Errorf("目录字段不能注入环境变量: %s", field.DisplayName)
+			}
+		} else {
+			if field.Multiple {
+				return TaskTemplate{}, fmt.Errorf("仅目录字段支持多个值: %s", field.DisplayName)
+			}
+			defaultValue, err := normalizeTaskTemplateFieldValue(inputType, field.DefaultValue)
+			if err != nil {
+				return TaskTemplate{}, fmt.Errorf("任务模板字段 %q 的默认值无效: %w", field.DisplayName, err)
+			}
+			field.DefaultValue = defaultValue
 		}
 		field.InputType = inputType
-		field.DefaultValue = defaultValue
 		keys[canonicalKey] = true
 		fields = append(fields, field)
 	}
@@ -407,12 +468,37 @@ func ValidateTaskTemplateUpdate(previous, next TaskTemplate, taskValues []map[st
 	}
 	for _, field := range normalizedNext.Fields {
 		previousField, found := previousFields[field.Key]
-		if !found || previousField.InputType == field.InputType {
-			continue
+		if found && previousField.InputType != field.InputType {
+			for _, values := range taskValues {
+				if _, found := values[field.Key]; found {
+					return fmt.Errorf("任务模板字段 %q 已被任务使用，不能修改类型", field.DisplayName)
+				}
+			}
 		}
-		for _, values := range taskValues {
-			if _, found := values[field.Key]; found {
-				return fmt.Errorf("任务模板字段 %q 已被任务使用，不能修改类型", field.DisplayName)
+		if field.InputType == TaskTemplateFieldInputDirectories && !field.Multiple {
+			for _, values := range taskValues {
+				value, found := values[field.Key]
+				if !found {
+					continue
+				}
+				directories, err := normalizeTaskTemplateFieldValue(TaskTemplateFieldInputDirectories, value)
+				if err != nil {
+					return fmt.Errorf("任务模板字段 %q 的现有值无效: %w", field.DisplayName, err)
+				}
+				if len(directories.([]string)) > 1 {
+					return fmt.Errorf("任务模板字段 %q 已有多个目录，不能改为单目录", field.DisplayName)
+				}
+			}
+		}
+		if field.Required && !taskTemplateFieldIsUpdatable(field) {
+			for _, values := range taskValues {
+				resolved, err := ResolveTaskTemplateFields(normalizedNext, values)
+				if err != nil {
+					return err
+				}
+				if err := validateTaskTemplateFieldValue(field, resolved[field.Key]); err != nil {
+					return fmt.Errorf("必填且不可更新的字段必须已由所有任务填写: %s", field.DisplayName)
+				}
 			}
 		}
 	}
@@ -426,11 +512,23 @@ func NormalizeTaskTemplateValues(values map[string]any) (map[string]any, error) 
 		if key == "" {
 			return nil, fmt.Errorf("任务模板字段键不能为空")
 		}
-		switch value.(type) {
+		switch value := value.(type) {
 		case string, bool:
 			normalized[key] = value
+		case []string:
+			normalized[key] = append([]string(nil), value...)
+		case []any:
+			directories := make([]string, 0, len(value))
+			for _, item := range value {
+				directory, ok := item.(string)
+				if !ok {
+					return nil, fmt.Errorf("任务模板字段 %q 的目录值必须是字符串", key)
+				}
+				directories = append(directories, directory)
+			}
+			normalized[key] = directories
 		default:
-			return nil, fmt.Errorf("任务模板字段 %q 的值必须是字符串或布尔值", key)
+			return nil, fmt.Errorf("任务模板字段 %q 的值必须是字符串、布尔值或目录数组", key)
 		}
 	}
 	return normalized, nil
@@ -529,6 +627,9 @@ func MergeTaskTemplateFields(template TaskTemplate, existing, submitted map[stri
 			return nil, err
 		}
 	}
+	if err := validateTaskTemplateDirectorySelections(normalizedTemplate, resolved); err != nil {
+		return nil, err
+	}
 
 	merged := make(map[string]any, len(normalizedExisting)+len(resolved))
 	for key, value := range normalizedExisting {
@@ -546,6 +647,8 @@ func normalizeTaskTemplateFieldInputType(inputType TaskTemplateFieldInputType) (
 		return TaskTemplateFieldInputString, nil
 	case TaskTemplateFieldInputBool:
 		return TaskTemplateFieldInputBool, nil
+	case TaskTemplateFieldInputDirectories:
+		return TaskTemplateFieldInputDirectories, nil
 	default:
 		return "", fmt.Errorf("不支持的任务模板字段类型: %q", inputType)
 	}
@@ -567,6 +670,24 @@ func normalizeTaskTemplateFieldValue(inputType TaskTemplateFieldInputType, value
 		if value, ok := value.(bool); ok {
 			return value, nil
 		}
+	case TaskTemplateFieldInputDirectories:
+		if value == nil {
+			return []string{}, nil
+		}
+		switch value := value.(type) {
+		case []string:
+			return append([]string(nil), value...), nil
+		case []any:
+			directories := make([]string, 0, len(value))
+			for _, item := range value {
+				directory, ok := item.(string)
+				if !ok {
+					return nil, fmt.Errorf("目录值必须是字符串")
+				}
+				directories = append(directories, directory)
+			}
+			return directories, nil
+		}
 	}
 	return nil, fmt.Errorf("期望 %s 类型", inputType)
 }
@@ -578,7 +699,71 @@ func validateTaskTemplateFieldValue(field TaskTemplateField, value any) error {
 	if field.Required && field.InputType == TaskTemplateFieldInputBool && !value.(bool) {
 		return fmt.Errorf("任务模板字段必须为 true: %s", field.DisplayName)
 	}
+	if field.InputType == TaskTemplateFieldInputDirectories {
+		directories := value.([]string)
+		if field.Required && len(directories) == 0 {
+			return fmt.Errorf("任务模板字段不能为空: %s", field.DisplayName)
+		}
+		if !field.Multiple && len(directories) > 1 {
+			return fmt.Errorf("任务模板字段只能选择一个目录: %s", field.DisplayName)
+		}
+	}
 	return nil
+}
+
+func validateTaskTemplateDirectorySelections(template TaskTemplate, values map[string]any) error {
+	type selectedDirectory struct {
+		fieldName string
+		path      string
+	}
+	selected := make(map[string]selectedDirectory)
+	for _, field := range template.Fields {
+		if field.InputType != TaskTemplateFieldInputDirectories {
+			continue
+		}
+		directories := values[field.Key].([]string)
+		normalized := make([]string, 0, len(directories))
+		for _, directory := range directories {
+			directory = strings.TrimSpace(directory)
+			if directory == "" || !filepath.IsAbs(directory) {
+				return fmt.Errorf("任务模板字段 %q 的目录必须是绝对路径: %q", field.DisplayName, directory)
+			}
+			directory = filepath.Clean(directory)
+			info, err := os.Stat(directory)
+			if err != nil {
+				return fmt.Errorf("任务模板字段 %q 的目录不可访问 %q: %w", field.DisplayName, directory, err)
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("任务模板字段 %q 的路径不是目录: %q", field.DisplayName, directory)
+			}
+			handle, err := os.Open(directory)
+			if err != nil {
+				return fmt.Errorf("任务模板字段 %q 的目录不可访问 %q: %w", field.DisplayName, directory, err)
+			}
+			if err := handle.Close(); err != nil {
+				return fmt.Errorf("任务模板字段 %q 的目录不可访问 %q: %w", field.DisplayName, directory, err)
+			}
+			canonical, err := filepath.EvalSymlinks(directory)
+			if err != nil {
+				return fmt.Errorf("任务模板字段 %q 的目录不可规范化 %q: %w", field.DisplayName, directory, err)
+			}
+			canonical = filepath.Clean(canonical)
+			if runtime.GOOS == "windows" {
+				canonical = strings.ToLower(canonical)
+			}
+			if previous, found := selected[canonical]; found {
+				return fmt.Errorf("任务模板目录重复: 字段 %q 的 %q 与字段 %q 的 %q 指向同一目录", field.DisplayName, directory, previous.fieldName, previous.path)
+			}
+			selected[canonical] = selectedDirectory{fieldName: field.DisplayName, path: directory}
+			normalized = append(normalized, directory)
+		}
+		values[field.Key] = normalized
+	}
+	return nil
+}
+
+func taskTemplateFieldIsUpdatable(field TaskTemplateField) bool {
+	return field.Updatable == nil || *field.Updatable
 }
 
 func isReservedTaskTemplateEnvironmentName(key string) bool {

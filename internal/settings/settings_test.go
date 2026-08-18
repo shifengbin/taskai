@@ -81,6 +81,63 @@ func TestApplyPresetMigrationKeepsLegacyNonDefaultGitScanDepth(t *testing.T) {
 	}
 }
 
+func TestApplyPresetMigrationAddsDirectoryLinksOnlyToExactSystemShapes(t *testing.T) {
+	legacy := Default(t.TempDir())
+	legacy.PresetVersion = DirectoryLinkPresetVersion - 1
+	legacy.LifecycleChains = defaultLifecycleChainsVersionFour()
+	legacy.LifecyclePresets = []LifecyclePreset{{
+		ID: DefaultLifecyclePresetID, Name: "默认预设", Chains: map[LifecycleHook]string{
+			LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
+			LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
+		},
+	}, {
+		ID: "custom-preset", Name: "自定义预设", Chains: map[LifecycleHook]string{LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID},
+	}}
+	legacy.LifecycleChains = append(legacy.LifecycleChains, LifecycleCommandChain{
+		ID: "custom-chain", Name: "自定义链", Commands: []LifecycleCommandReference{{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}}}, ApplicableHooks: []LifecycleHook{LifecycleHookBeforeStart},
+	})
+
+	migrated, changed := ApplyPresetMigration(legacy)
+	if !changed || migrated.PresetVersion != CurrentPresetVersion {
+		t.Fatalf("ApplyPresetMigration() = version %d changed %t", migrated.PresetVersion, changed)
+	}
+	create := lifecycleChainByID(migrated.LifecycleChains, LifecycleChainCreateWorkspaceID)
+	if want := []LifecycleCommandReference{
+		{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+		{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
+	}; create == nil || !reflect.DeepEqual(create.Commands, want) {
+		t.Fatalf("精确旧创建链迁移结果 = %#v", create)
+	}
+	if syncChain := lifecycleChainByID(migrated.LifecycleChains, LifecycleChainSyncDirectoryLinksID); syncChain == nil {
+		t.Fatal("迁移未补充同步专用链")
+	}
+	if custom := lifecycleChainByID(migrated.LifecycleChains, "custom-chain"); custom == nil || custom.Name != "自定义链" || len(custom.Commands) != 1 {
+		t.Fatalf("自定义链被修改: %#v", custom)
+	}
+	if got := migrated.LifecyclePresets[0].Chains[LifecycleHookUpdateTask]; got != LifecycleChainSyncDirectoryLinksID {
+		t.Fatalf("精确旧默认预设 updateTask = %q", got)
+	}
+	if !reflect.DeepEqual(migrated.LifecyclePresets[1], legacy.LifecyclePresets[1]) {
+		t.Fatalf("自定义预设被修改: %#v", migrated.LifecyclePresets[1])
+	}
+
+	modified := Default(t.TempDir())
+	modified.PresetVersion = DirectoryLinkPresetVersion - 1
+	modified.LifecycleChains = defaultLifecycleChainsVersionFour()
+	modified.LifecyclePresets = []LifecyclePreset{{
+		ID: DefaultLifecyclePresetID, Name: "默认预设", Chains: map[LifecycleHook]string{
+			LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
+			LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
+		},
+	}}
+	modifiedCreate := lifecycleChainByID(modified.LifecycleChains, LifecycleChainCreateWorkspaceID)
+	modifiedCreate.Name = "自定义创建目录"
+	migrated, _ = ApplyPresetMigration(modified)
+	if got := lifecycleChainByID(migrated.LifecycleChains, LifecycleChainCreateWorkspaceID); got.Name != "自定义创建目录" || len(got.Commands) != 1 {
+		t.Fatalf("修改过的系统链被迁移: %#v", got)
+	}
+}
+
 func TestValidateGitScanDepth(t *testing.T) {
 	t.Run("缺失值回退默认深度", func(t *testing.T) {
 		current := Default(t.TempDir())
@@ -218,10 +275,10 @@ func TestDefaultIncludesFixedTaskMenuItems(t *testing.T) {
 func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	current := Default(t.TempDir())
 
-	if len(current.LifecycleCommands) != 6 {
-		t.Fatalf("默认生命周期命令数量 = %d，期望 6", len(current.LifecycleCommands))
+	if len(current.LifecycleCommands) != 7 {
+		t.Fatalf("默认生命周期命令数量 = %d，期望 7", len(current.LifecycleCommands))
 	}
-	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID || current.LifecycleCommands[4].ID != "system.lifecycle.manifest-file" || current.LifecycleCommands[5].ID != "system.lifecycle.update-default-branch" {
+	if current.LifecycleCommands[0].ID != LifecycleCommandCreateWorkspaceID || current.LifecycleCommands[1].ID != LifecycleCommandDeleteWorkspaceID || current.LifecycleCommands[2].ID != LifecycleCommandGitCloneID || current.LifecycleCommands[3].ID != LifecycleCommandGitCloneRepositoryID || current.LifecycleCommands[4].ID != "system.lifecycle.manifest-file" || current.LifecycleCommands[5].ID != "system.lifecycle.update-default-branch" || current.LifecycleCommands[6].ID != LifecycleCommandSyncDirectoryLinksID {
 		t.Fatalf("默认生命周期命令 = %#v", current.LifecycleCommands)
 	}
 	if !reflect.DeepEqual(current.LifecycleCommands[0].ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart}) || !reflect.DeepEqual(current.LifecycleCommands[1].ApplicableHooks, []LifecycleHook{LifecycleHookPostEnd}) {
@@ -251,6 +308,23 @@ func TestDefaultIncludesLifecycleDirectoryCommandsAndChains(t *testing.T) {
 	}
 }
 
+func TestDefaultIncludesFixedSyncDirectoryLinksCommand(t *testing.T) {
+	current := Default(t.TempDir())
+	command := lifecycleCommandByID(current.LifecycleCommands, LifecycleCommandSyncDirectoryLinksID)
+	if command == nil {
+		t.Fatal("默认设置缺少同步任务目录链接命令")
+	}
+	if command.Kind != LifecycleCommandKindSyncDirectoryLinks || command.Name != "同步任务目录链接" {
+		t.Fatalf("同步目录链接命令 = %#v", command)
+	}
+	if command.ChainArgumentMode != LifecycleCommandChainArgumentModeDisabled || len(command.Arguments) != 0 {
+		t.Fatalf("同步目录链接命令参数配置 = %#v", command)
+	}
+	if want := []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}; !reflect.DeepEqual(command.ApplicableHooks, want) {
+		t.Fatalf("同步目录链接命令适用范围 = %#v，期望 %#v", command.ApplicableHooks, want)
+	}
+}
+
 func TestDefaultIncludesLifecyclePreset(t *testing.T) {
 	current := Default(t.TempDir())
 	basicPreset := LifecyclePreset{
@@ -259,6 +333,7 @@ func TestDefaultIncludesLifecyclePreset(t *testing.T) {
 		Chains: map[task.LifecycleHook]string{
 			LifecycleHookBeforeStart: LifecycleChainCreateWorkspaceID,
 			LifecycleHookPostEnd:     LifecycleChainDeleteWorkspaceID,
+			LifecycleHookUpdateTask:  LifecycleChainSyncDirectoryLinksID,
 		},
 	}
 	companyPreset := LifecyclePreset{
@@ -416,6 +491,7 @@ func TestDefaultSeedsDefaultBranchTemplateAndRepositoryPresetChains(t *testing.T
 	if want := []LifecycleCommandReference{
 		{CommandID: "system.lifecycle.update-default-branch", Arguments: []string{}},
 		{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+		{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
 		{CommandID: LifecycleCommandGitCloneRepositoryID, Arguments: []string{"repository=git@gitlab.jiandan100.cn:webdev/iterations-ai.git"}},
 		{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
 		{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
@@ -431,11 +507,23 @@ func TestDefaultSeedsDefaultBranchTemplateAndRepositoryPresetChains(t *testing.T
 		t.Fatalf("更新框架仓库链范围 = %#v", updateRepositories)
 	}
 	if want := []LifecycleCommandReference{
+		{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
 		{CommandID: "system.lifecycle.update-default-branch", Arguments: []string{}},
 		{CommandID: LifecycleCommandManifestFileID, Arguments: []string{}},
 		{CommandID: LifecycleCommandGitCloneID, Arguments: []string{"dir=workspaces"}},
 	}; !reflect.DeepEqual(updateRepositories.Commands, want) {
 		t.Fatalf("更新仓库命令 = %#v，期望 %#v", updateRepositories.Commands, want)
+	}
+	createChain := chains[LifecycleChainCreateWorkspaceID]
+	if want := []LifecycleCommandReference{
+		{CommandID: LifecycleCommandCreateWorkspaceID, Arguments: []string{}},
+		{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}},
+	}; !reflect.DeepEqual(createChain.Commands, want) {
+		t.Fatalf("创建工作目录命令 = %#v，期望 %#v", createChain.Commands, want)
+	}
+	syncChain, found := chains[LifecycleChainSyncDirectoryLinksID]
+	if !found || !reflect.DeepEqual(syncChain.Commands, []LifecycleCommandReference{{CommandID: LifecycleCommandSyncDirectoryLinksID, Arguments: []string{}}}) || !reflect.DeepEqual(syncChain.ApplicableHooks, []LifecycleHook{LifecycleHookBeforeStart, LifecycleHookPostStart, LifecycleHookUpdateTask}) {
+		t.Fatalf("同步专用链 = %#v", syncChain)
 	}
 	defaultChains := current.DefaultLifecyclePresetChains()
 	if defaultChains[LifecycleHookBeforeStart] != LifecycleChainIterationsAIID || defaultChains[LifecycleHookPostEnd] != LifecycleChainDeleteWorkspaceID || defaultChains[LifecycleHookUpdateTask] != LifecycleChainUpdateRepositoriesID || defaultChains[LifecycleHookPostStart] != "" || defaultChains[LifecycleHookBeforeEnd] != "" {
@@ -520,15 +608,23 @@ func TestApplyPresetMigrationAddsDefaultBranchCommandOnlyToUnmodifiedVersionThre
 	if !changed || migrated.PresetVersion != CurrentPresetVersion {
 		t.Fatalf("预置版本迁移 = (%d, %t)，期望 (%d, true)", migrated.PresetVersion, changed, CurrentPresetVersion)
 	}
-	for _, chainID := range []string{LifecycleChainIterationsAIID, LifecycleChainUpdateRepositoriesID} {
+	for chainID, position := range map[string]int{LifecycleChainIterationsAIID: 0, LifecycleChainUpdateRepositoriesID: 1} {
 		chain := lifecycleChainByID(migrated.LifecycleChains, chainID)
-		if chain == nil || len(chain.Commands) == 0 || chain.Commands[0].CommandID != "system.lifecycle.update-default-branch" {
-			t.Fatalf("%s 预置链未前置更新默认分支命令: %#v", chainID, chain)
+		if chain == nil || len(chain.Commands) <= position || chain.Commands[position].CommandID != "system.lifecycle.update-default-branch" {
+			t.Fatalf("%s 预置链缺少更新默认分支命令: %#v", chainID, chain)
 		}
 	}
 	for _, chainID := range []string{LifecycleChainCreateWorkspaceID, LifecycleChainDeleteWorkspaceID} {
 		chain := lifecycleChainByID(migrated.LifecycleChains, chainID)
-		if chain == nil || len(chain.Commands) != 1 || chain.Commands[0].CommandID == "system.lifecycle.update-default-branch" {
+		if chain == nil {
+			t.Fatalf("%s 预置链不存在", chainID)
+		}
+		for _, command := range chain.Commands {
+			if command.CommandID == "system.lifecycle.update-default-branch" {
+				t.Fatalf("%s 不应被默认分支迁移加入更新命令: %#v", chainID, chain)
+			}
+		}
+		if len(chain.Commands) == 0 {
 			t.Fatalf("%s 不应被默认分支迁移改写: %#v", chainID, chain)
 		}
 	}
