@@ -27,6 +27,6 @@
 
 ## 5. 合并、文档与归档
 
-- [ ] 5.1 用户确认后将 worktree 功能分支合并到当前工作区项目对应分支，解决可能的冲突并再次编译项目验证合并结果。
-- [ ] 5.2 将已确认行为同步到 `openspec/specs/terminal-scroll-to-bottom/spec.md` 和中文实施记录，校验 OpenSpec 变更完整性后归档该变更。
-- [ ] 5.3 提交全部 Git 变更，确认提交内容只包含本功能及其文档，然后移除已合并的 worktree。
+- [x] 5.1 用户确认后将 worktree 功能分支合并到当前工作区项目对应分支，解决可能的冲突并再次编译项目验证合并结果。
+- [x] 5.2 将已确认行为同步到 `openspec/specs/terminal-scroll-to-bottom/spec.md` 和中文实施记录，校验 OpenSpec 变更完整性后归档该变更。
+- [x] 5.3 提交全部 Git 变更，确认提交内容只包含本功能及其文档，然后移除已合并的 worktree。
