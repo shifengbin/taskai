@@ -1090,6 +1090,28 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
   })
 
+  it('程序在注册器同步期间接管或解除同步模式时不被误关闭', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const programEnables = `${'x'.repeat(100)}\x1b[?25h\x1b[?2026h`
+    const programDisables = `${'y'.repeat(100)}\x1b[?25h\x1b[?2026l`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: programEnables})
+    flushTerminalOutput()
+    vi.advanceTimersByTime(64)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
+    expect(terminalInstances[0].write.mock.calls).toEqual([
+      [synchronizedOutputEnableSequence],
+      [programEnables],
+    ])
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: programDisables})
+    flushTerminalOutput()
+    vi.advanceTimersByTime(64)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(false)
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(programDisables)
+  })
+
   it('分离和销毁会话时解除注册器占用的同步状态', () => {
     vi.useFakeTimers()
     const registry = new TerminalSessionRegistry(vi.fn())

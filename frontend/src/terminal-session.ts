@@ -382,6 +382,7 @@ export class TerminalSessionRegistry {
       this.beginSynchronizedOutput(session)
     }
     session.terminal.write(merged)
+    this.updateSynchronizedOutputOwnership(session, merged)
     if (session.synchronizedOutputOwned) {
       this.scheduleSynchronizedOutputRelease(session)
     }
@@ -403,6 +404,14 @@ export class TerminalSessionRegistry {
     }
     if (!session.terminal.modes.synchronizedOutputMode) {
       session.terminal.write(terminalSynchronizedOutputEnableSequence)
+    }
+  }
+
+  private updateSynchronizedOutputOwnership(session: TerminalSession, data: string): void {
+    const programEnabled = data.lastIndexOf(terminalSynchronizedOutputEnableSequence)
+    const programDisabled = data.lastIndexOf(terminalSynchronizedOutputDisableSequence)
+    if (programEnabled >= 0 || programDisabled >= 0) {
+      session.synchronizedOutputOwned = false
     }
   }
 
