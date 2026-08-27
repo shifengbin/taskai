@@ -55,6 +55,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   options: {altClickMovesCursor?: boolean, fontFamily?: string, fontSize?: number, macOptionClickForcesSelection?: boolean, scrollback?: number, theme?: unknown}
   refresh: ReturnType<typeof vi.fn>
   select: ReturnType<typeof vi.fn>
+  scrollToBottom: ReturnType<typeof vi.fn>
   triggerSelectionChange(): void
 	triggerData(data: string): void
 	triggerScroll(viewportY: number): void
@@ -134,7 +135,11 @@ vi.mock('@xterm/xterm', () => ({
 		scrollListener: ((viewportY: number) => void) | undefined
 		onScroll = vi.fn((listener: (viewportY: number) => void) => {
 			this.scrollListener = listener
-			this.onScrollDisposable = {dispose: vi.fn()}
+			this.onScrollDisposable = {dispose: vi.fn(() => {
+				if (this.scrollListener === listener) {
+					this.scrollListener = undefined
+				}
+			})}
 			return this.onScrollDisposable
 		})
     onWriteParsedDisposable = {dispose: vi.fn()}
@@ -166,6 +171,10 @@ vi.mock('@xterm/xterm', () => ({
     options: {altClickMovesCursor?: boolean, fontFamily?: string, fontSize?: number, macOptionClickForcesSelection?: boolean, scrollback?: number, theme?: unknown}
     refresh = vi.fn()
     select = vi.fn()
+    scrollToBottom = vi.fn(() => {
+      this.buffer.active.viewportY = this.buffer.active.baseY
+      this.scrollListener?.(this.buffer.active.viewportY)
+    })
     write = vi.fn()
     lines = Array.from({length: 60}, () => Array.from({length: 100}, () => terminalCell()))
     buffer = {
@@ -404,6 +413,7 @@ describe('TerminalSessionRegistry', () => {
 
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'initial'})
     const session = terminalInstances[0]
+    registry.attach(terminal, document.createElement('div'), terminalVisualTheme(), vi.fn(), undefined, undefined, vi.fn())
     session.buffer.active.baseY = 30
     session.buffer.active.viewportY = 30
     session.triggerWriteParsed()
@@ -422,6 +432,7 @@ describe('TerminalSessionRegistry', () => {
 
     registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'initial'})
     const session = terminalInstances[0]
+    registry.attach(terminal, document.createElement('div'), terminalVisualTheme(), vi.fn(), undefined, undefined, vi.fn())
     session.buffer.active.baseY = 30
     session.buffer.active.viewportY = 30
     session.triggerWriteParsed()
@@ -531,6 +542,90 @@ describe('TerminalSessionRegistry', () => {
     expect(secondContainer.contains(terminalInstances[0].element!)).toBe(true)
     expect(fitAddonInstances[0].fit).toHaveBeenCalledTimes(2)
     expect(onResize).toHaveBeenCalledWith(100, 30)
+  })
+
+  it('附着后立即同步底部状态，并在滚动与尺寸适配时更新', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const container = document.createElement('div')
+    const onAtBottomChange = vi.fn()
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn())
+    const session = terminalInstances[0]
+    session.buffer.active.baseY = 30
+    session.buffer.active.viewportY = 0
+
+    registry.attach(terminal, container, terminalVisualTheme(), vi.fn(), undefined, undefined, onAtBottomChange)
+    expect(onAtBottomChange).toHaveBeenLastCalledWith(false)
+
+    onAtBottomChange.mockClear()
+    session.triggerScroll(8)
+    session.triggerScroll(12)
+    expect(onAtBottomChange).not.toHaveBeenCalled()
+
+    session.triggerScroll(30)
+    expect(onAtBottomChange).toHaveBeenCalledOnce()
+    expect(onAtBottomChange).toHaveBeenCalledWith(true)
+
+    onAtBottomChange.mockClear()
+    session.buffer.active.viewportY = 12
+    registry.fitAndRefresh(terminal.taskId, terminal.id, vi.fn())
+    expect(onAtBottomChange).toHaveBeenCalledWith(false)
+  })
+
+  it('只将指定会话滚动到底部并同步该视图状态', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const terminalB = {id: 'terminal-2', taskId: terminal.taskId, state: 'active' as const}
+    const onAtBottomChange = vi.fn()
+
+    registry.attach(terminal, document.createElement('div'), terminalVisualTheme(), vi.fn(), undefined, undefined, onAtBottomChange)
+    registry.attach(terminalB, document.createElement('div'), terminalVisualTheme(), vi.fn())
+    const sessionA = terminalInstances[0]
+    const sessionB = terminalInstances[1]
+    sessionA.buffer.active.baseY = 30
+    sessionA.buffer.active.viewportY = 4
+    registry.attach(terminal, document.createElement('div'), terminalVisualTheme(), vi.fn(), undefined, undefined, onAtBottomChange)
+    onAtBottomChange.mockClear()
+
+    expect(registry.scrollToBottom(terminal.taskId, terminal.id)).toBe(true)
+    expect(sessionA.scrollToBottom).toHaveBeenCalledOnce()
+    expect(sessionA.buffer.active.viewportY).toBe(30)
+    expect(onAtBottomChange).toHaveBeenCalledOnce()
+    expect(onAtBottomChange).toHaveBeenCalledWith(true)
+    expect(sessionB.scrollToBottom).not.toHaveBeenCalled()
+    expect(registry.scrollToBottom(terminal.taskId, 'missing')).toBe(false)
+  })
+
+  it('切换、分离和释放会话时清理对应视图的滚动监听', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const terminalB = {id: 'terminal-2', taskId: terminal.taskId, state: 'active' as const}
+    const onAAtBottomChange = vi.fn()
+    const onBAtBottomChange = vi.fn()
+
+    registry.attach(terminal, document.createElement('div'), terminalVisualTheme(), vi.fn(), undefined, undefined, onAAtBottomChange)
+    const sessionA = terminalInstances[0]
+    const firstADisposable = sessionA.onScrollDisposable
+    onAAtBottomChange.mockClear()
+
+    registry.attach(terminalB, document.createElement('div'), terminalVisualTheme(), vi.fn(), undefined, undefined, onBAtBottomChange)
+    const sessionB = terminalInstances[1]
+    const bDisposable = sessionB.onScrollDisposable
+    expect(firstADisposable.dispose).toHaveBeenCalledOnce()
+    sessionA.triggerScroll(0)
+    expect(onAAtBottomChange).not.toHaveBeenCalled()
+
+    registry.detach(terminalB.taskId, terminalB.id)
+    expect(bDisposable.dispose).toHaveBeenCalledOnce()
+    onBAtBottomChange.mockClear()
+    sessionB.triggerScroll(0)
+    expect(onBAtBottomChange).not.toHaveBeenCalled()
+
+    registry.attach(terminal, document.createElement('div'), terminalVisualTheme(), vi.fn(), undefined, undefined, onAAtBottomChange)
+    const secondADisposable = sessionA.onScrollDisposable
+    onAAtBottomChange.mockClear()
+    registry.dispose(terminal.taskId, terminal.id)
+    expect(secondADisposable.dispose).toHaveBeenCalledOnce()
+    sessionA.triggerScroll(0)
+    expect(onAAtBottomChange).not.toHaveBeenCalled()
   })
 
   it('旧策略字段不再阻止自动复制选区', () => {

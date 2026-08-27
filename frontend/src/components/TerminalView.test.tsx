@@ -4,6 +4,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 const terminalInstances = vi.hoisted(() => [] as Array<{
   buffer: {
     active: {
+      baseY: number
       getLine: ReturnType<typeof vi.fn>
       type: 'normal'
       viewportY: number
@@ -28,8 +29,10 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   dispose: ReturnType<typeof vi.fn>
   refresh: ReturnType<typeof vi.fn>
   select: ReturnType<typeof vi.fn>
+	scrollToBottom: ReturnType<typeof vi.fn>
 	write: ReturnType<typeof vi.fn>
   triggerCustomKeyEvent(event: KeyboardEvent): boolean | undefined
+  triggerScroll(viewportY: number): void
   triggerSelectionChange(): void
 }> )
 const fitAddonInstances = vi.hoisted(() => [] as Array<{fit: ReturnType<typeof vi.fn>}>)
@@ -73,7 +76,15 @@ vi.mock('@xterm/xterm', () => ({
       this.selectionChangeListener = listener
       return {dispose: vi.fn()}
     })
-		onScroll = vi.fn(() => ({dispose: vi.fn()}))
+		scrollListener: ((viewportY: number) => void) | undefined
+		onScroll = vi.fn((listener: (viewportY: number) => void) => {
+			this.scrollListener = listener
+			return {dispose: vi.fn(() => {
+				if (this.scrollListener === listener) {
+					this.scrollListener = undefined
+				}
+			})}
+		})
     onWriteParsed = vi.fn(() => ({dispose: vi.fn()}))
     open = vi.fn((container: HTMLElement) => {
       this.element = document.createElement('div')
@@ -94,9 +105,14 @@ vi.mock('@xterm/xterm', () => ({
     dispose = vi.fn()
     refresh = vi.fn()
     select = vi.fn()
+		scrollToBottom = vi.fn(() => {
+			this.buffer.active.viewportY = this.buffer.active.baseY
+			this.scrollListener?.(this.buffer.active.viewportY)
+		})
 		write = vi.fn()
     buffer = {
       active: {
+        baseY: 0,
         getLine: vi.fn(() => ({getCell: () => terminalBufferCell})),
         type: 'normal' as const,
         viewportY: 0,
@@ -108,6 +124,11 @@ vi.mock('@xterm/xterm', () => ({
     triggerCustomKeyEvent(event: KeyboardEvent) {
       return this.customKeyEventHandler?.(event)
     }
+
+		triggerScroll(viewportY: number) {
+			this.buffer.active.viewportY = viewportY
+			this.scrollListener?.(viewportY)
+		}
 
     triggerSelectionChange() {
       this.selectionChangeListener?.()
@@ -695,6 +716,81 @@ describe('TerminalView', () => {
 
     expect(terminalInstances[0].options.scrollback).toBe(1000)
     expect(terminalInstances[0].focus).toHaveBeenCalledOnce()
+  })
+
+  it('离开底部时显示回到底部按钮，手动滚回后隐藏', () => {
+    render(<TerminalView terminal={terminal} sessionRegistry={new TerminalSessionRegistry(vi.fn())} onResize={vi.fn()} onClose={vi.fn()} />)
+    const instance = terminalInstances[0]
+
+    expect(screen.queryByRole('button', {name: '回到底部'})).not.toBeInTheDocument()
+
+    act(() => {
+      instance.buffer.active.baseY = 30
+      instance.triggerScroll(8)
+    })
+    const button = screen.getByRole('button', {name: '回到底部'})
+    expect(button).toHaveAttribute('title', '回到底部')
+    expect(button).toHaveClass('absolute', 'bottom-4', 'right-4')
+
+    act(() => instance.triggerScroll(30))
+    expect(screen.queryByRole('button', {name: '回到底部'})).not.toBeInTheDocument()
+  })
+
+  it('点击回到底部只滚动当前活动会话并恢复终端焦点', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()} />)
+    runAnimationFrame()
+    const instance = terminalInstances[0]
+    instance.focus.mockClear()
+    act(() => {
+      instance.buffer.active.baseY = 40
+      instance.triggerScroll(10)
+    })
+
+    fireEvent.click(screen.getByRole('button', {name: '回到底部'}))
+
+    expect(instance.scrollToBottom).toHaveBeenCalledOnce()
+    expect(instance.buffer.active.viewportY).toBe(40)
+    expect(screen.queryByRole('button', {name: '回到底部'})).not.toBeInTheDocument()
+    expect(instance.focus).toHaveBeenCalledOnce()
+  })
+
+  it('切换终端时按各会话位置同步按钮且不改变其他会话', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const terminalB = {id: 'terminal-2', taskId: terminal.taskId, state: 'active' as const}
+    const view = render(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()} />)
+    const instanceA = terminalInstances[0]
+    act(() => {
+      instanceA.buffer.active.baseY = 30
+      instanceA.triggerScroll(6)
+    })
+    expect(screen.getByRole('button', {name: '回到底部'})).toBeInTheDocument()
+
+    view.rerender(<TerminalView terminal={terminalB} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()} />)
+    const instanceB = terminalInstances[1]
+    expect(screen.queryByRole('button', {name: '回到底部'})).not.toBeInTheDocument()
+
+    view.rerender(<TerminalView terminal={terminal} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', {name: '回到底部'}))
+
+    expect(instanceA.scrollToBottom).toHaveBeenCalledOnce()
+    expect(instanceB.scrollToBottom).not.toHaveBeenCalled()
+  })
+
+  it('异常退出快照也可回到底部且不会恢复输入焦点', () => {
+    const registry = new TerminalSessionRegistry(vi.fn())
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'output', data: 'failure output'})
+    registry.handleTerminalEvent({...terminal, terminalId: terminal.id, type: 'exited', exitReason: 'unexpected', exitCode: 1})
+    const instance = terminalInstances[0]
+    instance.buffer.active.baseY = 20
+    instance.buffer.active.viewportY = 2
+
+    render(<TerminalView terminal={{...terminal, state: 'exited'}} sessionRegistry={registry} onResize={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', {name: '回到底部'}))
+
+    expect(instance.scrollToBottom).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', {name: '回到底部'})).not.toBeInTheDocument()
+    expect(instance.focus).not.toHaveBeenCalled()
   })
 
   it('异常退出快照只读且不注册后端终端交互', () => {

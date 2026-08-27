@@ -47,8 +47,11 @@ interface TerminalSession {
   flushTimerHandle?: number
   pendingCursorRestore?: boolean
   cursorRestoreTimerHandle?: number
+  lastNotifiedAtBottom?: boolean
   mouseGesture?: TerminalMouseGesture
+  onAtBottomChange?: (atBottom: boolean) => void
   onData: {dispose(): void}
+  onScroll?: {dispose(): void}
   onSelectionChange: {dispose(): void}
   onWriteParsed: {dispose(): void}
 }
@@ -133,6 +136,7 @@ export class TerminalSessionRegistry {
     onResize: (columns: number, rows: number) => void,
     onSelectionComplete?: TerminalSelectionCompleteHandler,
     onContextMenu?: TerminalContextMenuHandler,
+    onAtBottomChange?: (atBottom: boolean) => void,
   ): boolean {
     const key = terminalSessionKey(terminal.taskId, terminal.id)
     if (this.attachedSessionKey && this.attachedSessionKey !== key) {
@@ -170,10 +174,11 @@ export class TerminalSessionRegistry {
 				session.mouseGesture.setSelectionCompleteHandler(onSelectionComplete)
 				session.mouseGesture.setContextMenuHandler(onContextMenu)
 			}
-			this.attachedSessionKey = key
 		} else {
-			this.detachByKey(key)
+			this.detachMouseGesture(session)
 		}
+		this.attachScrollPosition(session, onAtBottomChange)
+		this.attachedSessionKey = key
 		return this.fit(session, this.closedTerminalKeys.has(terminalSessionKey(terminal.taskId, terminal.id)) ? undefined : onResize)
   }
 
@@ -192,6 +197,16 @@ export class TerminalSessionRegistry {
 
   focus(taskID: string, terminalID: string): void {
     this.sessions.get(terminalSessionKey(taskID, terminalID))?.terminal.focus()
+  }
+
+  scrollToBottom(taskID: string, terminalID: string): boolean {
+    const session = this.sessions.get(terminalSessionKey(taskID, terminalID))
+    if (!session) {
+      return false
+    }
+    session.terminal.scrollToBottom()
+    this.notifyScrollPosition(session)
+    return true
   }
 
   writeInput(taskID: string, terminalID: string, data: string): boolean {
@@ -425,6 +440,7 @@ export class TerminalSessionRegistry {
         onResize(session.terminal.cols, session.terminal.rows)
       }
       this.resetDisplay(session)
+      this.notifyScrollPosition(session)
       return true
     } catch {
       return false
@@ -441,11 +457,45 @@ export class TerminalSessionRegistry {
     session.display = captureTerminalDisplay(session.terminal)
   }
 
+  private attachScrollPosition(session: TerminalSession, onAtBottomChange?: (atBottom: boolean) => void): void {
+    this.detachScrollPosition(session)
+    session.onAtBottomChange = onAtBottomChange
+    if (onAtBottomChange) {
+      session.onScroll = session.terminal.onScroll(() => this.notifyScrollPosition(session))
+    }
+  }
+
+  private notifyScrollPosition(session: TerminalSession): void {
+    const onAtBottomChange = session.onAtBottomChange
+    if (!onAtBottomChange) {
+      return
+    }
+    const buffer = session.terminal.buffer.active
+    const atBottom = buffer.viewportY >= buffer.baseY
+    if (session.lastNotifiedAtBottom === atBottom) {
+      return
+    }
+    session.lastNotifiedAtBottom = atBottom
+    onAtBottomChange(atBottom)
+  }
+
+  private detachScrollPosition(session: TerminalSession): void {
+    session.onScroll?.dispose()
+    session.onScroll = undefined
+    session.onAtBottomChange = undefined
+    session.lastNotifiedAtBottom = undefined
+  }
+
+  private detachMouseGesture(session: TerminalSession): void {
+    session.mouseGesture?.dispose()
+    session.mouseGesture = undefined
+  }
+
   private detachByKey(key: string): void {
     const session = this.sessions.get(key)
-    session?.mouseGesture?.dispose()
     if (session) {
-      session.mouseGesture = undefined
+      this.detachMouseGesture(session)
+      this.detachScrollPosition(session)
     }
     if (this.attachedSessionKey === key) {
       this.attachedSessionKey = undefined

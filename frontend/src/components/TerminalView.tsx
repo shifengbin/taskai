@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from 'react'
-import {ClipboardCopy, ClipboardPaste, MessageSquarePlus, Send, Terminal as TerminalIcon} from 'lucide-react'
+import {ArrowDown, ClipboardCopy, ClipboardPaste, MessageSquarePlus, Send, Terminal as TerminalIcon} from 'lucide-react'
 import '@xterm/xterm/css/xterm.css'
 
 import {TerminalSessionRegistry, terminalVisualTheme} from '../terminal-session'
@@ -47,6 +47,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 	const [noteInputOpen, setNoteInputOpen] = useState(false)
 	const [noteText, setNoteText] = useState('')
   const [notesPanelOpen, setNotesPanelOpen] = useState(false)
+  const [terminalAtBottom, setTerminalAtBottom] = useState(true)
   const resolvedTerminalTheme = useMemo(() => terminalVisualTheme(terminalTheme), [terminalTheme])
   const quickInputHotkey = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC')
     ? 'Command+Shift+P'
@@ -158,6 +159,19 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 		}).catch(() => {})
 	}, [sessionRegistry, terminal.id, terminal.taskId])
 
+	const handleAtBottomChange = useCallback((atBottom: boolean) => {
+		setTerminalAtBottom(atBottom)
+	}, [])
+
+	const returnToBottom = () => {
+		if (!sessionRegistry.scrollToBottom(terminal.taskId, terminal.id)) {
+			return
+		}
+		if (terminal.state === 'active') {
+			sessionRegistry.focus(terminal.taskId, terminal.id)
+		}
+	}
+
   useEffect(() => {
     let active = true
     const fitAndRefresh = () => {
@@ -166,7 +180,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
       }
     }
     if (containerRef.current) {
-      sessionRegistry.attach(terminal, containerRef.current, resolvedTerminalTheme, onResizeRef.current, handleSelectionComplete, handleContextMenu)
+      sessionRegistry.attach(terminal, containerRef.current, resolvedTerminalTheme, onResizeRef.current, handleSelectionComplete, handleContextMenu, handleAtBottomChange)
     }
     const observer = new ResizeObserver(fitAndRefresh)
     if (containerRef.current) {
@@ -189,7 +203,7 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
       observer.disconnect()
       sessionRegistry.detach(terminal.taskId, terminal.id)
     }
-  }, [handleContextMenu, handleSelectionComplete, resolvedTerminalTheme, sessionRegistry, terminal.id, terminal.state, terminal.taskId])
+  }, [handleAtBottomChange, handleContextMenu, handleSelectionComplete, resolvedTerminalTheme, sessionRegistry, terminal.id, terminal.state, terminal.taskId])
 
   useEffect(() => {
     onResizeRef.current = onResize
@@ -427,6 +441,15 @@ export function TerminalView({terminal, sessionRegistry, quickInputs = [], termi
 				onClick={() => setNoteInputOpen(true)}
 			>
 				<MessageSquarePlus className="h-4 w-4"/>
+			</IconButton>}
+			{!terminalAtBottom && <IconButton
+				aria-label="回到底部"
+				title="回到底部"
+				className="absolute bottom-4 right-4 z-20 h-9 w-9 border-snap-cobalt bg-snap-overlay text-snap-cobalt shadow-snap"
+				onPointerDown={(event) => event.stopPropagation()}
+				onClick={returnToBottom}
+			>
+				<ArrowDown className="h-4 w-4"/>
 			</IconButton>}
       </div>
 		<Dialog open={noteInputOpen} onOpenChange={(open) => { if (!open) closeNoteInput() }}>
