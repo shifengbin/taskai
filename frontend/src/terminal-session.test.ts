@@ -33,7 +33,7 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
   }
   cols: number
   rows: number
-  modes: {mouseTrackingMode: 'none' | 'any'}
+  modes: {mouseTrackingMode: 'none' | 'any', synchronizedOutputMode: boolean}
   mouseEvents: RecordedMouseEvent[]
   attachCustomKeyEventHandler: ReturnType<typeof vi.fn>
   element?: HTMLElement
@@ -65,6 +65,8 @@ const terminalInstances = vi.hoisted(() => [] as Array<{
 }>)
 const fitAddonInstances = vi.hoisted(() => [] as Array<{fit: ReturnType<typeof vi.fn>}>)
 const runtime = vi.hoisted(() => ({ClipboardSetText: vi.fn()}))
+const synchronizedOutputEnableSequence = '\x1b[?2026h'
+const synchronizedOutputDisableSequence = '\x1b[?2026l'
 
 function terminalCell(overrides: TerminalCellOverrides = {}) {
   const cell = {
@@ -108,7 +110,7 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     cols = 100
     rows = 30
-    modes = {mouseTrackingMode: 'none' as const}
+    modes = {mouseTrackingMode: 'none' as const, synchronizedOutputMode: false}
     mouseEvents: RecordedMouseEvent[] = []
     attachCustomKeyEventHandler = vi.fn()
     element: HTMLElement | undefined
@@ -175,7 +177,27 @@ vi.mock('@xterm/xterm', () => ({
       this.buffer.active.viewportY = this.buffer.active.baseY
       this.scrollListener?.(this.buffer.active.viewportY)
     })
-    write = vi.fn()
+    write = vi.fn((data: string) => {
+      let cursor = 0
+      while (cursor < data.length) {
+        const enableIndex = data.indexOf(synchronizedOutputEnableSequence, cursor)
+        const disableIndex = data.indexOf(synchronizedOutputDisableSequence, cursor)
+        const nextIndex = Math.min(
+          enableIndex < 0 ? data.length : enableIndex,
+          disableIndex < 0 ? data.length : disableIndex,
+        )
+        if (nextIndex === data.length) {
+          break
+        }
+        if (enableIndex >= 0 && enableIndex === nextIndex) {
+          this.modes.synchronizedOutputMode = true
+          cursor = enableIndex + synchronizedOutputEnableSequence.length
+        } else {
+          this.modes.synchronizedOutputMode = false
+          cursor = disableIndex + synchronizedOutputDisableSequence.length
+        }
+      }
+    })
     lines = Array.from({length: 60}, () => Array.from({length: 100}, () => terminalCell()))
     buffer = {
       active: {
@@ -975,7 +997,7 @@ describe('TerminalSessionRegistry', () => {
     expect(terminalInstances[0].write.mock.calls).toEqual([['one'], ['two'], ['tail'], ['\r\n终端已退出\x1b[?25l']])
   })
 
-  it('ConPTY 绘制批次冲刷时追加合成隐藏序列，输出静默后补写恢复光标', () => {
+  it('高频重绘冲刷时进入同步输出，静默后解除且不修改光标序列', () => {
     vi.useFakeTimers()
     const registry = new TerminalSessionRegistry(vi.fn())
     const batch = `${'x'.repeat(100)}\x1b[?25h`
@@ -983,34 +1005,129 @@ describe('TerminalSessionRegistry', () => {
     registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
     expect(terminalInstances[0].write).not.toHaveBeenCalled()
     flushTerminalOutput()
-    expect(terminalInstances[0].write).toHaveBeenCalledOnce()
-    expect(terminalInstances[0].write).toHaveBeenCalledWith(`${batch}\x1b[?25l`)
+    expect(terminalInstances[0].write.mock.calls).toEqual([[synchronizedOutputEnableSequence], [batch]])
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
 
     cursorRestoreSettled()
-    expect(terminalInstances[0].write).toHaveBeenCalledTimes(2)
-    expect(terminalInstances[0].write).toHaveBeenLastCalledWith('\x1b[?25h')
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(synchronizedOutputDisableSequence)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(false)
+    expect(terminalInstances[0].write.mock.calls.flat()).not.toContain('\x1b[?25l')
   })
 
-  it('批间继续输出时跳过光标恢复，直至输出真正停止', () => {
+  it('截止冲刷后继续输出时保持同步，静默后才解除', () => {
     vi.useFakeTimers()
     const registry = new TerminalSessionRegistry(vi.fn())
     const batchA = `${'a'.repeat(100)}\x1b[?25h`
     const batchB = `${'b'.repeat(100)}\x1b[?25h`
+    const batchC = `${'c'.repeat(100)}\x1b[?25h`
+    const batchD = `${'d'.repeat(100)}\x1b[?25h`
 
     registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchA})
-    flushTerminalOutput()
-    // 18ms 后下一绘制批次到达（恢复定时器 48ms 尚未到期）
-    vi.advanceTimersByTime(18)
+    vi.advanceTimersByTime(20)
     registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchB})
-    // 恢复定时器在冲刷后 48ms 触发：此刻缓冲非空，跳过恢复
-    vi.advanceTimersByTime(30)
-    expect(terminalInstances[0].write).toHaveBeenCalledTimes(1)
-    // 第二批的静默冲刷落地
+    vi.advanceTimersByTime(20)
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchC})
+    vi.advanceTimersByTime(20)
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchD})
+    vi.advanceTimersByTime(32)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(`${batchA}${batchB}${batchC}${batchD}`)
+
+    vi.advanceTimersByTime(20)
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchA})
+    vi.advanceTimersByTime(20)
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batchB})
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
+
+    vi.advanceTimersByTime(64)
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(synchronizedOutputDisableSequence)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(false)
+  })
+
+  it('重绘后普通输出和方向键不会遗留隐藏光标控制状态', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const batch = `${'x'.repeat(100)}\x1b[?25h`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
     flushTerminalOutput()
-    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(`${batchB}\x1b[?25l`)
-    // 流停止后恢复光标
+    vi.advanceTimersByTime(18)
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: 'plain output'})
+    flushTerminalOutput()
     cursorRestoreSettled()
-    expect(terminalInstances[0].write).toHaveBeenLastCalledWith('\x1b[?25h')
+
+    expect(terminalInstances[0].write.mock.calls.flat()).not.toContain('\x1b[?25l')
+    expect(terminalInstances[0].write.mock.calls.flat()).not.toContain('\x1b[?25h')
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(false)
+  })
+
+  it('程序已有同步输出状态时不由注册器抢占或解除', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const batch = `${'x'.repeat(100)}\x1b[?25h`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
+    terminalInstances[0].modes.synchronizedOutputMode = true
+    flushTerminalOutput()
+    vi.advanceTimersByTime(64)
+
+    expect(terminalInstances[0].write.mock.calls).toEqual([[batch]])
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
+  })
+
+  it('同步输出因安全超时解除后下一次重绘会重新建立', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const batch = `${'x'.repeat(100)}\x1b[?25h`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
+    flushTerminalOutput()
+    terminalInstances[0].modes.synchronizedOutputMode = false
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
+    flushTerminalOutput()
+
+    expect(terminalInstances[0].write.mock.calls.filter(([data]) => data === synchronizedOutputEnableSequence)).toHaveLength(2)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
+  })
+
+  it('程序在注册器同步期间接管或解除同步模式时不被误关闭', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const programEnables = `${'x'.repeat(100)}\x1b[?25h\x1b[?2026h`
+    const programDisables = `${'y'.repeat(100)}\x1b[?25h\x1b[?2026l`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: programEnables})
+    flushTerminalOutput()
+    vi.advanceTimersByTime(64)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(true)
+    expect(terminalInstances[0].write.mock.calls).toEqual([
+      [synchronizedOutputEnableSequence],
+      [programEnables],
+    ])
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: programDisables})
+    flushTerminalOutput()
+    vi.advanceTimersByTime(64)
+    expect(terminalInstances[0].modes.synchronizedOutputMode).toBe(false)
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(programDisables)
+  })
+
+  it('分离和销毁会话时解除注册器占用的同步状态', () => {
+    vi.useFakeTimers()
+    const registry = new TerminalSessionRegistry(vi.fn())
+    const batch = `${'x'.repeat(100)}\x1b[?25h`
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
+    flushTerminalOutput()
+    registry.detach('task-1', 'terminal-1')
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(synchronizedOutputDisableSequence)
+
+    registry.handleTerminalEvent({type: 'output', taskId: 'task-1', terminalId: 'terminal-1', data: batch})
+    flushTerminalOutput()
+    registry.dispose('task-1', 'terminal-1')
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(synchronizedOutputDisableSequence)
+    vi.advanceTimersByTime(64)
+    expect(terminalInstances[0].write).toHaveBeenLastCalledWith(synchronizedOutputDisableSequence)
   })
 
   it('小于阈值的击键回显冲刷原样写入且不隐藏光标', () => {
