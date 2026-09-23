@@ -505,6 +505,13 @@ func ValidateTaskTemplateUpdate(previous, next TaskTemplate, taskValues []map[st
 	return nil
 }
 
+// cloneDirectories 复制目录值并保证结果非 nil。
+// nil 切片会被序列化为 JSON null，再次加载时无法通过任务模板字段类型校验，
+// 因此未选择目录时必须保持为空数组。
+func cloneDirectories(directories []string) []string {
+	return append([]string{}, directories...)
+}
+
 func NormalizeTaskTemplateValues(values map[string]any) (map[string]any, error) {
 	normalized := make(map[string]any, len(values))
 	for key, value := range values {
@@ -516,7 +523,7 @@ func NormalizeTaskTemplateValues(values map[string]any) (map[string]any, error) 
 		case string, bool:
 			normalized[key] = value
 		case []string:
-			normalized[key] = append([]string(nil), value...)
+			normalized[key] = cloneDirectories(value)
 		case []any:
 			directories := make([]string, 0, len(value))
 			for _, item := range value {
@@ -676,7 +683,7 @@ func normalizeTaskTemplateFieldValue(inputType TaskTemplateFieldInputType, value
 		}
 		switch value := value.(type) {
 		case []string:
-			return append([]string(nil), value...), nil
+			return cloneDirectories(value), nil
 		case []any:
 			directories := make([]string, 0, len(value))
 			for _, item := range value {

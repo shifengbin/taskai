@@ -267,6 +267,9 @@ func normalizeData(data Data, recoverInterruptedLifecycle bool) (Data, bool, err
 			data.Tasks[index].TemplateFields = map[string]any{}
 			changed = true
 		}
+		if dropNullTaskTemplateFields(data.Tasks[index].TemplateFields) {
+			changed = true
+		}
 		templateFields, err := task.NormalizeTaskTemplateValues(data.Tasks[index].TemplateFields)
 		if err != nil {
 			return Data{}, false, fmt.Errorf("normalize task template fields: %w", err)
@@ -360,6 +363,20 @@ func defaultLifecycleChainsForTask(status task.Status, defaults map[task.Lifecyc
 		}
 	}
 	return chains
+}
+
+// dropNullTaskTemplateFields 清理历史版本写入的 null 模板字段值。
+// v0.0.9 及更早版本会把未选择目录的空数组写成 null，再次加载时类型校验会失败；
+// null 表示未设置，移除后由模板默认值补齐。
+func dropNullTaskTemplateFields(values map[string]any) bool {
+	changed := false
+	for key, value := range values {
+		if value == nil {
+			delete(values, key)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func migrateTaskDirectoryLinkSelections(tasks []task.Task) bool {

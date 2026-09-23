@@ -1,9 +1,11 @@
 package task
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -177,6 +179,34 @@ func TestTaskTemplateValuesSupportDirectoryArraysAndRequiredValidation(t *testin
 	}
 	if _, err := MergeTaskTemplateFields(template, nil, map[string]any{"sources": []string{}}); err == nil {
 		t.Fatal("空的必填目录数组应被拒绝")
+	}
+}
+
+func TestTaskTemplateValuesKeepEmptyDirectoryArrayAfterJSONRoundTrip(t *testing.T) {
+	template := TaskTemplate{ID: "template-directories", Name: "目录模板", Fields: []TaskTemplateField{
+		{Key: "branch", DisplayName: "分支", InputType: TaskTemplateFieldInputString},
+		{Key: "dir", DisplayName: "使用已存在目录", InputType: TaskTemplateFieldInputDirectories},
+	}}
+
+	// 前端未选择目录时提交空数组，经 Wails 序列化后是 []any。
+	values, err := MergeTaskTemplateFields(template, nil, map[string]any{"branch": "web-1.1", "dir": []any{}})
+	if err != nil {
+		t.Fatalf("MergeTaskTemplateFields() error = %v", err)
+	}
+	serialized, err := json.Marshal(values)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(serialized), "null") {
+		t.Fatalf("未选择目录时应序列化为空数组而不是 null: %s", serialized)
+	}
+
+	var reloaded map[string]any
+	if err := json.Unmarshal(serialized, &reloaded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if _, err := NormalizeTaskTemplateValues(reloaded); err != nil {
+		t.Fatalf("重新加载模板字段 error = %v", err)
 	}
 }
 

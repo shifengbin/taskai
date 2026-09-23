@@ -599,6 +599,74 @@ func TestRepositoryNormalizesMissingTaskTemplateData(t *testing.T) {
 	}
 }
 
+func TestRepositoryPersistsEmptyDirectorySelectionsAsEmptyArray(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	repository := New(dataPath, settings.Default(t.TempDir()))
+	data, err := repository.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	updatable := true
+	template := task.TaskTemplate{ID: "directories", Name: "目录模板", Fields: []task.TaskTemplateField{
+		{Key: "branch", DisplayName: "分支", InputType: task.TaskTemplateFieldInputString, Updatable: &updatable},
+		{Key: "dir", DisplayName: "使用已存在目录", InputType: task.TaskTemplateFieldInputDirectories, Updatable: &updatable},
+	}}
+	data.Settings.TaskTemplates = []task.TaskTemplate{template}
+	data.Settings.ActiveTaskTemplateID = template.ID
+	created, err := (task.Task{
+		ID: "task-empty-directory", Title: "空目录任务", Color: task.DefaultColor, Status: task.StatusPending,
+		ExtraInfo: []task.TaskExtraInfo{}, LifecycleChains: map[task.LifecycleHook]string{},
+	}).InitializeTemplateFields(&template, map[string]any{"branch": "web-1.1", "dir": []any{}})
+	if err != nil {
+		t.Fatalf("InitializeTemplateFields() error = %v", err)
+	}
+	data.Tasks = append(data.Tasks, created)
+	if err := repository.Save(data); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	contents, err := os.ReadFile(dataPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var persisted struct {
+		Tasks []struct {
+			TemplateFields map[string]json.RawMessage `json:"templateFields"`
+		} `json:"tasks"`
+	}
+	if err := json.Unmarshal(contents, &persisted); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got := string(persisted.Tasks[0].TemplateFields["dir"]); got != "[]" {
+		t.Fatalf("空目录字段落盘 = %s，期望 []", got)
+	}
+	if _, err := repository.Load(); err != nil {
+		t.Fatalf("重新加载 error = %v", err)
+	}
+}
+
+func TestRepositoryRepairsNullTaskTemplateFieldValues(t *testing.T) {
+	dataPath := filepath.Join(t.TempDir(), "state.json")
+	contents := []byte(`{
+  "tasks": [{"id":"legacy-null","title":"空目录任务","color":"#4f46e5","extraInfo":[],"templateFields":{"branch":"web-1.1","dir":null}}],
+  "settings": {"workspaceRoot":"` + filepath.ToSlash(filepath.Join(t.TempDir(), "workspaces")) + `","taskTreeWidth":360}
+}`)
+	if err := os.WriteFile(dataPath, contents, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	data, err := New(dataPath, settings.Default(t.TempDir())).Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if value, found := data.Tasks[0].TemplateFields["dir"]; found {
+		t.Fatalf("历史 null 模板字段应被移除，实际 = %#v", value)
+	}
+	if got := data.Tasks[0].TemplateFields["branch"]; got != "web-1.1" {
+		t.Fatalf("其他模板字段被破坏 = %#v", data.Tasks[0].TemplateFields)
+	}
+}
+
 func TestRepositoryRepairsVersionTwoMissingDefaultBranchTemplateOnce(t *testing.T) {
 	dataPath := filepath.Join(t.TempDir(), "state.json")
 	contents := []byte(`{
